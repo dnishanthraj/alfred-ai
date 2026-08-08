@@ -1,0 +1,23 @@
+# System
+.DS_Store
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+*.env
+!.env.example
+
+# Personal configuration (contains your real name/details — see .example templates)
+Modelfile
+
+# Audio/video assets (large, machine-local)
+*.wav
+*.mp4
+
+# Persistent state (machine-specific, contains conversation history/personal facts)
+batcomputer_history.json
+batcomputer_vault.txt

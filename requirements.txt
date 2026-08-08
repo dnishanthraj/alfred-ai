@@ -1,0 +1,30 @@
+# LLM
+ollama==0.1.0
+
+# Speech-to-text (CPU fallback, all platforms)
+faster-whisper==1.2.1
+ctranslate2==4.6.2
+huggingface-hub==0.36.0
+tokenizers==0.15.2
+
+# Speech-to-text (Apple Silicon only — used automatically if installed,
+# ~5-10x faster via the Neural Engine. Safe to omit on Intel/Linux/Windows.)
+mlx-whisper==0.4.3; sys_platform == "darwin" and platform_machine == "arm64"
+
+# Audio recording
+sounddevice==0.5.3
+soundfile==0.13.1
+scipy==1.16.3
+numpy==1.26.4
+
+# Keyboard input (macOS)
+pynput==1.8.1
+pyobjc==12.1
+pyobjc-core==12.1
+
+# TTS (ElevenLabs via HTTP)
+requests==2.32.5
+python-dotenv==1.2.1
+
+# Web search
+ddgs==9.10.0
