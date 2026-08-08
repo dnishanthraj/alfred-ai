@@ -21,3 +21,6 @@ Modelfile
 # Persistent state (machine-specific, contains conversation history/personal facts)
 batcomputer_history.json
 batcomputer_vault.txt
+
+# Personal working notes (rough, not curated for public consumption)
+TODO.md

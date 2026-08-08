@@ -1,5 +1,7 @@
 # Alfred AI
 
+**Status:** `v0.1.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+
 A local, voice-driven personal assistant for macOS — push-to-talk speech in, a locally-run
 LLM (via [Ollama](https://ollama.com)) for thinking, and natural-sounding [ElevenLabs](https://elevenlabs.io)
 speech out. The bundled `Modelfile.example` gives it a dry, Alfred Pennyworth-style
@@ -136,6 +138,21 @@ Alfred's personality lives entirely in the Ollama `Modelfile`'s `SYSTEM` prompt 
 about tone or backstory is hardcoded in Python. To build a different assistant, replace
 `Modelfile` with your own prompt and `ollama create` it under a new name (update
 `ALFRED_OLLAMA_MODEL` in `.env` to match).
+
+## Roadmap
+
+Not yet built, roughly in priority order:
+
+- **Audio-reactive visual overlay** — a HUD/hologram-style visualizer synced to
+  the TTS playback, so there's something to look at while Alfred talks.
+- **Test suite + CI** — the deterministic text-processing helpers in `main.py`
+  and `search.py` are pure functions and cheap to cover; a GitHub Actions run
+  on push would follow naturally.
+- **Wake-word activation** as an alternative to holding the push-to-talk key.
+- **Companion mobile app** — a thin SwiftUI client (iPhone, possibly Watch)
+  talking to a small local API in front of Ollama, for use off the machine
+  that hosts the model. This is a separate client rewrite, not a port of the
+  Python app.
 
 ## Notes & limitations
 
