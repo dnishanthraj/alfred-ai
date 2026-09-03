@@ -1,45 +1,87 @@
 """
-Web search functionality for Alfred AI.
+Web search.
+
+Two providers, chosen by whether a key is configured:
+
+  DuckDuckGo (default) needs no key and no account, which is the right default
+  for something you clone and run. It is scraped rather than an API, so it is
+  rate-limited under repeated use and occasionally returns nothing at all.
+
+  Brave (when BRAVE_API_KEY is set) is a real search API with a free tier. It
+  returns cleaner snippets and does not fall over when queried several times in
+  a minute, which is exactly when the default disappoints.
+
+Neither is best in the abstract: the default is best for a stranger cloning the
+repo, the alternative is best once you use it daily.
 """
 import concurrent.futures
+import os
 import warnings
+
+import requests
 
 warnings.filterwarnings("ignore")
 
 try:
     from ddgs import DDGS
-except ImportError:
+except ImportError:  # older releases of the same package
     from duckduckgo_search import DDGS
 
 _SEARCH_TIMEOUT = 8  # seconds before giving up
+BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
+
+
+def provider_name():
+    return "brave" if BRAVE_API_KEY else "duckduckgo"
+
+
+def _search_brave(query, num_results):
+    response = requests.get(
+        "https://api.search.brave.com/res/v1/web/search",
+        params={"q": query, "count": num_results},
+        headers={"Accept": "application/json", "X-Subscription-Token": BRAVE_API_KEY},
+        timeout=_SEARCH_TIMEOUT,
+    )
+    response.raise_for_status()
+    results = response.json().get("web", {}).get("results", [])
+    return [
+        {
+            "url": r.get("url", ""),
+            "title": r.get("title", ""),
+            "snippet": r.get("description", ""),
+        }
+        for r in results[:num_results]
+    ]
+
+
+def _search_duckduckgo(query, num_results):
+    results = []
+    with DDGS() as ddgs:
+        for result in ddgs.text(query, max_results=num_results):
+            results.append({
+                "url": result.get("href", ""),
+                "title": result.get("title", ""),
+                "snippet": result.get("body", ""),
+            })
+            if len(results) >= num_results:
+                break
+    return results
 
 
 def google_search(query, num_results=3):
-    def _run():
-        results = []
-        with DDGS() as ddgs:
-            for result in ddgs.text(query, max_results=num_results):
-                try:
-                    results.append({
-                        'url': result.get('href', ''),
-                        'title': result.get('title', ''),
-                        'snippet': result.get('body', '')
-                    })
-                    if len(results) >= num_results:
-                        break
-                except Exception:
-                    continue
-        return results
-
+    """
+    Look something up. Returns [] on any failure: a failed search should leave
+    the contact to answer from what it knows and say so, not derail the turn
+    with an exception.
+    """
+    backend = _search_brave if BRAVE_API_KEY else _search_duckduckgo
     try:
+        # Both providers block, and occasionally hang past their own timeouts,
+        # so they run behind a hard deadline of ours.
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_run)
-            return future.result(timeout=_SEARCH_TIMEOUT)
-    except concurrent.futures.TimeoutError:
-        print(f"\033[90m[Search timed out after {_SEARCH_TIMEOUT}s]\033[0m")
-        return []
-    except Exception as e:
-        print(f"\033[90m[Search error: {str(e)}]\033[0m")
+            return executor.submit(backend, query, num_results).result(
+                timeout=_SEARCH_TIMEOUT + 2)
+    except Exception:
         return []
 
 

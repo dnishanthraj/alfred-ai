@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.4.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.5.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
@@ -30,8 +30,9 @@ their own memory on disk.
   `mlx-whisper` on Apple Silicon, `faster-whisper` on CPU elsewhere.
 - **Short- and long-term memory** — recent turns plus an explicit "remember that…"
   vault, per contact, with relevance retrieval once the vault grows.
-- **Optional live web search** — explicit lookups hit DuckDuckGo and are folded into
-  context, with the sources cited in the console.
+- **Optional live web search** — explicit lookups are folded into context.
+  DuckDuckGo by default (no key needed); set `BRAVE_API_KEY` for a real search
+  API with cleaner results and no rate-limiting.
 - **Deterministic conversation guards** — anti-repetition, sign-off suppression, and
   length capping run in code rather than relying on the model to police itself.
 
@@ -121,9 +122,9 @@ their own memory on disk.
 ## The console
 
 `python run.py` serves a local console at `http://127.0.0.1:8420` — a directory
-of contacts on the left, the conversation in the middle, and a radial spectrum
-ring on the right driven by the real FFT of whoever is speaking. Nothing is
-exposed beyond `127.0.0.1`.
+of contacts on the left, and the link itself in the middle: a radial spectrum
+ring driven by the real FFT of whoever is speaking. Nothing is exposed beyond
+`127.0.0.1`.
 
 On load you get a power-on self test and a passcode prompt. That screen is
 theatre, but it is also load-bearing: browsers keep an `AudioContext` suspended
@@ -131,6 +132,13 @@ until the page receives a user gesture, so the console genuinely cannot come up
 without one. **The passcode is not security** — it is checked in the page, the
 server gates nothing on it, and it sits in plain text in `.env`. Don't put
 anything behind it that needs protecting.
+
+**Nobody is on the line until you call them.** Press **Call** next to a contact
+and the instrument materialises; press **End** and it dissolves. There is no
+transcript — only the last thing said to you stays on screen, alongside a quiet
+echo of what the console heard you say. A conversation held out loud does not
+need a log of itself, and a scrollback is the strongest possible reminder that
+you are typing at software.
 
 ### Talking
 
@@ -140,9 +148,21 @@ Two microphone modes, switchable in the composer:
   a noisy room.
 - **Ambient** — the channel stays open. A voice-activity detector decides when
   an utterance starts and ends, and **speaking over a reply cuts it off**, the
-  way interrupting a person does.
+  way interrupting a person does. The mic button becomes *send now*, so you
+  never have to sit through the pause.
 
 Also: type and press Enter, or press **Esc** to silence playback.
+
+### Feedback
+
+A voice assistant that listens while it speaks can hear itself: the reply
+leaves the speakers, the microphone picks it up, and it comes back as though
+you had said it — after which it answers itself, forever. Three things stop it:
+the browser's echo cancellation, a much higher detection threshold (plus a
+cooldown) while a reply is playing, and, as the last line of defence, a check
+that compares every *spoken* transcript against what was just said aloud and
+silently discards a match. Typed input is never subject to that check, so
+quoting a reply back deliberately still works.
 
 ### Why it feels like a conversation
 
@@ -225,6 +245,10 @@ A contact either carries its personality in its own built Ollama model (Alfred
 does — see `Modelfile`) or declares a `system` prompt and shares a base model.
 The second needs no `ollama create`.
 
+`forbidden_address` is enforced in code rather than left to the prompt: a
+smaller, faster model will ignore "never call him lad" often enough to matter,
+and one slip undoes a great deal of careful prompting.
+
 **`primer` is the important field.** Those exchanges are injected as real
 user/assistant turns at the head of every context rather than described in
 prose inside the system prompt. A model imitates a conversation it can see far
@@ -233,8 +257,10 @@ make a character sound like themselves.
 
 ## Latency
 
-Warm, on an M-series Mac with `qwen2.5:14b`: **0.33s to first token, ~23 tok/s,
-about 0.3s from the first sentence being written to audio playing.**
+Warm, on an M-series Mac: **~0.5s to first token, ~34 tok/s, about 0.3s from
+the first sentence being written to audio playing.** Measured on the same
+machine, `qwen2.5:14b` gave 0.33s / 23 tok/s and `qwen2.5:32b` was unusable at
+0.3 tok/s — it swaps.
 
 Two things matter more than the model:
 
@@ -246,9 +272,9 @@ Two things matter more than the model:
 - **Sentence pipelining.** Speech starts on sentence one rather than after the
   whole reply.
 
-If you swap in a **qwen3-family or other reasoning model**, set `"think": false`
-in that contact's profile. Left on, they spend their whole budget on reasoning
-tokens, emit no speakable content, and appear to hang.
+If you use a **reasoning model** (the qwen3 family, deepseek-r1, gpt-oss), set
+`"think": false` in that contact's profile. Left on, they spend their whole
+budget on reasoning tokens, emit no speakable content, and appear to hang.
 
 ## Project structure
 

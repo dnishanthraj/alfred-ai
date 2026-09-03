@@ -16,8 +16,9 @@ are released to the page strictly in order.
 """
 import asyncio
 import threading
+import time
 import uuid
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -28,13 +29,18 @@ from .. import config, events
 from ..audio import stt
 from ..audio.tts import get_voice_engine
 from ..contacts import directory
-from ..engine import ContactSession
+from ..engine import ContactSession, guards
 from ..memory import migrate_legacy
 from ..paths import WEB_DIR
 
 # Synthesized clips waiting to be fetched. Bounded — a long session would
 # otherwise hold every reply's audio in memory for the whole run.
 _MAX_CACHED_CLIPS = 64
+
+# How long a spoken line stays eligible to be recognised as an echo of itself.
+# Long enough to cover a reply playing out plus the transcription round trip,
+# short enough that legitimately repeating a phrase later still gets through.
+ECHO_WINDOW_SECONDS = 25
 
 
 class Console:
@@ -52,7 +58,9 @@ class Console:
         self.sessions = {}
         self.transcripts = {}
         self.current_id = None
-        self.booted = set()
+        # What the contact has said lately, for recognising its own voice
+        # arriving back through the microphone.
+        self.recent_speech = deque(maxlen=12)
         self.boot_task = None
         self.migrated = migrate_legacy(config.DEFAULT_CONTACT)
 
@@ -85,6 +93,8 @@ class Console:
         replay. reply_end is authoritative; an interim holding line is recorded
         as its own turn because that is how it appeared on screen.
         """
+        if self.current_id is None:
+            return
         log = self.transcript(self.current_id)
         kind = event.get("type")
         if kind == "message":
@@ -197,6 +207,7 @@ class Console:
                         "Voice link degraded — switching to text.", "warn"))
                 continue
             if audio:
+                self.recent_speech.append((time.monotonic(), text))
                 await self.broadcast(events.speak(self._store_clip(audio), text, index))
 
     # --- turns ------------------------------------------------------------
@@ -216,9 +227,6 @@ class Console:
                     contact.availability.away_message, "warn"))
                 return
 
-            if contact_id in self.booted:
-                return
-            self.booted.add(contact_id)
             for problem in config.missing_requirements():
                 await self.broadcast(events.notice(problem, "warn"))
             if self.migrated:
@@ -228,9 +236,35 @@ class Console:
                 self.migrated = []
             await self.drive(session.boot(), contact)
 
-    async def submit(self, text):
+    def _is_own_echo(self, text):
+        """
+        Discard a transcript that is the contact's own voice fed back through
+        the microphone. Only recent speech counts: repeating something Alfred
+        said an hour ago is a legitimate thing for a person to do.
+        """
+        cutoff = time.monotonic() - ECHO_WINDOW_SECONDS
+        recent = [line for stamp, line in self.recent_speech if stamp > cutoff]
+        return guards.echoes(text, recent)
+
+    async def disconnect(self):
+        """
+        Hang up. The session and its memory stay — this ends the call, it does
+        not forget the conversation — but nothing is on the line afterwards, and
+        a later call re-greets rather than resuming mid-sentence.
+        """
+        async with self.turn_lock:
+            self.current_id = None
+            self.recent_speech.clear()
+
+    async def submit(self, text, spoken=False):
+        """
+        Run one turn. `spoken` marks input that came from a microphone, which is
+        the only kind that can be an acoustic echo — typed text never is.
+        """
         text = (text or "").strip()
         if not text or not self.current_id:
+            return
+        if spoken and self._is_own_echo(text):
             return
         async with self.turn_lock:
             contact = self.contact
@@ -276,6 +310,7 @@ app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
 def _contact_payload(contact):
+    """What the page is told about a contact — who they are, not what runs them."""
     return {
         "id": contact.id,
         "name": contact.name,
@@ -283,8 +318,6 @@ def _contact_payload(contact):
         "role": contact.role,
         "tagline": contact.tagline,
         "accent": contact.accent,
-        "model": contact.model,
-        "voice": contact.has_voice,
         "available": contact.availability.is_available(),
     }
 
@@ -296,21 +329,20 @@ async def index():
 
 @app.get("/api/session")
 async def session_info():
-    """Everything the console needs to render itself and replay the log."""
-    try:
-        speech = await asyncio.to_thread(stt.backend_name)
-    except Exception as exc:
-        speech = f"unavailable ({exc})"
+    """
+    What the console needs to render itself.
 
+    Deliberately spare. Which model answers, which speech backend is loaded and
+    which synthesiser speaks are all facts about the machinery, and the console
+    is not meant to feel like machinery — so they are not sent to the page at
+    all. Resolving the speech backend also costs a model load, which is a poor
+    thing to pay for a readout nobody needs.
+    """
     return JSONResponse({
         "operator": config.USER_NAME,
-        "stt": speech,
-        "voice": console.voice.available,
-        "passcode_required": bool(config.CONSOLE_PASSCODE),
         "contacts": [_contact_payload(c) for c in console.directory],
         "current": console.current_id,
         "default": config.DEFAULT_CONTACT,
-        "transcript": console.transcript(console.current_id) if console.current_id else [],
     })
 
 
@@ -351,9 +383,12 @@ async def websocket_endpoint(websocket: WebSocket):
             payload = await websocket.receive_json()
             kind = payload.get("type")
             if kind == "prompt":
-                asyncio.create_task(console.submit(payload.get("text", "")))
+                asyncio.create_task(console.submit(
+                    payload.get("text", ""), spoken=bool(payload.get("spoken"))))
             elif kind == "connect":
                 asyncio.create_task(console.connect(payload.get("id", "")))
+            elif kind == "disconnect":
+                asyncio.create_task(console.disconnect())
     except WebSocketDisconnect:
         pass
     except Exception:

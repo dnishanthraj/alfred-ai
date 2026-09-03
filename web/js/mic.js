@@ -41,9 +41,17 @@
   var NOISE_ADAPT_DOWN = 0.02;     // ~0.13s to settle onto a quieter room
   var NOISE_ADAPT_UP = 0.0008;     // ~3s to accept a louder one
   var SPEECH_FACTOR = 2.6;         // energy above floor that counts as speech
-  var SPEECH_FACTOR_DUCKED = 5.0;  // stricter while the contact is talking
+  var SPEECH_FACTOR_DUCKED = 7.0;  // far stricter while the contact is talking
   var ABSOLUTE_FLOOR = 0.0025;
   var ONSET_MS = 80;               // sustained energy before a take opens
+  // Interrupting has to be deliberate. Echo cancellation is imperfect, and a
+  // reply leaking back through the speakers at the same bar as real speech
+  // would let a contact interrupt itself — then answer what it just said, over
+  // and over. Barging in costs a longer, louder commitment.
+  var ONSET_MS_DUCKED = 280;
+  // Reverb and the audio pipeline both outlast the last sample, so the room is
+  // still full of the reply for a moment after playback reports it is done.
+  var ECHO_TAIL_MS = 550;
   // How far below the opening threshold the room must fall before a take is
   // considered over. Deliberately forgiving: ending early truncates the
   // sentence and Whisper transcribes half a thought, while ending late costs a
@@ -79,7 +87,8 @@
     silenceMs: 0,
     speechMs: 0,
     envelope: 0,
-    noiseFloor: 0.01
+    noiseFloor: 0.01,
+    lastPlayingAt: 0
   };
 
   var handlers = {
@@ -222,7 +231,11 @@
     // requires falling well *below* that bar. With a single threshold the
     // detector chatters around it — a sentence would end and immediately
     // reopen, splitting one utterance into two half-transcribed fragments.
-    var ducked = global.ConsoleAudio.isPlaying;
+    if (global.ConsoleAudio.isPlaying) state.lastPlayingAt = Date.now();
+    // Treat the moments just after playback as still "ducked": the tail of the
+    // reply is physically still in the room.
+    var ducked = global.ConsoleAudio.isPlaying ||
+                 (Date.now() - state.lastPlayingAt) < ECHO_TAIL_MS;
     var factor = ducked ? SPEECH_FACTOR_DUCKED : SPEECH_FACTOR;
     var enter = Math.max(state.noiseFloor * factor, ABSOLUTE_FLOOR);
     // The exit bar is also clamped above the measured room, because an exit
@@ -242,7 +255,7 @@
 
       if (voiced) {
         state.speechMs += frameMs;
-        if (state.speechMs >= ONSET_MS) {   // sustained, not a click
+        if (state.speechMs >= (ducked ? ONSET_MS_DUCKED : ONSET_MS)) {
           state.speaking = true;
           state.silenceMs = 0;
           state.chunks = state.preroll.slice();

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-state="idle" data-phase="boot">
+<html lang="en" data-state="idle" data-phase="boot" data-link="off">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -52,74 +52,58 @@
       </svg>
       <span>WayneTech</span>
     </div>
-    <div class="bar__title" id="bar-title">Console</div>
+    <div class="bar__title" id="bar-title"></div>
     <div class="bar__status">
       <span class="bar__clock" id="clock">--:--:--</span>
-      <span class="bar__link" id="link-state">Offline</span>
     </div>
   </header>
 
   <main class="shell">
 
     <!-- Directory -->
-    <aside class="rail rail--left">
-      <section class="panel">
+    <aside class="rail">
+      <section class="panel panel--book">
         <h2 class="panel__label">Directory</h2>
         <ul class="book" id="book"></ul>
       </section>
-
-      <section class="panel panel--sys">
-        <h2 class="panel__label">System</h2>
-        <dl class="readout">
-          <div class="readout__row"><dt>Operator</dt><dd id="rd-operator">—</dd></div>
-          <div class="readout__row"><dt>Model</dt><dd id="rd-model">—</dd></div>
-          <div class="readout__row"><dt>Speech</dt><dd id="rd-stt">—</dd></div>
-          <div class="readout__row"><dt>Voice</dt><dd id="rd-voice">—</dd></div>
-        </dl>
+      <section class="panel panel--foot">
         <button class="lock" id="lock" type="button">Lock Console</button>
       </section>
     </aside>
 
-    <!-- Conversation -->
-    <section class="feed">
-      <div class="log" id="log" role="log" aria-live="polite"></div>
+    <!-- The link itself -->
+    <section class="stage">
+
+      <div class="stage__core">
+        <p class="heard" id="heard" aria-live="polite"></p>
+
+        <div class="viz" id="viz-wrap">
+          <canvas id="viz" aria-hidden="true"></canvas>
+        </div>
+
+        <p class="utterance" id="utterance" role="status" aria-live="polite"></p>
+        <p class="status" id="status"></p>
+
+        <div class="empty" id="empty">
+          <p class="empty__line">No active link</p>
+          <p class="empty__hint">Select a contact to connect</p>
+        </div>
+      </div>
 
       <form class="compose" id="compose">
-        <div class="modes" role="group" aria-label="Microphone mode">
-          <button type="button" class="modes__btn is-on" id="mode-ptt" data-mode="ptt">Push</button>
-          <button type="button" class="modes__btn" id="mode-ambient" data-mode="ambient">Ambient</button>
-        </div>
         <button type="button" class="ptt" id="ptt" title="Hold to speak (or hold Space)">
           <span class="ptt__ring" aria-hidden="true"></span>
           <span class="ptt__glyph" aria-hidden="true"></span>
         </button>
         <input class="compose__input" id="input" type="text" autocomplete="off"
-               spellcheck="false" placeholder="Transmit…">
-        <button type="submit" class="compose__send">Send</button>
-      </form>
-    </section>
-
-    <!-- Instrument -->
-    <aside class="rail rail--right">
-      <section class="panel panel--viz">
-        <span class="tick tick--tl" aria-hidden="true"></span>
-        <span class="tick tick--tr" aria-hidden="true"></span>
-        <span class="tick tick--bl" aria-hidden="true"></span>
-        <span class="tick tick--br" aria-hidden="true"></span>
-        <canvas id="viz" aria-hidden="true"></canvas>
-        <div class="viz__readout">
-          <span class="viz__state" id="viz-state">Standby</span>
-          <span class="viz__sub" id="viz-sub">Awaiting input</span>
+               spellcheck="false" placeholder="Speak, or type here…">
+        <div class="modes" role="group" aria-label="Microphone mode">
+          <button type="button" class="modes__btn is-on" id="mode-ptt">Push</button>
+          <button type="button" class="modes__btn" id="mode-ambient">Ambient</button>
         </div>
-      </section>
+      </form>
 
-      <section class="panel panel--now">
-        <h2 class="panel__label">Connected</h2>
-        <p class="now__name" id="now-name">—</p>
-        <p class="now__role" id="now-role">—</p>
-        <p class="now__tag" id="now-tag"></p>
-      </section>
-    </aside>
+    </section>
 
   </main>
 

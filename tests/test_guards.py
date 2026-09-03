@@ -119,3 +119,79 @@ class TestStack:
             prompt="night, I'm off to bed", max_sentences=4, already_greeted=False,
         )
         assert "night" in result.lower()
+
+
+class TestEchoDetection:
+    """
+    The last line of defence against acoustic feedback: a reply leaves the
+    speakers, the microphone hears it, and it arrives back as though the
+    operator had said it. Left unchecked the contact answers itself forever.
+    """
+
+    SPOKEN = [
+        "Procrastination won't pay the bills. Get on with it.",
+        "I've scraped better men than you off the road.",
+    ]
+
+    @pytest.mark.parametrize("heard", [
+        "Procrastination won't pay the bills. Get on with it.",       # clean echo
+        "procrastination wont pay the bills get on with it",          # lossy STT
+        "Procrastination won't pay the bills",                        # fragment
+    ])
+    def test_catches_its_own_voice(self, heard):
+        assert guards.echoes(heard, self.SPOKEN)
+
+    @pytest.mark.parametrize("heard", [
+        "I'll get on with it tomorrow, I promise",
+        "What did you mean about the road?",
+        "Tell me about the bills again",
+    ])
+    def test_lets_genuine_replies_through(self, heard):
+        assert not guards.echoes(heard, self.SPOKEN)
+
+    def test_short_utterances_are_never_treated_as_echo(self):
+        # Dropping "go on" because it resembled a reply is worse than the echo.
+        assert not guards.echoes("go on", ["Go on, then."])
+        assert not guards.echoes("yes", self.SPOKEN)
+
+    def test_nothing_spoken_means_nothing_to_echo(self):
+        assert not guards.echoes("anything at all here", [])
+
+
+class TestForbiddenAddress:
+    """
+    Forms of address the character would never use, enforced in code because a
+    smaller model ignores the instruction often enough to matter.
+    """
+
+    TERMS = ["lad", "laddie", "my boy", "son", "young man"]
+
+    @pytest.mark.parametrize("text,expected", [
+        ("It's past midnight, lad.", "It's past midnight."),
+        ("Now listen, my boy, this is important.", "Now listen, this is important."),
+        ("Lad, you are being absurd.", "You are being absurd."),
+        ("Go on then lad.", "Go on then."),
+        ("Enough, young man!", "Enough!"),
+    ])
+    def test_removes_the_vocative(self, text, expected):
+        assert guards.strip_forbidden_address(text, self.TERMS) == expected
+
+    @pytest.mark.parametrize("text", [
+        "Your son called earlier.",
+        "The lads at the pub said otherwise.",
+        "Get on with it.",
+    ])
+    def test_leaves_ordinary_usage_alone(self, text):
+        # Only clearly vocative uses go; the same word elsewhere survives.
+        assert guards.strip_forbidden_address(text, self.TERMS) == text
+
+    def test_no_terms_configured_is_a_no_op(self):
+        assert guards.strip_forbidden_address("Right then, lad.", ()) == "Right then, lad."
+
+    def test_runs_as_part_of_the_stack(self):
+        result = guards.apply(
+            "Steady on, lad. Sleep well.",
+            prompt="how are you", max_sentences=4, already_greeted=False,
+            forbidden_address=self.TERMS,
+        )
+        assert result == "Steady on."

@@ -1,15 +1,23 @@
 /* ==========================================================================
    Console client.
 
-   Owns everything presentational: the socket, the directory, the transcript,
-   and the two input modes. The server sends engine events and mp3 bytes;
-   nothing here decides what a contact says.
+   Owns everything presentational: the socket, the directory, the link, and the
+   two input modes. The server sends engine events and mp3 bytes; nothing here
+   decides what a contact says.
 
-   The transcript is revealed *in time with the speech* rather than printed the
-   moment the model finishes writing. A reply that appears on screen before it
-   is spoken reads as a chat log with a voice bolted on; one that appears as it
-   is said reads as someone talking. Words are released across each sentence's
-   real audio duration, weighted by length so longer words take longer.
+   Two deliberate absences shape this file:
+
+   No transcript. A conversation you are having out loud does not need a log of
+   itself, and a scrollback is the strongest possible reminder that you are
+   typing at software. Only the last thing said to you stays on screen.
+
+   No auto-connect. Nobody is on the line until you call them. The instrument
+   materialises when the link opens and dissolves when it closes, so the
+   console is visibly empty when it is empty.
+
+   What the contact says is revealed *in time with the speech*, word by word
+   across each sentence's real audio duration. A reply printed the instant the
+   model finishes writing reads as a chat log with a voice bolted on.
    ========================================================================== */
 
 (function () {
@@ -17,12 +25,13 @@
 
   var el = {};
   var state = {
-    operator: 'Operator',
     contacts: {},
-    currentId: null,
-    turn: null,          // the assistant turn element being spoken into
+    order: [],
+    currentId: null,     // who the console is showing
+    connectedId: null,   // who is actually on the line
     pending: {},         // sentences awaiting audio, by index
-    rendered: {},        // sentence indices already on screen
+    rendered: {},        // sentence indices already shown
+    fresh: true,         // next sentence starts a new utterance
     socket: null,
     viz: null,
     mode: 'ptt',
@@ -31,104 +40,37 @@
     flushTimer: null
   };
 
+  // Deliberately free of machinery. "Composing reply" and "voice synthesis"
+  // describe a program; the point of this console is that it doesn't feel like
+  // one. What is left is what a person on a radio link would say.
   var STATE_COPY = {
-    idle:         ['Standby',      'Awaiting input'],
-    listening:    ['Receiving',    'Channel open'],
-    transcribing: ['Resolving',    'Parsing speech'],
-    searching:    ['Scanning',     'Querying the grid'],
-    thinking:     ['Processing',   'Composing reply'],
-    speaking:     ['Transmitting', 'Voice synthesis active']
+    idle:         '',
+    listening:    'Listening',
+    transcribing: 'One moment',
+    searching:    'Checking',
+    thinking:     '',
+    speaking:     ''
   };
 
   function $(id) { return document.getElementById(id); }
 
   function cacheElements() {
-    ['log', 'input', 'compose', 'ptt', 'clock', 'link-state', 'bar-title', 'book',
-     'lock', 'viz-state', 'viz-sub', 'rd-operator', 'rd-model', 'rd-stt', 'rd-voice',
-     'now-name', 'now-role', 'now-tag', 'mode-ptt', 'mode-ambient'
-    ].forEach(function (id) { el[id] = $(id); });
+    ['input', 'compose', 'ptt', 'clock', 'bar-title', 'book', 'lock',
+     'heard', 'utterance', 'status', 'empty', 'viz-wrap',
+     'mode-ptt', 'mode-ambient'].forEach(function (id) { el[id] = $(id); });
   }
 
-  /* --- transcript -------------------------------------------------------- */
+  /* --- the spoken line ---------------------------------------------------- */
 
-  function atBottom() {
-    return el.log.scrollHeight - el.log.scrollTop - el.log.clientHeight < 90;
-  }
-
-  function scroll(force) {
-    if (force || atBottom()) el.log.scrollTop = el.log.scrollHeight;
-  }
-
-  function contactName() {
-    var c = state.contacts[state.currentId];
-    return c ? c.name : 'Contact';
-  }
-
-  function addTurn(kind, who, text, level) {
-    var stick = atBottom();
-    var turn = document.createElement('article');
-    turn.className = 'turn turn--' + kind;
-    if (level) turn.dataset.level = level;
-
-    var label = document.createElement('span');
-    label.className = 'log__who';
-    label.textContent = who;
-
-    var body = document.createElement('p');
-    body.className = 'log__text';
-    body.textContent = text || '';
-
-    turn.appendChild(label);
-    turn.appendChild(body);
-    el.log.appendChild(turn);
-    scroll(stick);
-    return turn;
-  }
-
-  function addSources(items) {
-    if (!items || !items.length) return;
-    var stick = atBottom();
-    var wrap = document.createElement('div');
-    wrap.className = 'sources';
-
-    var label = document.createElement('span');
-    label.className = 'sources__label';
-    label.textContent = 'Sources';
-
-    var list = document.createElement('ul');
-    list.className = 'sources__list';
-    items.slice(0, 4).forEach(function (item) {
-      if (!item.url) return;
-      var li = document.createElement('li');
-      var a = document.createElement('a');
-      a.href = item.url;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      a.textContent = item.title || item.url;
-      li.appendChild(a);
-      list.appendChild(li);
-    });
-
-    if (!list.children.length) return;
-    wrap.appendChild(label);
-    wrap.appendChild(list);
-    el.log.appendChild(wrap);
-    scroll(stick);
-  }
-
-  function assistantTurn() {
-    if (!state.turn) {
-      state.turn = addTurn('assistant', contactName(), '');
-      state.turn.classList.add('turn--speaking');
-    }
-    return state.turn;
-  }
-
-  function closeTurn() {
-    if (state.turn) state.turn.classList.remove('turn--speaking');
-    state.turn = null;
+  function clearUtterance() {
+    el.utterance.textContent = '';
     state.pending = {};
     state.rendered = {};
+  }
+
+  function showHeard(text) {
+    el.heard.textContent = text ? '“' + text + '”' : '';
+    el.heard.dataset.show = text ? '1' : '0';
   }
 
   /**
@@ -141,11 +83,16 @@
     state.rendered[index] = true;
     delete state.pending[index];
 
-    var body = assistantTurn().querySelector('.log__text');
+    // The first sentence of a reply replaces whatever was said before it.
+    if (state.fresh) {
+      el.utterance.textContent = '';
+      state.fresh = false;
+    }
+
     var span = document.createElement('span');
     span.className = 'said';
-    if (body.textContent) span.textContent = ' ';
-    body.appendChild(span);
+    if (el.utterance.textContent) span.textContent = ' ';
+    el.utterance.appendChild(span);
 
     var words = text.split(/\s+/).filter(Boolean);
     if (!words.length) return;
@@ -153,25 +100,21 @@
     var weights = words.map(function (w) { return w.length + 1; });
     var total = weights.reduce(function (a, b) { return a + b; }, 0);
     // Aim slightly short of the clip so the last word lands before silence.
-    var budget = Math.max(durationMs * 0.92, 220);
+    var budget = Math.max(durationMs * 0.92, 200);
     var elapsed = 0;
 
     words.forEach(function (word, i) {
       var at = elapsed;
       setTimeout(function () {
         span.textContent += (i === 0 ? '' : ' ') + word;
-        scroll(false);
       }, at);
       elapsed += (weights[i] / total) * budget;
     });
   }
 
   /**
-   * The flush is always deferred by a beat, which means it can still be in
-   * flight when the next turn begins — stopping playback to send a new prompt
-   * schedules one, and it would land after the new reply's first sentence had
-   * already arrived, flushing and closing a turn that was still being spoken
-   * into. Any new content cancels a pending flush.
+   * The flush is always deferred by a beat, so it can still be in flight when
+   * the next turn begins — any new content cancels a pending one.
    */
   function scheduleFlush(delay) {
     cancelFlush();
@@ -179,56 +122,52 @@
   }
 
   function cancelFlush() {
-    if (state.flushTimer) {
-      clearTimeout(state.flushTimer);
-      state.flushTimer = null;
-    }
+    if (state.flushTimer) { clearTimeout(state.flushTimer); state.flushTimer = null; }
   }
 
   /**
-   * Put anything that will never be spoken on screen — no voice configured, or
-   * synthesis failed for that sentence — and settle the turn.
-   *
-   * This waits on playback, not just generation: `turn_complete` means every
-   * clip has been *made*, but the first may not have started playing, and
-   * flushing then would print the whole reply for the audio to reveal again.
+   * Show anything that will never be spoken — no voice configured, or
+   * synthesis failed. Waits on playback, not just generation: `turn_complete`
+   * means every clip has been made, but the first may not have started, and
+   * flushing then would print the reply for the audio to reveal again.
    */
   function flushUnspoken() {
     state.flushTimer = null;
-    if (ConsoleAudio.isPlaying) return;   // settle once the audio has drained
+    if (ConsoleAudio.isPlaying) return;
     Object.keys(state.pending)
       .map(Number)
       .sort(function (a, b) { return a - b; })
-      .forEach(function (index) {
-        revealSentence(state.pending[index], index, 0);
-      });
-    closeTurn();
+      .forEach(function (index) { revealSentence(state.pending[index], index, 0); });
   }
 
-  /* --- state ------------------------------------------------------------- */
+  /* --- status ------------------------------------------------------------- */
 
   function setState(value) {
     document.documentElement.dataset.state = value;
-    var copy = STATE_COPY[value] || STATE_COPY.idle;
-    el['viz-state'].textContent = copy[0];
-    el['viz-sub'].textContent = copy[1];
+    el.status.textContent = STATE_COPY[value] || '';
     if (state.viz) state.viz.setMode(value);
   }
 
-  /* --- directory --------------------------------------------------------- */
+  function setLink(value) {
+    document.documentElement.dataset.link = value;
+    renderDirectory();
+  }
 
-  function renderDirectory(contacts) {
+  /* --- directory ---------------------------------------------------------- */
+
+  function renderDirectory() {
     el.book.innerHTML = '';
-    contacts.forEach(function (contact) {
-      state.contacts[contact.id] = contact;
+    state.order.forEach(function (id) {
+      var contact = state.contacts[id];
+      var live = state.connectedId === id;
 
       var li = document.createElement('li');
-      var button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'book__item';
-      button.style.setProperty('--contact-accent', contact.accent);
-      button.dataset.available = contact.available ? '1' : '0';
-      button.setAttribute('aria-current', String(contact.id === state.currentId));
+      li.className = 'book__item';
+      li.dataset.live = live ? '1' : '0';
+      li.style.setProperty('--contact-accent', contact.accent);
+
+      var row = document.createElement('div');
+      row.className = 'book__row';
 
       var dot = document.createElement('span');
       dot.className = 'book__dot';
@@ -239,50 +178,64 @@
       name.textContent = contact.name;
       var role = document.createElement('span');
       role.className = 'book__role';
-      role.textContent = contact.available ? contact.role : 'Unavailable';
+      role.textContent = live ? 'Connected'
+                              : (contact.available ? contact.role : 'Unavailable');
       text.appendChild(name);
       text.appendChild(role);
 
-      button.appendChild(dot);
-      button.appendChild(text);
-      button.addEventListener('click', function () { connect(contact.id); });
+      row.appendChild(dot);
+      row.appendChild(text);
 
-      li.appendChild(button);
+      var call = document.createElement('button');
+      call.type = 'button';
+      call.className = 'book__call';
+      call.dataset.live = live ? '1' : '0';
+      call.textContent = live ? 'End' : 'Call';
+      call.disabled = !contact.available && !live;
+      call.addEventListener('click', function () {
+        if (live) hangUp(); else placeCall(id);
+      });
+
+      li.appendChild(row);
+      li.appendChild(call);
       el.book.appendChild(li);
     });
   }
 
-  function setCurrent(contactId) {
+  function placeCall(contactId) {
     var contact = state.contacts[contactId];
     if (!contact) return;
     state.currentId = contactId;
-
+    state.connectedId = contactId;
     document.documentElement.style.setProperty('--contact-accent', contact.accent);
     el['bar-title'].textContent = contact.full_name;
-    el['now-name'].textContent = contact.full_name;
-    el['now-role'].textContent = contact.role;
-    el['now-tag'].textContent = contact.tagline || '';
-    el['rd-model'].textContent = contact.model;
-    el['rd-voice'].textContent = contact.voice ? 'ElevenLabs' : 'Unavailable';
-    el['rd-voice'].dataset.ok = contact.voice ? '1' : '0';
     document.title = contact.name + ' · WayneTech Console';
 
-    Array.prototype.forEach.call(el.book.querySelectorAll('.book__item'), function (b, i) {
-      var id = Object.keys(state.contacts)[i];
-      b.setAttribute('aria-current', String(id === contactId));
-    });
-  }
-
-  function connect(contactId) {
-    if (contactId === state.currentId) return;
-    ConsoleAudio.stop();
-    closeTurn();
-    el.log.innerHTML = '';
-    setCurrent(contactId);
+    clearUtterance();
+    showHeard('');
+    state.fresh = true;
+    setLink('connecting');
+    setState('thinking');
     send({ type: 'connect', id: contactId });
+    el.input.focus();
   }
 
-  /* --- socket ------------------------------------------------------------ */
+  function hangUp() {
+    ConsoleAudio.stop();
+    ConsoleMic.close();
+    setMode('ptt');
+    send({ type: 'disconnect' });
+    state.connectedId = null;
+    el['bar-title'].textContent = '';
+    document.title = 'WayneTech Console';
+    clearUtterance();
+    showHeard('');
+    state.fresh = true;
+    setLink('off');
+    setState('idle');
+  }
+
+  /* --- socket ------------------------------------------------------------- */
 
   function send(payload) {
     if (state.socket && state.socket.readyState === WebSocket.OPEN) {
@@ -291,6 +244,12 @@
   }
 
   function handle(event) {
+    // Nothing on the line means nothing to render. Without this, hanging up
+    // mid-reply leaves the rest of the turn still arriving: sentences queue,
+    // audio plays, and a contact you just cut off keeps talking.
+    var conversational = event.type !== 'notice';
+    if (!state.connectedId && conversational) return;
+
     switch (event.type) {
       case 'state':
         // Playback owns the speaking state; the engine going idle mid-clip
@@ -298,53 +257,48 @@
         if (!(ConsoleAudio.isPlaying && event.value === 'idle')) setState(event.value);
         break;
 
-      case 'contact':
-        setCurrent(event.id);
-        break;
-
       case 'message':
         if (event.role === 'user') {
           cancelFlush();
-          closeTurn();
-          addTurn('user', state.operator, event.text);
+          showHeard(event.text);
+          // Clear his last line straight away. Leaving it up pairs your new
+          // question with his answer to the previous one, which reads as a
+          // non-sequitur for however long he takes to reply.
+          clearUtterance();
+          state.fresh = true;
         }
         break;
 
       case 'reply_start':
         cancelFlush();
-        closeTurn();
         state.generationDone = false;
         break;
 
       case 'sentence':
-        // Held, not rendered: it appears when its audio starts.
+        // Held, not shown: it appears when its audio starts.
         cancelFlush();
         state.generationDone = false;
         state.pending[event.index] = event.text;
-        assistantTurn();
+        if (document.documentElement.dataset.link === 'connecting') setLink('on');
         break;
 
       case 'speak':
         ConsoleAudio.enqueue(event.audio_id, event.text, event.index);
         break;
 
-      case 'sources':
-        addSources(event.items);
-        break;
-
       case 'reply_end':
         break;   // audio may still be in flight; wait for turn_complete
 
       case 'turn_complete':
-        // Generation and synthesis are both finished. If nothing is playing —
-        // no voice, or every clip failed — settle now; otherwise the audio
-        // finishing will do it.
         state.generationDone = true;
+        if (document.documentElement.dataset.link === 'connecting') setLink('on');
         scheduleFlush(60);
         break;
 
       case 'notice':
-        addTurn('system', 'System', event.text, event.level);
+        // System messages share the utterance line rather than a log, and are
+        // rare by design — a missing voice key, a degraded link.
+        el.status.textContent = event.text;
         break;
     }
   }
@@ -353,26 +307,22 @@
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     state.socket = new WebSocket(proto + '//' + location.host + '/ws');
 
-    state.socket.onopen = function () {
-      el['link-state'].textContent = 'Link Active';
-      el['link-state'].dataset.up = '1';
-      send({ type: 'connect', id: state.currentId });
-    };
+    // Note: no auto-connect here. The socket being up is not the same as
+    // someone being on the line.
     state.socket.onmessage = function (message) {
       try { handle(JSON.parse(message.data)); } catch (e) { /* malformed frame */ }
     };
     state.socket.onclose = function () {
-      el['link-state'].textContent = 'Reconnecting';
-      el['link-state'].dataset.up = '0';
       setState('idle');
       setTimeout(connectSocket, 1500);
     };
     state.socket.onerror = function () { try { state.socket.close(); } catch (e) {} };
   }
 
-  /* --- speech in --------------------------------------------------------- */
+  /* --- speech in ---------------------------------------------------------- */
 
   function submitAudio(pcm) {
+    if (!state.connectedId) return;
     setState('transcribing');
     fetch('/api/transcribe', {
       method: 'POST',
@@ -383,12 +333,11 @@
       .then(function (data) {
         var text = (data.text || '').trim();
         if (!text) { setState('idle'); return; }
-        send({ type: 'prompt', text: text });
+        // Flagged as spoken so the server can reject it if it is the contact's
+        // own voice arriving back through the microphone.
+        send({ type: 'prompt', text: text, spoken: true });
       })
-      .catch(function (err) {
-        setState('idle');
-        addTurn('system', 'System', 'Transcription failed: ' + err.message, 'error');
-      });
+      .catch(function () { setState('idle'); });
   }
 
   function setMode(mode) {
@@ -400,18 +349,17 @@
       ? 'Listening — click to send now'
       : 'Hold to speak (or hold Space)';
     ConsoleMic.setMode(mode).catch(function () {
-      // Permission refused — fall back rather than leaving a dead toggle.
       if (mode === 'ambient') setMode('ptt');
     });
   }
 
-  /* --- wiring ------------------------------------------------------------ */
+  /* --- wiring ------------------------------------------------------------- */
 
   function wireInput() {
     el.compose.addEventListener('submit', function (e) {
       e.preventDefault();
       var text = el.input.value.trim();
-      if (!text) return;
+      if (!text || !state.connectedId) return;
       ConsoleAudio.stop();
       el.input.value = '';
       send({ type: 'prompt', text: text });
@@ -419,12 +367,9 @@
 
     el.ptt.addEventListener('pointerdown', function (e) {
       e.preventDefault();
-      // In ambient mode the button means "that's it, go" — ending the take now
-      // instead of waiting out the silence hangover.
-      if (state.mode === 'ambient') {
-        ConsoleMic.cut();
-        return;
-      }
+      if (!state.connectedId) return;
+      // In ambient mode the button means "that's it, go".
+      if (state.mode === 'ambient') { ConsoleMic.cut(); return; }
       ConsoleAudio.stop();
       setState('listening');
       ConsoleMic.pushStart();
@@ -436,23 +381,22 @@
     });
 
     el['mode-ptt'].addEventListener('click', function () { setMode('ptt'); });
-    el['mode-ambient'].addEventListener('click', function () { setMode('ambient'); });
+    el['mode-ambient'].addEventListener('click', function () {
+      if (state.connectedId) setMode('ambient');
+    });
 
     el.lock.addEventListener('click', function () {
-      ConsoleAudio.stop();
-      ConsoleMic.close();
-      setMode('ptt');
+      if (state.connectedId) hangUp();
       ConsoleBoot.lock();
       startBoot();
     });
 
-    // Hold Space to talk, but never while typing or locked.
     window.addEventListener('keydown', function (e) {
       if (document.documentElement.dataset.phase !== 'live') return;
       if (e.key === 'Escape') { ConsoleAudio.stop(); return; }
       if (e.code !== 'Space' || state.spaceDown) return;
       if (document.activeElement === el.input) return;
-      if (state.mode !== 'ptt') return;
+      if (state.mode !== 'ptt' || !state.connectedId) return;
       e.preventDefault();
       state.spaceDown = true;
       ConsoleAudio.stop();
@@ -473,17 +417,12 @@
     });
     ConsoleAudio.on('onIdle', function () {
       if (document.documentElement.dataset.state === 'speaking') setState('idle');
-      // Audio draining is only the end of the turn if the model has also
-      // stopped writing — otherwise a sentence still in synthesis would land
-      // in a fresh bubble and split the reply in two.
       if (state.generationDone) scheduleFlush(40);
     });
   }
 
   function wireMic() {
-    ConsoleMic.on('onLevel', function (level) {
-      if (state.viz) state.viz.setLevel(level);
-    });
+    ConsoleMic.on('onLevel', function (level) { if (state.viz) state.viz.setLevel(level); });
     ConsoleMic.on('onUtterance', submitAudio);
     ConsoleMic.on('onSpeechStart', function () { setState('listening'); });
     ConsoleMic.on('onSpeechEnd', function () {
@@ -492,42 +431,28 @@
     ConsoleMic.on('onBargeIn', function () {
       // Talking over a reply cuts it off, the way interrupting a person does.
       ConsoleAudio.stop();
-      closeTurn();
     });
-    ConsoleMic.on('onError', function (err) {
-      addTurn('system', 'System', 'Microphone unavailable: ' + err.message, 'error');
+    ConsoleMic.on('onError', function () {
+      el.status.textContent = 'Microphone unavailable';
     });
   }
 
-  /* --- session ----------------------------------------------------------- */
+  /* --- session ------------------------------------------------------------ */
 
   function loadSession() {
     return fetch('/api/session').then(function (r) { return r.json(); }).then(function (info) {
-      state.operator = info.operator || 'Operator';
-      el['rd-operator'].textContent = state.operator;
-      el['rd-stt'].textContent = info.stt || '—';
-
-      renderDirectory(info.contacts || []);
-      state.currentId = info.current || info.default || (info.contacts[0] || {}).id;
-      if (state.currentId) setCurrent(state.currentId);
-
-      (info.transcript || []).forEach(function (turn) {
-        if (turn.role === 'system') {
-          addTurn('system', 'System', turn.text, turn.level);
-        } else if (turn.role === 'sources') {
-          addSources(turn.items);
-        } else {
-          addTurn(turn.role, turn.role === 'user' ? state.operator : contactName(), turn.text);
-        }
+      (info.contacts || []).forEach(function (contact) {
+        state.contacts[contact.id] = contact;
+        state.order.push(contact.id);
       });
-      scroll(true);
+      renderDirectory();
       return info;
     });
   }
 
   function startBoot() {
     ConsoleBoot.start({
-      contactCount: Object.keys(state.contacts).length,
+      contactCount: state.order.length,
       onAuthenticated: function () {
         el.input.focus();
         if (!state.socket || state.socket.readyState > WebSocket.OPEN) connectSocket();
@@ -535,7 +460,7 @@
     });
   }
 
-  /* --- clock ------------------------------------------------------------- */
+  /* --- clock -------------------------------------------------------------- */
 
   setInterval(function () {
     var now = new Date();
@@ -543,17 +468,14 @@
       .map(function (n) { return String(n).padStart(2, '0'); }).join(':');
   }, 1000);
 
-  /* --- go ---------------------------------------------------------------- */
+  /* --- go ----------------------------------------------------------------- */
 
   cacheElements();
   state.viz = new Visualizer($('viz'));
   setState('idle');
+  setLink('off');
   wireInput();
   wireAudio();
   wireMic();
-
-  loadSession().then(startBoot, function () {
-    addTurn('system', 'System', 'Could not reach the console API.', 'error');
-    startBoot();
-  });
+  loadSession().then(startBoot, startBoot);
 })();

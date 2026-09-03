@@ -61,6 +61,10 @@ class Contact:
     # when explicitly declared, because passing it to a model that has no
     # thinking mode is an error.
     think: bool | None = None
+    # Forms of address this character would never use. Enforced in code
+    # because a smaller model will ignore the instruction often enough to
+    # matter, and one "lad" undoes a great deal of careful prompting.
+    forbidden_address: tuple = ()
     primer: tuple = ()
     availability: Availability = field(default_factory=Availability)
 
@@ -109,6 +113,7 @@ def _load_profile(path):
         boot_prompts=raw.get("boot_prompts", {}),
         system=raw.get("system", ""),
         think=raw.get("think"),
+        forbidden_address=tuple(raw.get("forbidden_address", [])),
         primer=tuple(raw.get("primer", [])),
         availability=availability,
     )

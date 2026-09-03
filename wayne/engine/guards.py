@@ -130,11 +130,76 @@ def too_similar(candidate, recent, threshold=0.75):
     return False
 
 
-def apply(text, prompt, max_sentences, already_greeted):
+def echoes(text, recently_spoken, threshold=0.62):
+    """
+    True if a transcript looks like the contact's own voice coming back.
+
+    Echo cancellation is imperfect: a reply leaves the speakers, the microphone
+    hears it, speech-to-text renders it as the operator, and the contact
+    answers what it just said — a loop that sustains itself indefinitely once
+    started. Thresholds alone cannot close this, because on a bad take the echo
+    genuinely is louder than the room.
+
+    So the last line of defence is semantic rather than acoustic: whatever the
+    contact just said is compared against what supposedly just arrived. The
+    threshold is deliberately loose, since transcription of speaker output is
+    lossy — it will be a mangled version of the reply, not a copy of it.
+    """
+    candidate = (text or "").strip().lower()
+    if len(candidate.split()) < 3:
+        # Too short to attribute confidently, and dropping "yes" or "go on"
+        # because it resembled a reply would be worse than the occasional echo.
+        return False
+
+    for spoken in recently_spoken:
+        previous = (spoken or "").strip().lower()
+        if not previous:
+            continue
+        if difflib.SequenceMatcher(None, candidate, previous).ratio() >= threshold:
+            return True
+        # A short echo of a long reply scores low overall but is near-identical
+        # to the fragment it came from, so check containment both ways.
+        shorter, longer = sorted((candidate, previous), key=len)
+        if len(shorter) >= 18 and shorter in longer:
+            return True
+    return False
+
+
+def strip_forbidden_address(text, terms):
+    """
+    Remove forms of address a character would never use.
+
+    A system prompt can say "never call him lad" and a large model will mostly
+    obey; a smaller, faster one will not, and one slip is enough to break the
+    illusion the whole console exists to sustain. Only clearly vocative uses
+    are removed — the term adjacent to a comma or ending a sentence — so
+    ordinary occurrences of the same word survive.
+    """
+    if not terms:
+        return text
+    for term in terms:
+        word = re.escape(term)
+        # ", lad." / ", lad?"  ->  "."
+        text = re.sub(rf",\s*{word}\b(?=\s*[.!?,]|$)", "", text, flags=re.I)
+        # "Lad, ..." at the start of a sentence — the word that follows has to
+        # be re-capitalised, or removing the vocative leaves a lowercase start.
+        text = re.sub(
+            rf"(^|(?<=[.!?]\s)){word}\s*,\s*(\w)",
+            lambda m: m.group(1) + m.group(2).upper(),
+            text, flags=re.I,
+        )
+        # " ... lad." with no comma, still clearly a vocative at the end
+        text = re.sub(rf"\s+{word}\b(?=\s*[.!?]|$)", "", text, flags=re.I)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
+def apply(text, prompt, max_sentences, already_greeted, forbidden_address=()):
     """
     The full guard stack. Order matters: sign-offs first (tail), then the
     greeting (head), then the runaway cap.
     """
+    if forbidden_address:
+        text = strip_forbidden_address(text, forbidden_address)
     if not user_is_leaving(prompt):
         text = strip_signoffs(text)
     if already_greeted:

@@ -3,6 +3,45 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.5.0] - 2026-09-04
+
+### Fixed
+
+- **Runaway conversation loops.** With the microphone open, a reply left the
+  speakers, was picked up, transcribed as the operator, and answered — which
+  produced another reply, indefinitely. Now defended three ways: a far higher
+  detection threshold plus a cooldown while audio is playing, a longer and
+  louder commitment required to barge in, and a semantic check that compares
+  every *spoken* transcript against what was just said aloud and discards a
+  match. Typed input is exempt, so quoting a reply back on purpose still works.
+- **Hanging up mid-reply left the rest of the turn arriving** — sentences kept
+  queueing and audio kept playing after the link was closed.
+- A new question was displayed against the previous answer for as long as the
+  reply took, which read as a non-sequitur.
+- Stale rules from the previous layout were duplicated in the stylesheet and
+  overrode the new ones.
+
+### Changed
+
+- **The console is a link, not a chat window.** Nothing connects until you
+  press Call; the instrument materialises on connect and dissolves on End.
+  There is no transcript — only the last thing said to you, with a quiet echo
+  of what the console heard from you. Model name, speech backend and
+  synthesiser are gone from the interface and from the session payload
+  entirely; status text no longer describes machinery.
+- **Alfred now runs on `qwen3.5:9b` with reasoning disabled** (`alfred-q35`),
+  benchmarked on the same machine at ~34 tok/s against 23 for `qwen2.5:14b`,
+  with sharper in-character replies.
+- Search is pluggable: DuckDuckGo by default, Brave when `BRAVE_API_KEY` is set.
+
+### Added
+
+- **`forbidden_address`** per contact — forms of address the character would
+  never use, stripped deterministically. A smaller model ignores the
+  instruction often enough that one "lad" undoes the prompting around it.
+- Ambient mode's mic button now ends the current take instead of waiting out
+  the silence hangover.
+
 ## [0.4.0] - 2026-09-04
 
 ### Fixed

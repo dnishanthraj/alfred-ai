@@ -109,7 +109,8 @@ class ContactSession:
         def finalize(sentence):
             """Guard one sentence. Returns (emit, sentence) or (False, None)."""
             nonlocal index
-            text = sentence.strip()
+            text = guards.strip_forbidden_address(
+                sentence.strip(), self.contact.forbidden_address)
             if not text:
                 return False, None
             if index == 0 and not spoken and self.already_greeted:
@@ -202,7 +203,7 @@ class ContactSession:
         if not text:
             text = "Mm."
         text = guards.apply(text, prompt, self.contact.max_reply_sentences,
-                            self.already_greeted)
+                            self.already_greeted, self.contact.forbidden_address)
         for i, sentence in enumerate(guards.split_sentences(text)):
             if sentence.strip():
                 yield events.sentence(i, sentence.strip())
