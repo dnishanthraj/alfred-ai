@@ -8,16 +8,16 @@ a model load and polluting the output.
 """
 import io
 import os
+import queue
 import re
 import sys
-import queue
 import threading
 import time
 
 import numpy as np
 import sounddevice as sd
 
-from .config import WHISPER_HINT_PROMPT
+from ..config import WHISPER_HINT_PROMPT
 
 SAMPLE_RATE = 16000
 CHANNELS = 1

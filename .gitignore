@@ -18,9 +18,16 @@ Modelfile
 *.wav
 *.mp4
 
-# Persistent state (machine-specific, contains conversation history/personal facts)
+# Persistent state (machine-specific, contains conversation history/personal facts).
+# One directory per contact: data/<contact>/history.json + vault.txt
+data/
 batcomputer_history.json
 batcomputer_vault.txt
+*.migrated
+
+# Test / tooling caches
+.pytest_cache/
+.ruff_cache/
 
 # Personal working notes (rough, not curated for public consumption)
 TODO.md

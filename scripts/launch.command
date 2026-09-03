@@ -1,10 +1,10 @@
 #!/bin/bash
-# Double-click launcher for the Alfred web console.
+# Double-click launcher for the WayneTech console.
 #
-# Replaces the old version, which drove Ghostty through System Events
-# keystrokes — that needed Accessibility permission, broke if the terminal
-# wasn't named "Ghostty", and left the app running inside a scratch tab.
-# This just starts the server and opens the browser.
+# Starts Ollama if it isn't already running, then serves the console and opens
+# it in the browser. The previous version drove Ghostty through System Events
+# keystrokes, which needed Accessibility permission and broke if the terminal
+# wasn't named "Ghostty".
 
 set -euo pipefail
 
@@ -13,7 +13,8 @@ cd "$DIR"
 
 if [ ! -x "venv/bin/python" ]; then
   echo "No virtualenv found at $DIR/venv"
-  echo "Create one first:  python3.11 -m venv venv && source venv/bin/activate && pip install -r requirements.txt"
+  echo "Create one first:"
+  echo "  python3.11 -m venv venv && source venv/bin/activate && pip install -r requirements.txt"
   read -r -p "Press return to close."
   exit 1
 fi
@@ -24,5 +25,5 @@ if ! pgrep -f "ollama serve" > /dev/null 2>&1; then
   sleep 2
 fi
 
-echo "Starting the B.A.T. console…"
+echo "Starting the console…"
 exec venv/bin/python run.py

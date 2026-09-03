@@ -1,44 +1,58 @@
 <!doctype html>
-<html lang="en" data-state="idle">
+<html lang="en" data-state="idle" data-phase="boot">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WayneTech · B.A.T. Console</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 40'%3E%3Cpath fill='%23e0a33e' d='M60 9 L57.5 4 L55.5 10C48 8 40 7 32 9C24 11 14 13 4 11C9 16 10 22 8 28C16 26 22 28 27 33C30 28 36 25 42 26C46 27 50 30 53 34L60 36L67 34C70 30 74 27 78 26C84 25 90 28 93 33C98 28 104 26 112 28C110 22 111 16 116 11C106 13 96 11 88 9C80 7 72 8 64.5 10L62.5 4Z'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/console.css">
+  <title>WayneTech Console</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg fill='none' stroke='%234FA8E0' stroke-width='2'%3E%3Ccircle cx='16' cy='16' r='13' stroke-dasharray='30 12'/%3E%3Ccircle cx='16' cy='16' r='7' stroke-dasharray='16 8'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='2' fill='%238FD3FF'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/css/console.css">
 </head>
 <body>
 
-  <!-- Browsers hold an AudioContext suspended until a user gesture, so the
-       link has to be established by hand. Thematically apt. -->
+  <!-- ── Boot / authorisation ─────────────────────────────────────────── -->
   <div class="gate" id="gate">
     <div class="gate__inner">
-      <div class="gate__mark" aria-hidden="true">
-        <svg viewBox="0 0 120 40" width="168" height="56" role="img">
-          <path fill="currentColor" d="M60 9 L57.5 4 L55.5 10
-            C48 8 40 7 32 9 C24 11 14 13 4 11
-            C9 16 10 22 8 28 C16 26 22 28 27 33
-            C30 28 36 25 42 26 C46 27 50 30 53 34
-            L60 36 L67 34 C70 30 74 27 78 26
-            C84 25 90 28 93 33 C98 28 104 26 112 28
-            C110 22 111 16 116 11 C106 13 96 11 88 9
-            C80 7 72 8 64.5 10 L62.5 4 Z"/>
-        </svg>
-      </div>
+
+      <svg class="mark" id="mark" viewBox="0 0 120 120" width="118" height="118" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-linecap="round">
+          <circle class="mark__ring mark__ring--1" cx="60" cy="60" r="52" stroke-width="1"
+                  stroke-dasharray="120 46"/>
+          <circle class="mark__ring mark__ring--2" cx="60" cy="60" r="38" stroke-width="1"
+                  stroke-dasharray="62 30"/>
+          <circle class="mark__ring mark__ring--3" cx="60" cy="60" r="24" stroke-width="1"
+                  stroke-dasharray="30 18"/>
+        </g>
+        <circle class="mark__core" cx="60" cy="60" r="3.5" fill="currentColor"/>
+      </svg>
+
       <p class="gate__eyebrow">Wayne Enterprises · Applied Sciences</p>
-      <h1 class="gate__title">B.A.T. Console</h1>
-      <p class="gate__note">Secure local link. No transcript leaves this machine.</p>
-      <button class="gate__btn" id="gate-btn">Establish Link</button>
-      <p class="gate__hint" id="gate-hint">Audio subsystem requires operator confirmation</p>
+
+      <ol class="post" id="post" aria-live="polite"></ol>
+
+      <form class="auth" id="auth" hidden>
+        <label class="auth__label" for="passcode">Authorization</label>
+        <input class="auth__input" id="passcode" type="password" autocomplete="off"
+               spellcheck="false" placeholder="············">
+        <button class="auth__btn" type="submit">Authenticate</button>
+        <p class="auth__msg" id="auth-msg"></p>
+      </form>
+
     </div>
   </div>
 
+  <!-- ── Console ──────────────────────────────────────────────────────── -->
   <header class="bar">
-    <div class="bar__id">
-      <span class="bar__dot" aria-hidden="true"></span>
-      <span class="bar__name" id="assistant-name">Alfred</span>
+    <div class="bar__brand">
+      <svg viewBox="0 0 32 32" width="15" height="15" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="16" cy="16" r="13" stroke-dasharray="30 12"/>
+          <circle cx="16" cy="16" r="7" stroke-dasharray="16 8"/>
+        </g>
+        <circle cx="16" cy="16" r="2.5" fill="currentColor"/>
+      </svg>
+      <span>WayneTech</span>
     </div>
-    <div class="bar__title">WayneTech · B.A.T. Console</div>
+    <div class="bar__title" id="bar-title">Console</div>
     <div class="bar__status">
       <span class="bar__clock" id="clock">--:--:--</span>
       <span class="bar__link" id="link-state">Offline</span>
@@ -47,8 +61,47 @@
 
   <main class="shell">
 
-    <section class="rail">
-      <div class="panel panel--viz">
+    <!-- Directory -->
+    <aside class="rail rail--left">
+      <section class="panel">
+        <h2 class="panel__label">Directory</h2>
+        <ul class="book" id="book"></ul>
+      </section>
+
+      <section class="panel panel--sys">
+        <h2 class="panel__label">System</h2>
+        <dl class="readout">
+          <div class="readout__row"><dt>Operator</dt><dd id="rd-operator">—</dd></div>
+          <div class="readout__row"><dt>Model</dt><dd id="rd-model">—</dd></div>
+          <div class="readout__row"><dt>Speech</dt><dd id="rd-stt">—</dd></div>
+          <div class="readout__row"><dt>Voice</dt><dd id="rd-voice">—</dd></div>
+        </dl>
+        <button class="lock" id="lock" type="button">Lock Console</button>
+      </section>
+    </aside>
+
+    <!-- Conversation -->
+    <section class="feed">
+      <div class="log" id="log" role="log" aria-live="polite"></div>
+
+      <form class="compose" id="compose">
+        <div class="modes" role="group" aria-label="Microphone mode">
+          <button type="button" class="modes__btn is-on" id="mode-ptt" data-mode="ptt">Push</button>
+          <button type="button" class="modes__btn" id="mode-ambient" data-mode="ambient">Ambient</button>
+        </div>
+        <button type="button" class="ptt" id="ptt" title="Hold to speak (or hold Space)">
+          <span class="ptt__ring" aria-hidden="true"></span>
+          <span class="ptt__glyph" aria-hidden="true"></span>
+        </button>
+        <input class="compose__input" id="input" type="text" autocomplete="off"
+               spellcheck="false" placeholder="Transmit…">
+        <button type="submit" class="compose__send">Send</button>
+      </form>
+    </section>
+
+    <!-- Instrument -->
+    <aside class="rail rail--right">
+      <section class="panel panel--viz">
         <span class="tick tick--tl" aria-hidden="true"></span>
         <span class="tick tick--tr" aria-hidden="true"></span>
         <span class="tick tick--bl" aria-hidden="true"></span>
@@ -58,38 +111,24 @@
           <span class="viz__state" id="viz-state">Standby</span>
           <span class="viz__sub" id="viz-sub">Awaiting input</span>
         </div>
-      </div>
+      </section>
 
-      <div class="panel panel--data">
-        <h2 class="panel__label">System</h2>
-        <dl class="readout">
-          <div class="readout__row"><dt>Model</dt><dd id="rd-model">—</dd></div>
-          <div class="readout__row"><dt>Speech</dt><dd id="rd-stt">—</dd></div>
-          <div class="readout__row"><dt>Voice</dt><dd id="rd-voice">—</dd></div>
-          <div class="readout__row"><dt>Operator</dt><dd id="rd-user">—</dd></div>
-        </dl>
-      </div>
-    </section>
-
-    <section class="feed">
-      <div class="log" id="log" role="log" aria-live="polite"></div>
-
-      <form class="compose" id="compose">
-        <button type="button" class="ptt" id="ptt" title="Hold to speak (or hold Space)">
-          <span class="ptt__ring" aria-hidden="true"></span>
-          <span class="ptt__label">Hold</span>
-        </button>
-        <input class="compose__input" id="input" type="text" autocomplete="off"
-               spellcheck="false" placeholder="Transmit…">
-        <button type="submit" class="compose__send" id="send" title="Send">Send</button>
-      </form>
-    </section>
+      <section class="panel panel--now">
+        <h2 class="panel__label">Connected</h2>
+        <p class="now__name" id="now-name">—</p>
+        <p class="now__role" id="now-role">—</p>
+        <p class="now__tag" id="now-tag"></p>
+      </section>
+    </aside>
 
   </main>
 
   <div class="grain" aria-hidden="true"></div>
 
-  <script src="/static/visualizer.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/js/visualizer.js"></script>
+  <script src="/static/js/audio.js"></script>
+  <script src="/static/js/mic.js"></script>
+  <script src="/static/js/boot.js"></script>
+  <script src="/static/js/app.js"></script>
 </body>
 </html>

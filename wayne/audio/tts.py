@@ -14,7 +14,7 @@ import time
 
 import requests
 
-from .config import ALFRED_VOICE_ID, ELEVENLABS_API_KEY, ELEVENLABS_MODEL
+from ..config import ELEVENLABS_API_KEY, ELEVENLABS_MODEL
 
 PLAYBACK_SPEED = 1.0
 _REQUEST_TIMEOUT = 30
@@ -36,22 +36,25 @@ class AlfredVoiceService:
 
     @property
     def available(self):
-        return bool(ELEVENLABS_API_KEY and ALFRED_VOICE_ID)
+        return bool(ELEVENLABS_API_KEY)
 
     # --- synthesis --------------------------------------------------------
 
-    def synthesize(self, text):
+    def synthesize(self, text, voice_id):
         """
-        Turn text into mp3 bytes. Raises SynthesisError rather than printing,
-        so the caller can route the failure to a terminal or a web console.
+        Turn text into mp3 bytes in a given contact's voice. Raises
+        SynthesisError rather than printing, so the caller can route the
+        failure to a terminal or a web console.
         """
         if not text or not text.strip():
             return b""
-        if not self.available:
-            raise SynthesisError("ElevenLabs is not configured (API key or voice ID missing)")
+        if not ELEVENLABS_API_KEY:
+            raise SynthesisError("ELEVENLABS_API_KEY is not set")
+        if not voice_id:
+            raise SynthesisError("This contact has no voice ID configured")
 
         response = requests.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{ALFRED_VOICE_ID}",
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
             json={"text": text, "model_id": ELEVENLABS_MODEL},
             headers={
                 "Accept": "audio/mpeg",
@@ -85,15 +88,15 @@ class AlfredVoiceService:
             except OSError:
                 pass
 
-    def speak(self, text, interrupt_check=None, on_error=None):
+    def speak(self, text, voice_id, interrupt_check=None, on_error=None):
         """
         Synthesize and play on a background thread. Synthesis is a network call
         — doing it on the caller's thread stalls the input loop for as long as
-        ElevenLabs takes, which is what the old `_speak_async` did.
+        ElevenLabs takes.
         """
         def _run():
             try:
-                audio = self.synthesize(text)
+                audio = self.synthesize(text, voice_id)
             except (SynthesisError, requests.RequestException) as exc:
                 if on_error:
                     on_error(str(exc))

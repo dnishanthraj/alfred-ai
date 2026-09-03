@@ -1,0 +1,113 @@
+"""Vault storage and retrieval, and the atomic-write guarantee under it."""
+import json
+
+import pytest
+
+from wayne.engine.session import ContactSession
+from wayne.memory import History, Vault
+from wayne.memory.store import atomic_write
+
+
+@pytest.fixture
+def vault(tmp_path, monkeypatch):
+    v = Vault("test")
+    monkeypatch.setattr(v, "path", tmp_path / "vault.txt")
+    return v
+
+
+class TestVaultWrites:
+    def test_strips_the_trigger_phrase(self, vault):
+        assert vault.memorize("remember that I live in London") == "I live in London"
+        assert vault.entries() == ["I live in London"]
+
+    def test_ignores_duplicates(self, vault):
+        vault.memorize("remember that I live in London")
+        vault.memorize("remember that I live in London")
+        vault.memorize("Remember that I LIVE in London")
+        assert len(vault.entries()) == 1
+
+    def test_forget_removes_matching_facts(self, vault):
+        vault.memorize("remember that I work at Acme")
+        vault.memorize("remember that my sister is called Priya")
+        removed = vault.forget("Acme")
+        assert removed == ["I work at Acme"]
+        assert vault.entries() == ["My sister is called Priya"]
+
+    def test_forget_reports_nothing_when_no_match(self, vault):
+        vault.memorize("remember that I work at Acme")
+        assert vault.forget("Wayne Enterprises") == []
+        assert len(vault.entries()) == 1
+
+
+class TestVaultRetrieval:
+    def test_small_vaults_are_sent_whole(self, vault):
+        for i in range(10):
+            vault.memorize(f"remember that fact number {i} is true")
+        # Selection can only lose when the whole thing is nearly free to send.
+        assert len(vault.relevant("anything at all")) == 10
+
+    def test_large_vaults_are_filtered_by_relevance(self, vault):
+        for i in range(60):
+            vault.memorize(f"remember that unrelated trivia {i}")
+        vault.memorize("remember that my dissertation is on distributed consensus")
+
+        picked = vault.relevant("how is the dissertation going")
+        assert len(picked) < 61
+        assert any("dissertation" in entry for entry in picked)
+
+    def test_retrieval_preserves_document_order(self, vault):
+        for i in range(60):
+            vault.memorize(f"remember that item {i} exists")
+        picked = vault.relevant("item 3 exists")
+        indexes = [vault.entries().index(p) for p in picked]
+        assert indexes == sorted(indexes)
+
+
+class TestHistory:
+    def test_round_trips_an_exchange(self, tmp_path, monkeypatch):
+        h = History("test")
+        monkeypatch.setattr(h, "path", tmp_path / "history.json")
+        h.messages = []
+        h.record_exchange("what's my name", "Nishanth.")
+        assert json.loads((tmp_path / "history.json").read_text())[-1]["content"] == "Nishanth."
+
+    def test_corrupt_history_is_treated_as_empty_not_fatal(self, tmp_path, monkeypatch):
+        path = tmp_path / "history.json"
+        path.write_text("{ this is not json")
+        h = History.__new__(History)
+        h.contact_id = "test"
+        h.path = path
+        assert h._load() == []
+
+
+class TestAtomicWrite:
+    def test_leaves_no_temp_files_behind(self, tmp_path):
+        target = tmp_path / "data.json"
+        atomic_write(target, '{"ok": true}')
+        assert target.read_text() == '{"ok": true}'
+        assert list(tmp_path.glob(".tmp-*")) == []
+
+    def test_original_survives_a_failed_write(self, tmp_path, monkeypatch):
+        target = tmp_path / "data.json"
+        atomic_write(target, "original")
+
+        def boom(*_args, **_kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr("os.replace", boom)
+        with pytest.raises(OSError):
+            atomic_write(target, "replacement")
+
+        assert target.read_text() == "original"
+        assert list(tmp_path.glob(".tmp-*")) == []
+
+
+class TestSentenceBoundaries:
+    @pytest.mark.parametrize("text,expected", [
+        ("Mm. Go on.", 3),                       # index just past "Mm."
+        ("No boundary yet", None),
+        ("Ends here.", None),                    # needs trailing whitespace
+        ("It cost 3.5 million. Really.", 20),    # decimal is not a boundary
+    ])
+    def test_finds_the_first_boundary(self, text, expected):
+        assert ContactSession._sentence_end(text) == expected

@@ -1,8 +1,8 @@
 """
 Web search functionality for Alfred AI.
 """
-import warnings
 import concurrent.futures
+import warnings
 
 warnings.filterwarnings("ignore")
 

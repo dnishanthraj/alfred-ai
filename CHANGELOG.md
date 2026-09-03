@@ -3,6 +3,68 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.3.0] - 2026-09-03
+
+### Added
+
+- **A directory of contacts.** The console is now a phone book rather than a
+  single assistant. A contact is a JSON profile (`wayne/contacts/profiles/`)
+  declaring model, voice, accent colour, sampling parameters, availability, and
+  worked examples; each keeps its own memory under `data/<id>/`. Adding a
+  character is a file, not a code change.
+- **`primer` — worked examples as real conversation turns.** Style examples are
+  injected as actual user/assistant messages at the head of the context instead
+  of being described in prose inside the system prompt. A model imitates a
+  conversation it can see far more reliably than a description of one.
+- **Sentence-chunked, pipelined speech (roadmap "Phase 1.5").** Each sentence is
+  synthesized the moment the model finishes writing it, several in flight at
+  once, released strictly in order. Time to first audio drops from the length of
+  the whole generation to roughly half a second.
+- **Transcript revealed in time with the voice.** Words appear as they are
+  spoken, spread across each clip's real duration and weighted by word length,
+  rather than being printed before the first syllable.
+- **Ambient microphone mode** alongside push-to-talk: an always-open channel with
+  energy-based voice-activity detection, a pre-roll buffer so takes don't start
+  mid-syllable, and barge-in — talking over a reply cuts it off.
+- **Boot sequence and lock screen.** A power-on self test and a passcode prompt,
+  which also supplies the user gesture browsers require before an AudioContext
+  will start. Explicitly theatre, not security, and documented as such.
+- **Search sources are cited** in the console under the answer.
+- **"forget that …"** removes matching facts from a contact's vault.
+- **Vault relevance retrieval** — under 40 facts the whole vault is sent; above
+  that, entries are scored against the prompt and only the best are included.
+- **Test suite** — 58 tests over the guards, memory, atomic writes, retrieval,
+  sentence boundaries, contact loading, and search routing.
+- `pyproject.toml` with ruff and pytest configuration.
+
+### Changed
+
+- **Restructured into `wayne/`** with `engine/`, `memory/`, `audio/`,
+  `contacts/`, and `frontends/` packages, replacing the flat `alfred/` module.
+- **Blue palette and a new abstract mark.** The bat emblem is gone from the
+  console and the favicon; the identity is now a concentric-aperture glyph that
+  matches the spectrum ring.
+- Existing `batcomputer_history.json` / `batcomputer_vault.txt` are migrated
+  into `data/alfred/` on first run and the originals renamed, not deleted.
+- Replies now carry an explicit spoken-output constraint (no markdown, lists,
+  URLs, or emoji), since everything generated is read aloud.
+
+### Fixed
+
+- **"night" matched as a bare substring** in the leaving-cue check, so "the
+  night shift was brutal" read as a goodbye and unlocked the farewell sign-off
+  the guards exist to suppress. Cues are now matched on word boundaries.
+- **A reply could render twice.** A deferred transcript flush scheduled by one
+  turn could fire during the next, closing a turn that was still being spoken
+  into and leaving the audio to reveal it again in a fresh bubble.
+- **The turn could settle before its audio finished**, because `reply_end` fires
+  when the model stops writing, not when the last sentence has been synthesized.
+  Added a `turn_complete` event for the real end of a turn.
+- Guards that could not previously run mid-stream now do: re-greeting is applied
+  to the first sentence before it is spoken, farewells are buffered until known
+  to be trailing, and the repetition check runs on sentence one, before any
+  audio has been committed.
+
 ## [0.2.0] - 2026-09-03
 
 ### Added
