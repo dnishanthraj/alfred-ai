@@ -1,11 +1,13 @@
-"""Vault storage and retrieval, and the atomic-write guarantee under it."""
+"""Vault storage and retrieval, encryption at rest, and elapsed-time memory."""
 import json
+import re
 
 import pytest
 
 from wayne.engine.session import ContactSession
 from wayne.memory import History, Vault
-from wayne.memory.store import atomic_write
+from wayne.memory.history import describe_gap
+from wayne.memory.store import atomic_write, generate_key
 
 
 @pytest.fixture
@@ -18,7 +20,7 @@ def vault(tmp_path, monkeypatch):
 class TestVaultWrites:
     def test_strips_the_trigger_phrase(self, vault):
         assert vault.memorize("remember that I live in London") == "I live in London"
-        assert vault.entries() == ["I live in London"]
+        assert [Vault._fact_only(e) for e in vault.entries()] == ["I live in London"]
 
     def test_ignores_duplicates(self, vault):
         vault.memorize("remember that I live in London")
@@ -31,7 +33,7 @@ class TestVaultWrites:
         vault.memorize("remember that my sister is called Priya")
         removed = vault.forget("Acme")
         assert removed == ["I work at Acme"]
-        assert vault.entries() == ["My sister is called Priya"]
+        assert [Vault._fact_only(e) for e in vault.entries()] == ["My sister is called Priya"]
 
     def test_forget_reports_nothing_when_no_match(self, vault):
         vault.memorize("remember that I work at Acme")
@@ -68,8 +70,8 @@ class TestHistory:
         h = History("test")
         monkeypatch.setattr(h, "path", tmp_path / "history.json")
         h.messages = []
-        h.record_exchange("what's my name", "Nishanth.")
-        assert json.loads((tmp_path / "history.json").read_text())[-1]["content"] == "Nishanth."
+        h.record_exchange("what's my name", "Wayne.")
+        assert json.loads((tmp_path / "history.json").read_text())[-1]["content"] == "Wayne."
 
     def test_corrupt_history_is_treated_as_empty_not_fatal(self, tmp_path, monkeypatch):
         path = tmp_path / "history.json"
@@ -111,3 +113,85 @@ class TestSentenceBoundaries:
     ])
     def test_finds_the_first_boundary(self, text, expected):
         assert ContactSession._sentence_end(text) == expected
+
+
+class TestEncryptionAtRest:
+    """
+    Encryption must be transparent to every caller and must never be the reason
+    someone loses their memory — including across turning it on.
+    """
+
+    def _with_key(self, monkeypatch, key):
+        import wayne.memory.store as store
+        monkeypatch.setattr("wayne.config.MEMORY_KEY", key)
+        monkeypatch.setattr(store, "_fernet", None)
+        monkeypatch.setattr(store, "_fernet_failed", False)
+        return store
+
+    def test_round_trips(self, tmp_path, monkeypatch):
+        store = self._with_key(monkeypatch, generate_key())
+        path = tmp_path / "vault.txt"
+        store.atomic_write(path, "- A fact worth keeping")
+        assert store.read_text(path) == "- A fact worth keeping"
+
+    def test_ciphertext_is_not_readable_on_disk(self, tmp_path, monkeypatch):
+        store = self._with_key(monkeypatch, generate_key())
+        path = tmp_path / "vault.txt"
+        store.atomic_write(path, "- I live at Wayne Manor")
+        assert b"Wayne Manor" not in path.read_bytes()
+
+    def test_plaintext_written_before_a_key_still_reads(self, tmp_path, monkeypatch):
+        # Turning encryption on must not look like amnesia.
+        path = tmp_path / "vault.txt"
+        path.write_bytes(b"- Written before encryption")
+        store = self._with_key(monkeypatch, generate_key())
+        assert store.read_text(path) == "- Written before encryption"
+
+    def test_unreadable_ciphertext_yields_empty_not_a_crash(self, tmp_path, monkeypatch):
+        store = self._with_key(monkeypatch, generate_key())
+        path = tmp_path / "vault.txt"
+        store.atomic_write(path, "- Secret")
+        self._with_key(monkeypatch, generate_key())  # different key
+        assert store.read_text(path) == ""
+
+    def test_a_malformed_key_falls_back_rather_than_failing(self, tmp_path, monkeypatch):
+        store = self._with_key(monkeypatch, "not-a-valid-fernet-key")
+        path = tmp_path / "vault.txt"
+        store.atomic_write(path, "- Still stored")
+        assert store.read_text(path) == "- Still stored"
+
+
+class TestVaultDating:
+    def test_facts_are_dated(self, vault):
+        vault.memorize("remember that I moved to Gotham")
+        assert re.match(r"^\[\d{4}-\d{2}-\d{2}\] I moved to Gotham$", vault.entries()[0])
+
+    def test_dedupe_compares_the_fact_not_the_date(self, vault):
+        vault.memorize("remember that I moved to Gotham")
+        vault.memorize("remember that I moved to Gotham")
+        assert len(vault.entries()) == 1
+
+    def test_forget_matches_on_the_fact(self, vault):
+        vault.memorize("remember that I moved to Gotham")
+        assert vault.forget("Gotham") == ["I moved to Gotham"]
+        assert vault.entries() == []
+
+
+class TestElapsedTime:
+    @pytest.mark.parametrize("seconds,expected", [
+        (30, "moments ago"), (600, "10 minutes ago"), (3600 * 5, "5 hours ago"),
+        (86400 * 1.2, "yesterday"), (86400 * 5, "5 days ago"), (86400 * 30, "4 weeks ago"),
+    ])
+    def test_describes_a_gap_the_way_a_person_would(self, seconds, expected):
+        assert describe_gap(seconds) == expected
+
+    def test_no_history_has_no_gap(self):
+        assert describe_gap(None) == ""
+
+    def test_timestamps_are_hidden_from_the_model(self, tmp_path, monkeypatch):
+        h = History("test")
+        monkeypatch.setattr(h, "path", tmp_path / "history.json")
+        h.messages = []
+        h.record_exchange("hello", "Mm.")
+        assert all(set(m) == {"role", "content"} for m in h.for_model())
+        assert h.seconds_since_last() < 5

@@ -29,6 +29,9 @@ python-dotenv==1.2.1
 # Web search
 ddgs==9.10.0
 
+# Memory encryption at rest
+cryptography==46.0.4
+
 # Web console (local GUI)
 fastapi==0.121.2
 uvicorn[standard]==0.41.0

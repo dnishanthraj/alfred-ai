@@ -3,6 +3,57 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.4.0] - 2026-09-04
+
+### Fixed
+
+- **Ambient voice mode never registered speech.** Five separate defects, found
+  by driving the browser with a recorded phrase as a fake microphone:
+  - the noise floor adapted at a 0.13s time constant against ~375 frames a
+    second, so it climbed to meet each utterance within the onset window and
+    the threshold permanently outran the voice;
+  - the onset counter reset to zero on any quiet frame, and speech is full of
+    micro-gaps, so a normal sentence never accumulated enough sustained energy;
+  - `autoGainControl` ramped gain during pauses, lifting room noise above the
+    threshold so a take opened and then never closed;
+  - detection ran on raw ~3ms frame energy, far shorter than the gaps between
+    words, cutting sentences in half;
+  - a single threshold made the detector chatter, splitting one utterance into
+    two half-transcribed fragments.
+  Now: asymmetric noise-floor tracking, a smoothed envelope, an onset counter
+  that decays rather than resets, AGC off, and two-threshold hysteresis.
+- **Replies were delayed by up to 25 seconds.** Ollama evicts a model after five
+  minutes idle; every resumed conversation paid a full reload. Added
+  `ALFRED_MODEL_KEEP_ALIVE` (default `1h`) and a startup warm-up.
+- **Ciphertext could be read back as if it were plaintext.** Fernet tokens are
+  base64, so decoding one as text succeeds — undecryptable memory has to be
+  recognised, not merely fail to parse.
+- The test suite created `data/<id>/` directories as a side effect, because
+  naming a contact's memory path also created it.
+
+### Added
+
+- **Encrypted memory at rest** — Fernet via `WAYNE_MEMORY_KEY`, generated with
+  `python run.py --new-key`. Transparent to callers, and plaintext written
+  before a key was set keeps working, so enabling it never looks like amnesia.
+- **Memory knows when.** Vault facts are dated, and conversation history is
+  timestamped so a contact can tell whether the last exchange was ten minutes
+  or three weeks ago. Timestamps are stripped before the model sees the
+  messages and turned into plain English for the greeting instead.
+- **Graceful voice failure.** Synthesis errors degrade the voice link in-fiction
+  and the contact continues in text, rather than surfacing an error.
+- **Reasoning-model support** — a contact profile may set `"think": false`.
+  qwen3-family models otherwise emit only reasoning tokens and appear to hang.
+- **Send-now in ambient mode** — the mic button ends the current take rather
+  than waiting out the silence hangover.
+- `ConsoleMic.vad` exposes the detector's live state for tuning against a room.
+
+### Changed
+
+- Alfred's primer extended toward canonical register: British understatement,
+  refusal, and warmth expressed dryly.
+- Removed the stale `alfred/` package left behind by the 0.3.0 restructure.
+
 ## [0.3.0] - 2026-09-03
 
 ### Added

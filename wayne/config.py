@@ -16,6 +16,12 @@ load_dotenv(ENV_FILE)
 # --- Operator identity ---
 USER_NAME = os.getenv("ALFRED_USER_NAME") or os.getenv("WAYNE_USER_NAME") or "Operator"
 
+# How long Ollama holds the model in memory after a reply. The default of five
+# minutes means a conversation resumed after a coffee pays a full model load —
+# around 25 seconds for a 14B — before the first word. Holding it resident
+# trades RAM for the difference between "instant" and "did it crash?".
+MODEL_KEEP_ALIVE = os.getenv("ALFRED_MODEL_KEEP_ALIVE", "1h")
+
 # --- Speech-to-text ---
 WHISPER_HINT_PROMPT = os.getenv("ALFRED_WHISPER_HINTS", USER_NAME)
 
@@ -38,14 +44,29 @@ CONSOLE_PASSCODE = os.getenv("WAYNE_PASSCODE", "zorro")
 
 DEFAULT_CONTACT = os.getenv("WAYNE_DEFAULT_CONTACT", "alfred")
 
+# Encrypts conversation history and the memory vault at rest. Generate one with
+# `python run.py --new-key`. Unlike the lock screen, this is real encryption —
+# but the key sits in .env beside the data, so it defends against casual
+# reading, backups and sync clients, not against someone who has your .env.
+MEMORY_KEY = os.getenv("WAYNE_MEMORY_KEY", "")
+
 
 def missing_requirements():
-    """Config problems worth surfacing at boot rather than failing per-turn."""
+    """
+    Config problems worth surfacing at boot rather than failing per-turn.
+
+    Phrased for the console rather than for a log: a missing voice key is a
+    degraded link, not a stack trace. The console is meant to read like a place.
+    """
     problems = []
     if not ELEVENLABS_API_KEY:
-        problems.append("ELEVENLABS_API_KEY is unset — replies will be silent.")
+        problems.append("Voice link unavailable — text only. (ELEVENLABS_API_KEY is unset.)")
     if USER_NAME == "Operator":
         problems.append(
-            "ALFRED_USER_NAME is unset — set it in .env so the console knows who you are."
+            "Operator unidentified. Set ALFRED_USER_NAME in .env so the console knows who you are."
+        )
+    if not MEMORY_KEY:
+        problems.append(
+            "Memory vault is unencrypted on disk. Run `python run.py --new-key` to secure it."
         )
     return problems

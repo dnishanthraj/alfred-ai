@@ -19,9 +19,13 @@ LEGACY_VAULT_FILE = ROOT_DIR / "batcomputer_vault.txt"
 
 
 def contact_dir(contact_id):
-    path = DATA_DIR / contact_id
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    """
+    Where a contact's memory lives. Deliberately does not create the directory:
+    merely naming a path shouldn't leave a folder behind, which is what made
+    the test suite litter `data/` with every contact id it mentioned. The
+    directory is created when something is actually written.
+    """
+    return DATA_DIR / contact_id
 
 
 def history_file(contact_id):

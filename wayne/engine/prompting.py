@@ -95,7 +95,13 @@ def build_payload(contact, history, user_turn):
     return messages
 
 
-def boot_prompt(contact, returning):
+def boot_prompt(contact, returning, since_last=""):
+    """
+    The opening line. `since_last` is how long ago the last exchange was, in
+    plain words — it is the difference between "Evening again" after ten
+    minutes and "It's been a while" after three weeks, and the model cannot
+    work that out from a timestamp on its own.
+    """
     key = "returning" if returning else "fresh"
     instruction = contact.boot_prompts.get(key)
     if not instruction:
@@ -104,9 +110,11 @@ def boot_prompt(contact, returning):
             if not returning else
             "The link is live again. Acknowledge the reconnection in one or two sentences."
         )
+
+    gap = f"\nLast exchange: {since_last}." if (returning and since_last) else ""
     return (
         "[REFERENCE — context only]\n"
-        f"Time: {time_context()}.{'' if returning else ' Fresh session.'}\n"
+        f"Time: {time_context()}.{'' if returning else ' Fresh session.'}{gap}\n"
         f"{SPEECH_CONSTRAINT}\n"
         "[END REFERENCE]\n\n"
         f"{instruction}"

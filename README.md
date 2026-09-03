@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.3.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.4.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
@@ -39,7 +39,7 @@ their own memory on disk.
 
 - macOS (uses `afplay` for playback and macOS Accessibility permissions for the global
   hotkey listener — this project is not cross-platform as written)
-- Python 3.11+
+- Python 3.11 or 3.12 (not 3.13+ — several dependencies are wheel-only)
 - [Ollama](https://ollama.com) installed and running, with the `qwen2.5:14b` base model
   pulled (`ollama pull qwen2.5:14b`)
 - An [ElevenLabs](https://elevenlabs.io) account and API key
@@ -52,10 +52,16 @@ their own memory on disk.
    ```bash
    git clone https://github.com/<your-username>/alfred-ai.git
    cd alfred-ai
-   python3 -m venv venv
+   python3.11 -m venv venv       # 3.11 or 3.12 — see the note below
    source venv/bin/activate
    pip install -r requirements.txt
    ```
+
+   > **Use Python 3.11 or 3.12, not 3.13+.** Several dependencies
+   > (`tokenizers`, `ctranslate2`, `mlx-whisper`) ship wheels only for those
+   > versions; on a newer interpreter pip falls back to building from source
+   > and the Rust build fails. A bare `python3` may well point at something
+   > newer, so name the version explicitly.
 
 2. **Create your personality file**
 
@@ -150,13 +156,40 @@ Two things, both of which are about timing rather than the model:
   are spoken, spread across each clip's real duration. Printing the reply the
   instant the model finishes reads as a chat log with a voice bolted on.
 
-### Memory commands
+### Memory
 
-These work in either frontend:
+Each contact keeps two kinds of memory under `data/<id>/`: the recent
+conversation, and a vault of facts you explicitly asked them to remember.
+
+Both record *when*. Vault facts are dated, because "I moved to London" means
+something different learned last week than learned two years ago, and the
+conversation is timestamped so a contact knows whether it has been ten minutes
+or three weeks — the difference between "Evening again" and "It's been a while."
+Timestamps are never sent to the model as data; they are turned into plain
+English first.
 
 - **"remember that …" / "note that …"** — stores a fact in that contact's vault.
 - **"forget that …"** — removes matching facts.
 - **"clear memory" / "protocol zero"** — wipes that contact's history and vault.
+
+Memory is encrypted at rest when `WAYNE_MEMORY_KEY` is set:
+
+```bash
+python run.py --new-key      # prints a key to paste into .env
+```
+
+Existing plaintext memory keeps working and is re-encrypted as it is next
+written. This is real encryption, unlike the lock screen — but the key lives in
+`.env` beside the data, so it protects against casual reading, backups and sync
+clients, not against someone who already has your `.env`. **Lose the key and
+the memory is unreadable.**
+
+### When the voice fails
+
+If ElevenLabs is unreachable, out of quota, or unconfigured, the console does
+not show a stack trace. The voice link degrades and the contact carries on in
+text. The reply still reaches the screen — the page renders any sentence that
+never got audio.
 
 ### Terminal
 
@@ -197,6 +230,25 @@ user/assistant turns at the head of every context rather than described in
 prose inside the system prompt. A model imitates a conversation it can see far
 more reliably than a description of one, and it is the single cheapest way to
 make a character sound like themselves.
+
+## Latency
+
+Warm, on an M-series Mac with `qwen2.5:14b`: **0.33s to first token, ~23 tok/s,
+about 0.3s from the first sentence being written to audio playing.**
+
+Two things matter more than the model:
+
+- **`ALFRED_MODEL_KEEP_ALIVE`** (default `1h`). Ollama evicts a model after five
+  minutes idle by default, and reloading a 14B costs around 25 seconds — which
+  is the entire difference between "instant" and "did it crash?" for a
+  conversation resumed after a coffee. The server also warms the default
+  contact's model at startup, while you are still reading the boot screen.
+- **Sentence pipelining.** Speech starts on sentence one rather than after the
+  whole reply.
+
+If you swap in a **qwen3-family or other reasoning model**, set `"think": false`
+in that contact's profile. Left on, they spend their whole budget on reasoning
+tokens, emit no speakable content, and appear to hang.
 
 ## Project structure
 
@@ -250,11 +302,12 @@ pytest              # the guards, memory, retrieval, and contact loading
 
 ## Roadmap
 
-- **Wake-word activation** — ambient mode is always listening; a wake word
-  would let it stay closed until addressed.
-- **Tool use** — calendar, reminders, home control. Needs a real tool-call loop
-  rather than the current single-shot generation.
-- **Encrypted memory at rest** — see the limitation below.
+- **Tool use / function calling** — calendar, reminders, home control, and the
+  ability for a contact to *show* you something rather than describe it. Needs
+  a real tool-call loop rather than the current single-shot generation.
+- **Wake-word activation** — ambient mode listens to everything; a wake word
+  would keep the pipeline closed until addressed.
+- **Embedded results** in the transcript, once tool use lands.
 - **Companion mobile app** — a thin SwiftUI client against the existing local
   API. A separate client, not a port of the Python app.
 
@@ -268,8 +321,10 @@ pytest              # the guards, memory, retrieval, and contact loading
   plays audio in the browser.
 - **Local-first, not local-only** — the LLM and speech-to-text run on-device; the
   reply text is sent to ElevenLabs for synthesis.
-- **No encryption at rest** — memory under `data/<contact>/` is plain text. Don't put
-  anything in the vault you wouldn't want readable by anyone with access to the machine.
+- **Memory encryption is opt-in and key-adjacent.** Without `WAYNE_MEMORY_KEY`,
+  memory under `data/<contact>/` is plain text. With it, the key still lives in
+  `.env` on the same disk — good against casual reading and backups, not
+  against someone who has that file.
 - **Ambient mode depends on your room.** It leans on the browser's echo cancellation
   to avoid hearing the reply through your speakers; on open speakers in a live room
   it can still retrigger. Headphones make it reliable.

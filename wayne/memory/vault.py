@@ -15,9 +15,10 @@ the difference is hard to notice. `score_entries` is the seam to swap if that
 stops being true.
 """
 import re
+import time
 
 from .. import paths
-from .store import atomic_write
+from .store import atomic_write, read_text
 
 MAX_VAULT_ENTRIES = 200
 # Under this many facts, send the whole vault — selection can only lose.
@@ -50,11 +51,18 @@ class Vault:
         self.path = paths.vault_file(contact_id)
 
     def entries(self):
-        """The vault as individual facts, without bullet markers."""
-        if not self.path.exists():
-            return []
-        with open(self.path) as f:
-            return [line.lstrip("- ").strip() for line in f if line.strip()]
+        """
+        The vault as individual facts, each still carrying the date it was
+        stored. The date goes to the model too: "I moved to London" means
+        something different learned last week than learned two years ago.
+        """
+        return [line.lstrip("- ").strip()
+                for line in read_text(self.path).splitlines() if line.strip()]
+
+    @staticmethod
+    def _fact_only(entry):
+        """Strip a leading [YYYY-MM-DD] so facts can be compared by content."""
+        return re.sub(r"^\[\d{4}-\d{2}-\d{2}\]\s*", "", entry).strip()
 
     def score_entries(self, prompt, entries):
         """
@@ -65,11 +73,11 @@ class Vault:
         total = len(entries)
         scored = []
         for index, entry in enumerate(entries):
-            entry_terms = _terms(entry)
+            entry_terms = _terms(self._fact_only(entry))
             overlap = len(prompt_terms & entry_terms)
             # Capitalised words mid-sentence are usually names, places, or
             # projects — the things worth surfacing when they come up.
-            proper = sum(1 for w in entry.split()[1:] if w[:1].isupper())
+            proper = sum(1 for w in self._fact_only(entry).split()[1:] if w[:1].isupper())
             recency = index / total if total else 0
             scored.append((overlap * 3 + proper * 0.5 + recency, index, entry))
         scored.sort(key=lambda item: (-item[0], -item[1]))
@@ -109,10 +117,11 @@ class Vault:
 
         clean = clean[0].upper() + clean[1:]
         existing = self.entries()
-        if clean.lower() in (e.lower() for e in existing):
+        if clean.lower() in (self._fact_only(e).lower() for e in existing):
             return clean
 
-        entries = (existing + [clean])[-MAX_VAULT_ENTRIES:]
+        dated = f"[{time.strftime('%Y-%m-%d')}] {clean}"
+        entries = (existing + [dated])[-MAX_VAULT_ENTRIES:]
         atomic_write(self.path, "".join(f"- {e}\n" for e in entries))
         return clean
 
@@ -120,8 +129,9 @@ class Vault:
         """Drop facts matching a phrase. Returns what was removed."""
         entries = self.entries()
         needle_l = needle.lower().strip()
-        keep = [e for e in entries if needle_l not in e.lower()]
-        removed = [e for e in entries if needle_l in e.lower()]
+        keep = [e for e in entries if needle_l not in self._fact_only(e).lower()]
+        removed = [self._fact_only(e) for e in entries
+                   if needle_l in self._fact_only(e).lower()]
         if removed:
             atomic_write(self.path, "".join(f"- {e}\n" for e in keep))
         return removed

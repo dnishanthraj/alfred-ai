@@ -54,6 +54,13 @@ class Contact:
     # this empty. Contacts that share a base model declare it here instead, so
     # adding one is a JSON file rather than a model build.
     system: str = ""
+    # Reasoning models (the qwen3 family, gpt-oss, deepseek-r1) emit a separate
+    # `thinking` stream and produce no spoken content until it finishes. Left
+    # on, a contact appears to hang for ten or twenty seconds before the first
+    # word. Profiles using such a model should set this false. It is only sent
+    # when explicitly declared, because passing it to a model that has no
+    # thinking mode is an error.
+    think: bool | None = None
     primer: tuple = ()
     availability: Availability = field(default_factory=Availability)
 
@@ -101,6 +108,7 @@ def _load_profile(path):
         options=raw.get("options", {}),
         boot_prompts=raw.get("boot_prompts", {}),
         system=raw.get("system", ""),
+        think=raw.get("think"),
         primer=tuple(raw.get("primer", [])),
         availability=availability,
     )

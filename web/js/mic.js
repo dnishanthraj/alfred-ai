@@ -29,14 +29,26 @@
   // Frames of ~128 samples arrive continuously; these are in frames, resolved
   // against the real sample rate at capture time.
   var PREROLL_MS = 320;
-  var SILENCE_HANGOVER_MS = 900;   // silence before an utterance is considered over
+  var SILENCE_HANGOVER_MS = 1100;  // silence before an utterance is considered over
   var MIN_SPEECH_MS = 320;         // shorter than this is a cough, not a sentence
   var MAX_UTTERANCE_MS = 30000;
 
-  var NOISE_ADAPT = 0.02;          // how fast the noise floor tracks the room
-  var SPEECH_FACTOR = 3.2;         // energy above floor that counts as speech
-  var SPEECH_FACTOR_DUCKED = 6.5;  // stricter while the contact is talking
-  var ABSOLUTE_FLOOR = 0.006;
+  // The noise floor tracks the room asymmetrically: it drops to a quieter
+  // floor readily, but rises very slowly. A symmetric tracker fast enough to
+  // follow the room is also fast enough to follow *speech* — at ~375 frames a
+  // second it climbed to meet each utterance within the onset window, so the
+  // threshold outran the voice and the detector never fired at all.
+  var NOISE_ADAPT_DOWN = 0.02;     // ~0.13s to settle onto a quieter room
+  var NOISE_ADAPT_UP = 0.0008;     // ~3s to accept a louder one
+  var SPEECH_FACTOR = 2.6;         // energy above floor that counts as speech
+  var SPEECH_FACTOR_DUCKED = 5.0;  // stricter while the contact is talking
+  var ABSOLUTE_FLOOR = 0.0025;
+  var ONSET_MS = 80;               // sustained energy before a take opens
+  // How far below the opening threshold the room must fall before a take is
+  // considered over. Deliberately forgiving: ending early truncates the
+  // sentence and Whisper transcribes half a thought, while ending late costs a
+  // moment of silence on the end of a clip nobody listens to. Err long.
+  var EXIT_RATIO = 0.45;
 
   var WORKLET = [
     'class Capture extends AudioWorkletProcessor {',
@@ -66,6 +78,7 @@
     speaking: false,
     silenceMs: 0,
     speechMs: 0,
+    envelope: 0,
     noiseFloor: 0.01
   };
 
@@ -121,9 +134,16 @@
     return navigator.mediaDevices.getUserMedia({
       audio: {
         channelCount: 1,
+        // Echo cancellation is what makes ambient mode possible at all: it
+        // references the system output and subtracts the reply coming back in
+        // through the speakers.
         echoCancellation: true,
         noiseSuppression: true,
-        autoGainControl: true
+        // Automatic gain control is deliberately off. It ramps gain up during
+        // pauses, which lifts room noise above any level-based threshold — a
+        // take opened and then never closed, because the "silence" kept
+        // getting amplified into something the detector read as speech.
+        autoGainControl: false
       }
     }).then(function (stream) {
       state.stream = stream;
@@ -172,6 +192,13 @@
     var level = rms(frame);
     var frameMs = (frame.length / rate()) * 1000;
 
+    // Detection runs on an envelope, not on raw frame energy. A 128-sample
+    // frame is under 3ms — far shorter than the gaps between words, so raw
+    // RMS dips below any sensible threshold constantly and a take gets cut
+    // mid-sentence. Fast attack keeps onset responsive; slow release bridges
+    // the gaps. The visualizer still gets the unsmoothed level.
+    state.envelope += (level - state.envelope) * (level > state.envelope ? 0.5 : 0.012);
+
     if (handlers.onLevel) handlers.onLevel(Math.min(level * 5, 1));
 
     if (state.mode === 'ptt') {
@@ -179,20 +206,30 @@
       return;
     }
 
-    ambientFrame(frame, level, frameMs);
+    ambientFrame(frame, state.envelope, frameMs);
   }
 
   function ambientFrame(frame, level, frameMs) {
-    // Track the room's noise floor, but only while nobody is talking — adapting
-    // during speech would let the detector normalise the speech away.
-    if (!state.speaking) {
-      state.noiseFloor += (level - state.noiseFloor) * NOISE_ADAPT;
+    // Track the room's noise floor only while nobody is talking *and* no take
+    // is building — adapting through an onset lets the detector normalise away
+    // the very speech it is trying to catch.
+    if (!state.speaking && state.speechMs === 0) {
+      var alpha = level < state.noiseFloor ? NOISE_ADAPT_DOWN : NOISE_ADAPT_UP;
+      state.noiseFloor += (level - state.noiseFloor) * alpha;
     }
 
+    // Two thresholds, not one. Opening a take takes real energy; closing it
+    // requires falling well *below* that bar. With a single threshold the
+    // detector chatters around it — a sentence would end and immediately
+    // reopen, splitting one utterance into two half-transcribed fragments.
     var ducked = global.ConsoleAudio.isPlaying;
     var factor = ducked ? SPEECH_FACTOR_DUCKED : SPEECH_FACTOR;
-    var threshold = Math.max(state.noiseFloor * factor, ABSOLUTE_FLOOR);
-    var voiced = level > threshold;
+    var enter = Math.max(state.noiseFloor * factor, ABSOLUTE_FLOOR);
+    // The exit bar is also clamped above the measured room, because an exit
+    // threshold below the noise floor can never be crossed — the take opens
+    // and then stays open forever, which is the other way this fails.
+    var exit = Math.max(enter * EXIT_RATIO, state.noiseFloor * 1.8);
+    var voiced = state.speaking ? level > exit : level > enter;
 
     if (!state.speaking) {
       // Always retain a little history so a take never starts mid-syllable.
@@ -205,7 +242,7 @@
 
       if (voiced) {
         state.speechMs += frameMs;
-        if (state.speechMs >= 90) {   // sustained, not a click
+        if (state.speechMs >= ONSET_MS) {   // sustained, not a click
           state.speaking = true;
           state.silenceMs = 0;
           state.chunks = state.preroll.slice();
@@ -215,7 +252,11 @@
           if (handlers.onSpeechStart) handlers.onSpeechStart();
         }
       } else {
-        state.speechMs = 0;
+        // Decay rather than reset. Speech is full of micro-gaps — plosives,
+        // the space between words — and zeroing the counter on any quiet frame
+        // meant the onset restarted continuously and a normal sentence never
+        // accumulated the sustained energy needed to open a take.
+        state.speechMs = Math.max(0, state.speechMs - frameMs * 2);
       }
       return;
     }
@@ -269,15 +310,42 @@
     if (handlers.onUtterance) handlers.onUtterance(resample(merge(chunks), captureRate));
   }
 
+  /**
+   * End the current ambient take immediately rather than waiting out the
+   * silence hangover. Bound to the mic button in ambient mode, so there is
+   * always a way to say "that's it, go" without sitting through the pause.
+   */
+  function cut() {
+    if (state.mode !== 'ambient' || !state.speaking) return false;
+    finishUtterance();
+    return true;
+  }
+
   global.ConsoleMic = {
     setMode: setMode,
     pushStart: pushStart,
     pushStop: pushStop,
+    cut: cut,
     close: close,
     on: function (name, fn) { handlers[name] = fn; },
     get mode() { return state.mode; },
     get isPushing() { return state.pushing; },
     get isSpeaking() { return state.speaking; },
+    // The detector is a handful of thresholds against a room that varies; being
+    // able to read what it currently believes is the difference between tuning
+    // it and guessing at it.
+    get vad() {
+      return {
+        noiseFloor: state.noiseFloor,
+        threshold: Math.max(
+          state.noiseFloor * (global.ConsoleAudio.isPlaying ? SPEECH_FACTOR_DUCKED : SPEECH_FACTOR),
+          ABSOLUTE_FLOOR
+        ),
+        speaking: state.speaking,
+        speechMs: Math.round(state.speechMs),
+        silenceMs: Math.round(state.silenceMs)
+      };
+    },
     TARGET_RATE: TARGET_RATE
   };
 })(window);

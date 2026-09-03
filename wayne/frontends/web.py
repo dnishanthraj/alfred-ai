@@ -18,6 +18,7 @@ import asyncio
 import threading
 import uuid
 from collections import OrderedDict
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -173,7 +174,15 @@ class Console:
         Release clips in submission order. Synthesis runs concurrently, but a
         later sentence finishing first must never jump the queue — the page
         plays what it is handed.
+
+        When synthesis fails — quota gone, network down, key expired — the
+        console does not show a stack trace. The voice link degrades and the
+        contact carries on in text, which is both truthful about what happened
+        and in keeping with a console that is supposed to be a place, not a
+        program. The text still reaches the screen: the page renders any
+        sentence that never got audio.
         """
+        reported = False
         while True:
             item = await speech.get()
             if item is None:
@@ -181,8 +190,11 @@ class Console:
             index, text, task = item
             try:
                 audio = await task
-            except Exception as exc:
-                await self.broadcast(events.notice(f"Voice synthesis failed: {exc}", "warn"))
+            except Exception:
+                if not reported:
+                    reported = True
+                    await self.broadcast(events.notice(
+                        "Voice link degraded — switching to text.", "warn"))
                 continue
             if audio:
                 await self.broadcast(events.speak(self._store_clip(audio), text, index))
@@ -227,7 +239,39 @@ class Console:
 
 
 console = Console()
-app = FastAPI(title="WayneTech Console", docs_url=None, redoc_url=None)
+
+
+def _warm_model():
+    """
+    Nudge the default contact's model into memory while the operator is still
+    reading the boot screen. Loading a 14B costs around 25 seconds, and paying
+    that after they have already spoken is the difference between a console and
+    a progress bar. Failures are silent: this is an optimisation, not a step.
+    """
+    contact = console.directory.get(config.DEFAULT_CONTACT)
+    if contact is None:
+        return
+    try:
+        import ollama
+        ollama.chat(
+            model=contact.model,
+            messages=[{"role": "user", "content": "."}],
+            options={"num_predict": 1},
+            keep_alive=config.MODEL_KEEP_ALIVE,
+        )
+    except Exception:
+        pass
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    warm = asyncio.create_task(asyncio.to_thread(_warm_model))
+    yield
+    warm.cancel()
+
+
+app = FastAPI(title="WayneTech Console", docs_url=None, redoc_url=None,
+              lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 

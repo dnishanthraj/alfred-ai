@@ -28,7 +28,7 @@ import re
 
 import ollama
 
-from .. import events
+from .. import config, events
 from ..memory import History, Vault
 from . import guards, prompting
 from .search import format_search_results, google_search, needs_search
@@ -66,17 +66,24 @@ class ContactSession:
         options.update(overrides)
         return options
 
+    def _extra(self):
+        """Top-level chat arguments that only apply to some models."""
+        extra = {"keep_alive": config.MODEL_KEEP_ALIVE}
+        if self.contact.think is not None:
+            extra["think"] = self.contact.think
+        return extra
+
     def _chat_once(self, payload, **overrides):
         response = ollama.chat(
             model=self.contact.model, messages=payload,
-            stream=False, options=self._options(**overrides),
+            stream=False, options=self._options(**overrides), **self._extra(),
         )
         return response["message"]["content"].strip()
 
     def _stream(self, payload, **overrides):
         for part in ollama.chat(
             model=self.contact.model, messages=payload,
-            stream=True, options=self._options(**overrides),
+            stream=True, options=self._options(**overrides), **self._extra(),
         ):
             piece = part.get("message", {}).get("content", "")
             if piece:
@@ -213,7 +220,8 @@ class ContactSession:
 
         returning = bool(self.history)
         payload = prompting.build_payload(
-            self.contact, self.history, prompting.boot_prompt(self.contact, returning)
+            self.contact, self.history.for_model(),
+            prompting.boot_prompt(self.contact, returning, self.history.time_since_last()),
         )
 
         greeting = "Online. I'm here when you're ready."
@@ -258,7 +266,7 @@ class ContactSession:
 
         vault_block = self.vault.as_block(prompt)
         user_turn = prompting.compose_user_turn(prompt, vault_block, search_context)
-        payload = prompting.build_payload(self.contact, self.history, user_turn)
+        payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn)
 
         yield events.state(events.THINKING)
         yield events.reply_start()

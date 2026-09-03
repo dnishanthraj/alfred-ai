@@ -1,13 +1,12 @@
 """Per-contact memory: recent conversation plus an explicit long-term vault."""
 import json
-import shutil
 
 from .. import paths
 from .history import History
-from .store import atomic_write
+from .store import atomic_write, read_text
 from .vault import Vault
 
-__all__ = ["History", "Vault", "atomic_write", "migrate_legacy"]
+__all__ = ["History", "Vault", "atomic_write", "read_text", "migrate_legacy"]
 
 
 def migrate_legacy(contact_id):
@@ -26,8 +25,9 @@ def migrate_legacy(contact_id):
         if not target.exists():
             try:
                 with open(paths.LEGACY_HISTORY_FILE) as f:
-                    json.load(f)  # only migrate something we can actually read
-                shutil.copy2(paths.LEGACY_HISTORY_FILE, target)
+                    legacy = json.load(f)  # only migrate what we can read
+                # Written through the store so it lands encrypted if a key is set.
+                atomic_write(target, json.dumps(legacy, indent=2))
                 moved.append("history")
             except (OSError, json.JSONDecodeError):
                 pass
@@ -38,7 +38,7 @@ def migrate_legacy(contact_id):
     if paths.LEGACY_VAULT_FILE.exists():
         target = paths.vault_file(contact_id)
         if not target.exists():
-            shutil.copy2(paths.LEGACY_VAULT_FILE, target)
+            atomic_write(target, paths.LEGACY_VAULT_FILE.read_text())
             moved.append("vault")
         paths.LEGACY_VAULT_FILE.rename(
             paths.LEGACY_VAULT_FILE.with_suffix(".txt.migrated")

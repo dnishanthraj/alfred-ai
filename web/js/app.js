@@ -396,7 +396,9 @@
     el['mode-ptt'].classList.toggle('is-on', mode === 'ptt');
     el['mode-ambient'].classList.toggle('is-on', mode === 'ambient');
     el.ptt.dataset.ambient = mode === 'ambient' ? '1' : '0';
-    el.ptt.disabled = mode === 'ambient';
+    el.ptt.title = mode === 'ambient'
+      ? 'Listening — click to send now'
+      : 'Hold to speak (or hold Space)';
     ConsoleMic.setMode(mode).catch(function () {
       // Permission refused — fall back rather than leaving a dead toggle.
       if (mode === 'ambient') setMode('ptt');
@@ -417,12 +419,20 @@
 
     el.ptt.addEventListener('pointerdown', function (e) {
       e.preventDefault();
+      // In ambient mode the button means "that's it, go" — ending the take now
+      // instead of waiting out the silence hangover.
+      if (state.mode === 'ambient') {
+        ConsoleMic.cut();
+        return;
+      }
       ConsoleAudio.stop();
       setState('listening');
       ConsoleMic.pushStart();
     });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (name) {
-      el.ptt.addEventListener(name, function () { ConsoleMic.pushStop(); });
+      el.ptt.addEventListener(name, function () {
+        if (state.mode !== 'ambient') ConsoleMic.pushStop();
+      });
     });
 
     el['mode-ptt'].addEventListener('click', function () { setMode('ptt'); });

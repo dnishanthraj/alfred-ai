@@ -6,6 +6,7 @@ Entry point.
     python run.py --cli            # terminal console
     python run.py --contact lucius # connect to a specific contact
     python run.py --list           # show the directory
+    python run.py --new-key        # generate a memory encryption key
 """
 import argparse
 import sys
@@ -21,7 +22,17 @@ def main():
                         help="contact to connect to (default: alfred)")
     parser.add_argument("--list", action="store_true", help="list known contacts and exit")
     parser.add_argument("--no-open", action="store_true", help="don't open a browser window")
+    parser.add_argument("--new-key", action="store_true",
+                        help="generate a memory encryption key to put in .env")
     args = parser.parse_args()
+
+    if args.new_key:
+        from wayne.memory.store import generate_key
+        print("Add this to your .env, then restart:\n")
+        print(f"  WAYNE_MEMORY_KEY={generate_key()}\n")
+        print("Existing plaintext memory keeps working and is re-encrypted as it")
+        print("is next written. Lose this key and the memory is unreadable.")
+        return 0
 
     from wayne import config
     from wayne.contacts import directory
