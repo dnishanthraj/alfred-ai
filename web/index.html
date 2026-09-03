@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en" data-state="idle">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WayneTech · B.A.T. Console</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 40'%3E%3Cpath fill='%23e0a33e' d='M60 9 L57.5 4 L55.5 10C48 8 40 7 32 9C24 11 14 13 4 11C9 16 10 22 8 28C16 26 22 28 27 33C30 28 36 25 42 26C46 27 50 30 53 34L60 36L67 34C70 30 74 27 78 26C84 25 90 28 93 33C98 28 104 26 112 28C110 22 111 16 116 11C106 13 96 11 88 9C80 7 72 8 64.5 10L62.5 4Z'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/console.css">
+</head>
+<body>
+
+  <!-- Browsers hold an AudioContext suspended until a user gesture, so the
+       link has to be established by hand. Thematically apt. -->
+  <div class="gate" id="gate">
+    <div class="gate__inner">
+      <div class="gate__mark" aria-hidden="true">
+        <svg viewBox="0 0 120 40" width="168" height="56" role="img">
+          <path fill="currentColor" d="M60 9 L57.5 4 L55.5 10
+            C48 8 40 7 32 9 C24 11 14 13 4 11
+            C9 16 10 22 8 28 C16 26 22 28 27 33
+            C30 28 36 25 42 26 C46 27 50 30 53 34
+            L60 36 L67 34 C70 30 74 27 78 26
+            C84 25 90 28 93 33 C98 28 104 26 112 28
+            C110 22 111 16 116 11 C106 13 96 11 88 9
+            C80 7 72 8 64.5 10 L62.5 4 Z"/>
+        </svg>
+      </div>
+      <p class="gate__eyebrow">Wayne Enterprises · Applied Sciences</p>
+      <h1 class="gate__title">B.A.T. Console</h1>
+      <p class="gate__note">Secure local link. No transcript leaves this machine.</p>
+      <button class="gate__btn" id="gate-btn">Establish Link</button>
+      <p class="gate__hint" id="gate-hint">Audio subsystem requires operator confirmation</p>
+    </div>
+  </div>
+
+  <header class="bar">
+    <div class="bar__id">
+      <span class="bar__dot" aria-hidden="true"></span>
+      <span class="bar__name" id="assistant-name">Alfred</span>
+    </div>
+    <div class="bar__title">WayneTech · B.A.T. Console</div>
+    <div class="bar__status">
+      <span class="bar__clock" id="clock">--:--:--</span>
+      <span class="bar__link" id="link-state">Offline</span>
+    </div>
+  </header>
+
+  <main class="shell">
+
+    <section class="rail">
+      <div class="panel panel--viz">
+        <span class="tick tick--tl" aria-hidden="true"></span>
+        <span class="tick tick--tr" aria-hidden="true"></span>
+        <span class="tick tick--bl" aria-hidden="true"></span>
+        <span class="tick tick--br" aria-hidden="true"></span>
+        <canvas id="viz" aria-hidden="true"></canvas>
+        <div class="viz__readout">
+          <span class="viz__state" id="viz-state">Standby</span>
+          <span class="viz__sub" id="viz-sub">Awaiting input</span>
+        </div>
+      </div>
+
+      <div class="panel panel--data">
+        <h2 class="panel__label">System</h2>
+        <dl class="readout">
+          <div class="readout__row"><dt>Model</dt><dd id="rd-model">—</dd></div>
+          <div class="readout__row"><dt>Speech</dt><dd id="rd-stt">—</dd></div>
+          <div class="readout__row"><dt>Voice</dt><dd id="rd-voice">—</dd></div>
+          <div class="readout__row"><dt>Operator</dt><dd id="rd-user">—</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="feed">
+      <div class="log" id="log" role="log" aria-live="polite"></div>
+
+      <form class="compose" id="compose">
+        <button type="button" class="ptt" id="ptt" title="Hold to speak (or hold Space)">
+          <span class="ptt__ring" aria-hidden="true"></span>
+          <span class="ptt__label">Hold</span>
+        </button>
+        <input class="compose__input" id="input" type="text" autocomplete="off"
+               spellcheck="false" placeholder="Transmit…">
+        <button type="submit" class="compose__send" id="send" title="Send">Send</button>
+      </form>
+    </section>
+
+  </main>
+
+  <div class="grain" aria-hidden="true"></div>
+
+  <script src="/static/visualizer.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

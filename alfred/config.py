@@ -27,3 +27,27 @@ WHISPER_HINT_PROMPT = os.getenv(
 # --- ElevenLabs TTS ---
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ALFRED_VOICE_ID = os.getenv("ALFRED_VOICE_ID")
+ELEVENLABS_MODEL = os.getenv("ALFRED_TTS_MODEL", "eleven_turbo_v2_5")
+
+# --- Conversation guards ---
+# Safety net against runaway word-salad replies, not a style control. Raise it
+# if legitimate longer answers are being clipped mid-thought.
+MAX_REPLY_SENTENCES = int(os.getenv("ALFRED_MAX_REPLY_SENTENCES", "4"))
+
+# --- Web console ---
+WEB_HOST = os.getenv("ALFRED_WEB_HOST", "127.0.0.1")
+WEB_PORT = int(os.getenv("ALFRED_WEB_PORT", "8420"))
+# Global push-to-talk needs macOS Accessibility permission for whatever process
+# launches the server. Off by default — the in-page hold-to-talk button always
+# works and needs nothing but a mic permission.
+GLOBAL_HOTKEY = os.getenv("ALFRED_GLOBAL_HOTKEY", "0").lower() in ("1", "true", "yes")
+
+
+def missing_requirements():
+    """Config problems worth surfacing at boot rather than failing per-turn."""
+    problems = []
+    if not ELEVENLABS_API_KEY:
+        problems.append("ELEVENLABS_API_KEY is unset — replies will be silent.")
+    if not ALFRED_VOICE_ID:
+        problems.append("ALFRED_VOICE_ID is unset — replies will be silent.")
+    return problems

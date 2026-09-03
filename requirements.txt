@@ -1,5 +1,5 @@
 # LLM
-ollama==0.1.0
+ollama==0.6.2
 
 # Speech-to-text (CPU fallback, all platforms)
 faster-whisper==1.2.1
@@ -28,3 +28,7 @@ python-dotenv==1.2.1
 
 # Web search
 ddgs==9.10.0
+
+# Web console (local GUI)
+fastapi==0.121.2
+uvicorn[standard]==0.41.0

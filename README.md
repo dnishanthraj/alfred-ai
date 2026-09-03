@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.1.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.2.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven personal assistant for macOS — push-to-talk speech in, a locally-run
 LLM (via [Ollama](https://ollama.com)) for thinking, and natural-sounding [ElevenLabs](https://elevenlabs.io)
@@ -94,19 +94,36 @@ to remember, both stored locally on disk.
 5. **Run**
 
    ```bash
-   python run.py
+   python run.py            # web console at http://127.0.0.1:8420
+   python run.py --cli      # terminal console instead
    ```
 
-   Or double-click [`scripts/launch.command`](scripts/launch.command) (macOS only; written
-   for the [Ghostty](https://ghostty.org) terminal — edit the `tell application` line if
-   you use a different one).
+   Or double-click [`scripts/launch.command`](scripts/launch.command), which starts
+   Ollama if it isn't already running and opens the console in your browser.
 
-## Usage
+## The console
 
-- **Hold the PTT key** (`Key.cmd_r` by default) and speak, then release — your speech is
-  transcribed and sent.
-- **Type and press Enter** for text input instead of voice.
-- **Press Esc** once to interrupt Alfred mid-reply, or again (with nothing playing) to quit.
+`python run.py` serves a local web console — a WayneTech-styled terminal with a
+radial spectrum ring driven by the actual TTS audio, live status readouts, and
+the running transcript. Nothing is exposed beyond `127.0.0.1`.
+
+Audio is played *in the browser* through the Web Audio API rather than through
+`afplay`, which is what lets the visualizer read a real FFT of Alfred's voice
+instead of animating a guess. Click **Establish Link** on first load — browsers
+keep an `AudioContext` suspended until the page gets a user gesture.
+
+- **Hold the mic button** (or hold **Space**) and speak, then release.
+- **Type and press Enter** for text input.
+- **Press Esc** to silence playback.
+
+The terminal console (`--cli`) keeps the original push-to-talk behaviour, which
+works with the window unfocused:
+
+- **Hold the PTT key** (`Key.cmd_r` by default) and speak, then release.
+- **Press Esc** once to interrupt mid-reply, or again (with nothing playing) to quit.
+
+Both frontends share the same engine, so these work in either:
+
 - **"remember that …" / "remember to …" / "note that …"** — saves a fact to long-term
   memory (`batcomputer_vault.txt`).
 - **"clear memory" / "forget everything" / "protocol zero" / "wipe logs"** — wipes
@@ -116,21 +133,35 @@ to remember, both stored locally on disk.
 
 ```
 alfred-ai/
-├── run.py                 # entry point — `python run.py`
+├── run.py                   # entry point — web console, or --cli
 ├── alfred/
-│   ├── main.py             # conversation loop, input handling, response post-processing
-│   ├── config.py           # env-driven settings (identity, keys, hotkey)
+│   ├── core.py              # headless engine: context, generation, guards
+│   ├── events.py            # the event vocabulary shared by every frontend
+│   ├── server.py            # FastAPI + WebSocket backing the web console
+│   ├── cli.py               # terminal frontend (ANSI + afplay)
+│   ├── main.py              # back-compat shim re-exporting cli.main
+│   ├── config.py            # env-driven settings (identity, keys, hotkey, web)
 │   ├── paths.py             # project-root-anchored file paths
-│   ├── ear.py               # push-to-talk recording + Whisper transcription
-│   ├── voice.py             # ElevenLabs synthesis + playback
+│   ├── ear.py               # audio capture + Whisper transcription
+│   ├── voice.py             # ElevenLabs synthesis + local playback
 │   ├── memory.py            # short-term history + long-term vault persistence
 │   └── search.py            # web search trigger detection + DuckDuckGo lookup
+├── web/                     # the console: no build step, no node toolchain
+│   ├── index.html
+│   ├── console.css
+│   ├── app.js               # socket, transcript, mic capture, audio playback
+│   └── visualizer.js        # radial spectrum ring
 ├── scripts/
 │   └── launch.command       # macOS convenience launcher
 ├── Modelfile.example        # personality template — copy to `Modelfile` and customize
-├── .env.example              # config template — copy to `.env` and fill in secrets
+├── .env.example             # config template — copy to `.env` and fill in secrets
 └── requirements.txt
 ```
+
+`core.py` never prints and never plays audio — it yields the events in
+`events.py`, and a frontend decides how to render them. That's what lets the
+terminal and the browser share one conversation implementation, and it's the
+seam a future phone client would plug into.
 
 ## Customization
 
@@ -143,11 +174,12 @@ about tone or backstory is hardcoded in Python. To build a different assistant, 
 
 Not yet built, roughly in priority order:
 
-- **Audio-reactive visual overlay** — a HUD/hologram-style visualizer synced to
-  the TTS playback, so there's something to look at while Alfred talks.
-- **Test suite + CI** — the deterministic text-processing helpers in `main.py`
+- **Test suite + CI** — the deterministic text-processing helpers in `core.py`
   and `search.py` are pure functions and cheap to cover; a GitHub Actions run
   on push would follow naturally.
+- **Sentence-chunked TTS** — synthesis currently waits for the whole reply
+  before the first word is spoken. Splitting on sentence boundaries and
+  pipelining would cut the silence before Alfred starts talking.
 - **Wake-word activation** as an alternative to holding the push-to-talk key.
 - **Companion mobile app** — a thin SwiftUI client (iPhone, possibly Watch)
   talking to a small local API in front of Ollama, for use off the machine

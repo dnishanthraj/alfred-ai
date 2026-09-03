@@ -1,20 +1,28 @@
 #!/bin/bash
-# macOS convenience launcher: opens a new Ghostty tab, activates the venv,
-# and starts Alfred. Double-click to run, or adapt for your own terminal app.
+# Double-click launcher for the Alfred web console.
+#
+# Replaces the old version, which drove Ghostty through System Events
+# keystrokes — that needed Accessibility permission, broke if the terminal
+# wasn't named "Ghostty", and left the app running inside a scratch tab.
+# This just starts the server and opens the browser.
 
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
+set -euo pipefail
 
-osascript <<EOF
-tell application "Ghostty"
-    activate
-end tell
-delay 0.5
-tell application "System Events"
-    tell process "Ghostty"
-        keystroke "n" using command down
-        delay 0.5
-        keystroke "cd '$DIR' && source venv/bin/activate && python run.py"
-        key code 36
-    end tell
-end tell
-EOF
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$DIR"
+
+if [ ! -x "venv/bin/python" ]; then
+  echo "No virtualenv found at $DIR/venv"
+  echo "Create one first:  python3.11 -m venv venv && source venv/bin/activate && pip install -r requirements.txt"
+  read -r -p "Press return to close."
+  exit 1
+fi
+
+if ! pgrep -f "ollama serve" > /dev/null 2>&1; then
+  echo "Ollama isn't running — starting it."
+  ollama serve > /dev/null 2>&1 &
+  sleep 2
+fi
+
+echo "Starting the B.A.T. console…"
+exec venv/bin/python run.py
