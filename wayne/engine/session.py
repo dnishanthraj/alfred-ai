@@ -97,26 +97,6 @@ _MARKER_WATCH_CHARS = 90
 # this behind phrases like "look up" meant that asking "what do we have on
 # Waylon Jones?" never even reached the decision — so instead of looking, or
 # admitting he had no idea, he invented an answer and stated it as fact.
-_SEARCH_OFFER = (
-    "\n\nYou can look things up. If answering needs something you could not "
-    "already know — a person, a company, a result, a price, the news, the weather "
-    "— reply with exactly [SEARCH: what to look up] and nothing else, and you "
-    "will be given what is found before you answer.\n"
-    "Use it only for facts you could not know: a person, a company, an event, a "
-    "result, a price, the news, the weather. Never for conversation, opinions, "
-    "feelings, plans, or anything about him or about yourself — you have those "
-    "already, and reaching for a search there is worse than useless.\n"
-    "You are under no obligation to use it: if the request is vague, ask what he "
-    "actually means; if it is something he should do himself, say so.\n"
-    "But you must never invent an answer. If you do not know something and are "
-    "not going to look, say plainly that you do not know. Never state a guess "
-    "about a person, company, or fact as though it were something you knew.\n"
-    "And if you say you will find something out, use the marker in that same "
-    "reply. Do not promise to look and then not look.\n"
-    "Never say you lack real-time data, cannot access the internet, or that he "
-    "should check the news himself. You are a person, not a service: you either "
-    "know, or you go and find out, or you say you have no idea."
-)
 
 
 class ContactSession:
@@ -545,9 +525,7 @@ class ContactSession:
         awareness = self._awareness(prompt, interrupted)
         vault_block = self.vault.as_block(prompt)
 
-        offer = _SEARCH_OFFER if self.contact.can_search else ""
-        user_turn = prompting.compose_user_turn(
-            prompt, vault_block, "", awareness) + offer
+        user_turn = prompting.compose_user_turn(prompt, vault_block, "", awareness)
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn)
 
         yield events.state(events.THINKING)
@@ -599,7 +577,7 @@ class ContactSession:
         emitted here and the turn is over.
         """
         vault_block = self.vault.as_block(prompt)
-        user_turn = prompting.compose_user_turn(prompt, vault_block) + _SEARCH_OFFER
+        user_turn = prompting.compose_user_turn(prompt, vault_block)
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn)
 
         yield events.state(events.THINKING)

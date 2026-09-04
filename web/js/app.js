@@ -39,6 +39,7 @@
     spaceDown: false,
     generationDone: true,
     flushTimer: null,
+    wordTimers: [],   // pending word reveals, cancellable mid-sentence
     idleTimer: null,
     resumeTimer: null,
     nudges: 0,        // consecutive unanswered check-ins
@@ -91,10 +92,43 @@
 
   /* --- the spoken line ---------------------------------------------------- */
 
+  function clearWordTimers() {
+    state.wordTimers.forEach(clearTimeout);
+    state.wordTimers = [];
+  }
+
   function clearUtterance() {
+    clearWordTimers();
     el.utterance.textContent = '';
     state.pending = {};
     state.rendered = {};
+  }
+
+  /**
+   * Cut him off mid-sentence.
+   *
+   * The words are revealed on timers spread across the clip, so stopping the
+   * audio alone left them firing — he fell silent while the rest of what he
+   * would have said carried on appearing. Now the line stops where his voice
+   * did, with a dash, and the remainder is never shown: it was never heard.
+   */
+  function cutOff() {
+    clearWordTimers();
+    state.pending = {};
+    var text = el.utterance.textContent.replace(/[\s—-]+$/, '');
+    if (text) el.utterance.textContent = text + '—';
+    state.fresh = true;
+  }
+
+  function wasCutOff() {
+    return el.utterance.textContent.trimEnd().endsWith('—');
+  }
+
+  /** Stop him talking, the way interrupting a person does. */
+  function interruptHim() {
+    if (!ConsoleAudio.isPlaying) return;
+    ConsoleAudio.stop();
+    cutOff();
   }
 
   function showHeard(text) {
@@ -133,10 +167,9 @@
     var elapsed = 0;
 
     words.forEach(function (word, i) {
-      var at = elapsed;
-      setTimeout(function () {
+      state.wordTimers.push(setTimeout(function () {
         span.textContent += (i === 0 ? '' : ' ') + word;
-      }, at);
+      }, elapsed));
       elapsed += (weights[i] / total) * budget;
     });
   }
@@ -379,10 +412,11 @@
           cancelFlush();
           noteActivity({ quietFor: requestedTime(event.text) });
           showHeard(event.text);
-          // Clear his last line straight away. Leaving it up pairs your new
-          // question with his answer to the previous one, which reads as a
-          // non-sequitur for however long he takes to reply.
-          clearUtterance();
+          // Clear his last line, so your new question isn't left sitting
+          // against his answer to the previous one — except when you cut him
+          // off, where the half-finished line is the whole point and should
+          // stay until he says something new.
+          if (!wasCutOff()) clearUtterance();
           state.fresh = true;
         }
         break;
@@ -495,7 +529,7 @@
       e.preventDefault();
       var text = el.input.value.trim();
       if (!text || !state.connectedId) return;
-      ConsoleAudio.stop();
+      interruptHim();
       el.input.value = '';
       noteActivity({ quietFor: requestedTime(text) });
       send({ type: 'prompt', text: text });
@@ -506,7 +540,7 @@
       if (!state.connectedId) return;
       // In ambient mode the button means "that's it, go".
       if (state.mode === 'ambient') { ConsoleMic.cut(); return; }
-      ConsoleAudio.stop();
+      interruptHim();
       setState('listening');
       ConsoleMic.pushStart();
     });
@@ -535,7 +569,7 @@
 
     window.addEventListener('keydown', function (e) {
       if (document.documentElement.dataset.phase !== 'live') return;
-      if (e.key === 'Escape') { ConsoleAudio.stop(); return; }
+      if (e.key === 'Escape') { interruptHim(); return; }
       if (!PTT_CODES[e.code] || state.spaceDown) return;
       // Space types; Right Command does not, so only Space is blocked while
       // the composer has focus.
@@ -543,7 +577,7 @@
       if (state.mode !== 'ptt' || !state.connectedId) return;
       e.preventDefault();
       state.spaceDown = true;
-      ConsoleAudio.stop();
+      interruptHim();
       setState('listening');
       ConsoleMic.pushStart();
     });
@@ -584,7 +618,7 @@
     });
     ConsoleMic.on('onBargeIn', function () {
       // Talking over a reply cuts it off, the way interrupting a person does.
-      ConsoleAudio.stop();
+      interruptHim();
     });
     ConsoleMic.on('onError', function () {
       el.status.textContent = 'Microphone unavailable';

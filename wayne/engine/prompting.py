@@ -13,6 +13,13 @@ Three things shape the payload, in the order the model sees them:
 The reference block deliberately rides on the *last* message rather than the
 system prompt. Everything before it is byte-identical turn to turn, so the
 server's KV cache covers the whole prefix and only the tail is recomputed.
+
+Which makes the size of that tail the thing to watch. Standing instructions —
+how to write for speech, how long a reply should be, how to use a lookup — do
+not change between turns, and putting them in the tail meant re-evaluating ~350
+words on every single one: about two and a half seconds of the four it took to
+say anything. They live in a directives message in the cached prefix now, and
+the tail carries only what genuinely differs turn to turn.
 """
 import time
 
@@ -43,6 +50,32 @@ LENGTH_GUIDANCE = (
     "four, six sentences, a proper argument. Do not ration yourself then.\n"
     "Never pad. Never summarise what you just said. Never close with an offer "
     "of further help. Stop the moment you are finished, even mid-thought."
+)
+
+
+# A standing instruction, so it lives in the cached prefix rather than being
+# re-read every turn. Gating a lookup behind keywords meant that questions
+# needing one never reached the decision at all, leaving invention as the only
+# option — which is exactly what happened.
+SEARCH_DIRECTIVE = (
+    "You can look things up. If answering needs something you could not "
+    "already know — a person, a company, a result, a price, the news, the weather "
+    "— reply with exactly [SEARCH: what to look up] and nothing else, and you "
+    "will be given what is found before you answer.\n"
+    "Use it only for facts you could not know: a person, a company, an event, a "
+    "result, a price, the news, the weather. Never for conversation, opinions, "
+    "feelings, plans, or anything about him or about yourself — you have those "
+    "already, and reaching for a search there is worse than useless.\n"
+    "You are under no obligation to use it: if the request is vague, ask what he "
+    "actually means; if it is something he should do himself, say so.\n"
+    "But you must never invent an answer. If you do not know something and are "
+    "not going to look, say plainly that you do not know. Never state a guess "
+    "about a person, company, or fact as though it were something you knew.\n"
+    "And if you say you will find something out, use the marker in that same "
+    "reply. Do not promise to look and then not look.\n"
+    "Never say you lack real-time data, cannot access the internet, or that he "
+    "should check the news himself. You are a person, not a service: you either "
+    "know, or you go and find out, or you say you have no idea."
 )
 
 
@@ -81,6 +114,17 @@ def time_context(now=None):
     return time.strftime(f"%A, %d %B %Y, %H:%M ({period})", now)
 
 
+def standing_directives(contact):
+    """
+    The instructions that are identical on every turn, hoisted into the cached
+    prefix. Anything genuinely per-turn belongs in `reference_block` instead.
+    """
+    parts = [SPEECH_CONSTRAINT, LENGTH_GUIDANCE]
+    if contact.can_search:
+        parts.append(SEARCH_DIRECTIVE)
+    return "\n\n".join(parts)
+
+
 def reference_block(vault_block, prompt, search_context="", awareness=()):
     parts = [
         f"Current time: {time_context()}\n"
@@ -112,8 +156,7 @@ def reference_block(vault_block, prompt, search_context="", awareness=()):
         # or let them pass, the way anyone would.
         parts.append("You have noticed:\n" + "\n".join(f"- {n}" for n in awareness))
 
-    parts.append(SPEECH_CONSTRAINT)
-    parts.append(LENGTH_GUIDANCE)
+    # Only the register hint stays here: it depends on what he just said.
     parts.append(register_hint(prompt))
     return "\n\n".join(parts)
 
@@ -134,6 +177,8 @@ def build_payload(contact, history, user_turn):
     messages = []
     if contact.system:
         messages.append({"role": "system", "content": contact.system})
+    # Byte-identical every turn, so it costs nothing after the first.
+    messages.append({"role": "system", "content": standing_directives(contact)})
     messages.extend(contact.primer_messages())
     messages.extend(list(history))
     messages.append({"role": "user", "content": user_turn})

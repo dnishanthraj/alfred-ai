@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.8.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.8.1` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
@@ -297,8 +297,14 @@ make a character sound like themselves.
 
 ## Latency
 
-Warm, on an M-series Mac: **~0.5s to first token, ~34 tok/s, about 0.3s from
-the first sentence being written to audio playing.** Measured on the same
+Warm, on an M-series Mac: **~1.1s from sending to the first sentence, ~1.4s to
+audio playing.**
+
+Most of that budget is prompt evaluation, not generation, and the lever is
+what has to be re-read each turn. Standing instructions live in a directives
+message in the cached prefix; only genuinely per-turn context — the time, the
+relevant vault facts, what he has noticed — rides on the last message. Moving
+~350 words out of the tail took first-sentence latency from 4.0s to 1.1s. Measured on the same
 machine, `qwen2.5:14b` gave 0.33s / 23 tok/s and `qwen2.5:32b` was unusable at
 0.3 tok/s — it swaps.
 

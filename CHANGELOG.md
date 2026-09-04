@@ -3,6 +3,23 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.8.1] - 2026-09-04
+
+### Fixed
+
+- **Replies had slowed to four seconds.** The reference block rides on the last
+  message so it is recomputed every turn — and it had grown to 452 words, most
+  of which never changed: how to write for speech, how long a reply should be,
+  how to use a lookup. Standing instructions now live in a directives message
+  inside the cached prefix, leaving 56 words in the tail. **4.0s to first
+  sentence became 1.1s; 4.6s to first audio became 1.4s.**
+- **Interrupting him still showed the rest of the sentence.** Words are revealed
+  on timers spread across the clip, so stopping the audio left them firing: he
+  fell silent while what he *would* have said carried on appearing. The line now
+  stops where his voice did, marked with a dash, and the remainder is never
+  rendered — it was never heard. The cut line survives the question that
+  interrupted it, since that is precisely what you want to see.
+
 ## [0.8.0] - 2026-09-04
 
 Everything here came out of reading one real transcript. It contained a
