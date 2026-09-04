@@ -76,6 +76,8 @@ class ContactSession:
         self.history = History(contact.id)
         self.vault = Vault(contact.id)
         self.already_greeted = False
+        # How many times he has talked over a reply this session.
+        self.interruptions = 0
 
     # --- model calls ------------------------------------------------------
 
@@ -296,15 +298,85 @@ class ContactSession:
             "someone in the same room does. Do not ask what he needs, do not offer "
             "help, and do not start a new subject."
         )
-        payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
+        yield from self._speak_aside(instruction, temperature=0.9, cap=2)
 
+    def _awareness(self, prompt, interrupted):
+        """
+        What a person on the other end would have registered about this turn,
+        beyond its words. Kept short: a list of observations, not a briefing.
+        """
+        notes = []
+
+        repeats = guards.count_repeats(prompt, self.history.recent_user(turns=40))
+        if repeats == 1:
+            notes.append("He has said this to you before, earlier in the conversation.")
+        elif repeats >= 2:
+            notes.append(
+                f"He has now said this {repeats + 1} times. Say so — plainly, and "
+                "without pretending you hadn't noticed the first two."
+            )
+
+        if interrupted:
+            self.interruptions += 1
+            if self.interruptions >= 3:
+                notes.append(
+                    f"He cut you off mid-sentence again — {self.interruptions} times now. "
+                    "You are entitled to remark on it."
+                )
+            else:
+                notes.append("He cut you off mid-sentence. Let it go and answer what he asked.")
+        return notes
+
+    def sign_off(self):
+        """
+        Close the call himself. Nobody stays on a dead line indefinitely, and a
+        contact who would is a program with the receiver off the hook.
+        """
+        yield events.state(events.THINKING)
+        yield events.reply_start()
+        instruction = (
+            "[REFERENCE — context only]\n"
+            f"He has not answered for some time and you have already checked twice.\n"
+            f"{prompting.SPEECH_CONSTRAINT}\n"
+            "[END REFERENCE]\n\n"
+            "Close the call yourself, in one short line. Not wounded, not fussing — "
+            "he has clearly stepped away. Make it plain you will be here when he "
+            "comes back."
+        )
+        yield from self._speak_aside(instruction, temperature=0.9, cap=2)
+
+    def resume(self):
+        """
+        Come back after asking for a moment. Whatever he was doing is his own
+        business; what matters is that he returns of his own accord rather than
+        waiting to be prompted, which is the whole point of having said it.
+        """
+        yield events.state(events.THINKING)
+        yield events.reply_start()
+        instruction = (
+            "[REFERENCE — context only]\n"
+            "You asked him for a moment a short while ago, and you have taken it.\n"
+            f"{prompting.SPEECH_CONSTRAINT}\n"
+            "[END REFERENCE]\n\n"
+            "Pick the thread back up in a line or two: you are back, and you answer "
+            "or continue whatever you had paused for. Do not apologise at length "
+            "and do not explain yourself unless he asks."
+        )
+        yield from self._speak_aside(instruction, temperature=0.85, cap=3)
+
+    def _speak_aside(self, instruction, temperature, cap):
+        """
+        A turn the contact initiates rather than answers. Never written to
+        history: a line spoken into silence should not become something he
+        remembers being told.
+        """
+        payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
         try:
-            text = self._chat_once(payload, temperature=0.9)
+            text = self._chat_once(payload, temperature=temperature)
         except Exception:
             yield events.state(events.IDLE)
             return
-
-        text = guards.apply(text, "", 2, self.already_greeted,
+        text = guards.apply(text, "", cap, self.already_greeted,
                             self.contact.forbidden_address)
         for i, sentence in enumerate(guards.split_sentences(text)):
             if sentence.strip():
@@ -312,7 +384,7 @@ class ContactSession:
         yield events.reply_end(text)
         yield events.state(events.IDLE)
 
-    def ask(self, prompt):
+    def ask(self, prompt, interrupted=False):
         """Run one full turn."""
         prompt = (prompt or "").strip()
         if not prompt:
@@ -343,7 +415,8 @@ class ContactSession:
                 return   # he answered, asked, or refused — that was the turn
 
         vault_block = self.vault.as_block(prompt)
-        user_turn = prompting.compose_user_turn(prompt, vault_block, search_context)
+        user_turn = prompting.compose_user_turn(
+            prompt, vault_block, search_context, self._awareness(prompt, interrupted))
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn)
 
         yield events.state(events.THINKING)

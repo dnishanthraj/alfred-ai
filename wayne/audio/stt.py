@@ -17,7 +17,7 @@ import time
 import numpy as np
 import sounddevice as sd
 
-from ..config import WHISPER_HINT_PROMPT
+from ..config import WHISPER_HINT_PROMPT, WHISPER_MODEL
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
@@ -49,7 +49,7 @@ def _resolve_backend():
             return _backend
         try:
             import mlx_whisper  # noqa: F401
-            _backend = ("mlx", "mlx-community/whisper-small.en-mlx")
+            _backend = ("mlx", WHISPER_MODEL)
         except ImportError:
             from faster_whisper import WhisperModel
             _backend = ("faster", WhisperModel("small.en", device="cpu", compute_type="int8"))
@@ -61,8 +61,17 @@ def backend_name():
     return "mlx-whisper (Neural Engine)" if kind == "mlx" else "faster-whisper (CPU)"
 
 
-def transcribe_audio(audio):
-    """Transcribe a float32 mono array at SAMPLE_RATE. Returns '' if too short."""
+def transcribe_audio(audio, hint=None):
+    """
+    Transcribe a float32 mono array at SAMPLE_RATE. Returns '' if too short.
+
+    `hint` biases decoding toward words the speaker is likely to use. Whisper
+    mangles proper nouns it has no reason to expect — names, places, whatever
+    this particular conversation is about — and feeding it those words is far
+    more effective than a larger model. Measured on the same clip, a model four
+    times the size was three times slower and no more accurate; the hint is
+    where the accuracy actually is.
+    """
     if audio is None or len(audio) < _MIN_SAMPLES:
         return ""
 
@@ -85,7 +94,7 @@ def transcribe_audio(audio):
                     path_or_hf_repo=model,
                     language="en",
                     verbose=False,
-                    initial_prompt=WHISPER_HINT_PROMPT,
+                    initial_prompt=hint or WHISPER_HINT_PROMPT,
                 )
             finally:
                 sys.stderr = old_stderr
@@ -110,14 +119,14 @@ def transcribe_audio(audio):
             "min_silence_duration_ms": 300,
             "speech_pad_ms": 200,
         },
-        initial_prompt=WHISPER_HINT_PROMPT,
+        initial_prompt=hint or WHISPER_HINT_PROMPT,
         condition_on_previous_text=False,
     )
     text = " ".join(s.text for s in segments).strip()
     return text if _meaningful(text) else ""
 
 
-def transcribe_pcm(raw_bytes):
+def transcribe_pcm(raw_bytes, hint=None):
     """
     Transcribe little-endian float32 PCM captured by the browser at SAMPLE_RATE.
     Sending raw PCM rather than webm/opus keeps ffmpeg out of the picture
@@ -128,7 +137,7 @@ def transcribe_pcm(raw_bytes):
     audio = np.frombuffer(raw_bytes, dtype=np.float32)
     if audio.size == 0:
         return ""
-    return transcribe_audio(audio.copy())
+    return transcribe_audio(audio.copy(), hint)
 
 
 def record_while(should_continue, max_seconds=_MAX_RECORD_SECONDS):

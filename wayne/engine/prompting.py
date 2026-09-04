@@ -81,7 +81,7 @@ def time_context(now=None):
     return time.strftime(f"%A, %d %B %Y, %H:%M ({period})", now)
 
 
-def reference_block(vault_block, prompt, search_context=""):
+def reference_block(vault_block, prompt, search_context="", awareness=()):
     parts = [
         f"Current time: {time_context()}\n"
         f"(Factual context only. Do not infer what {config.USER_NAME} has been doing, "
@@ -105,15 +105,22 @@ def reference_block(vault_block, prompt, search_context=""):
             f"{search_context}"
         )
 
+    if awareness:
+        # Things a person in the room would have noticed and a model cannot:
+        # that he has said this before, or that you were cut off mid-sentence.
+        # Stated as observations rather than instructions, so he can use them
+        # or let them pass, the way anyone would.
+        parts.append("You have noticed:\n" + "\n".join(f"- {n}" for n in awareness))
+
     parts.append(SPEECH_CONSTRAINT)
     parts.append(LENGTH_GUIDANCE)
     parts.append(register_hint(prompt))
     return "\n\n".join(parts)
 
 
-def compose_user_turn(prompt, vault_block, search_context=""):
+def compose_user_turn(prompt, vault_block, search_context="", awareness=()):
     """Wrap the prompt with fenced context. The actual message comes last."""
-    context = reference_block(vault_block, prompt, search_context)
+    context = reference_block(vault_block, prompt, search_context, awareness)
     return (
         "[REFERENCE — context only, do not speak any of this aloud]\n"
         f"{context}\n"

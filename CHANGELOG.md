@@ -3,6 +3,38 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.7.0] - 2026-09-04
+
+### Fixed
+
+- **Interrupting him did nothing.** A new message queued behind the turn in
+  flight, so he finished what he was saying and then answered something you had
+  moved past. Turns now carry an epoch: anything newer supersedes them, and a
+  superseded turn stops forwarding events and stops synthesising immediately.
+- **A silence check-in appended itself to his previous line** instead of
+  replacing it, because a new reply only cleared the display when the operator
+  had spoken first.
+
+### Added
+
+- **He notices what you repeat.** Paraphrase counts, so "I should call her" and
+  "I ought to call her" are the same admission twice. On the third he says so:
+  *"You've said that three times now. What's stopping you?"*
+- **He notices being talked over**, and after the third time is entitled to
+  remark on it.
+- **Escalating check-ins, then he hangs up.** The second silence is chased
+  sooner than the first, and after that he closes the call himself rather than
+  sitting on a dead line — *"I'll keep the kettle on."*
+- **"Give me a moment" is real.** If he says he needs one he takes it, nothing
+  is expected of you meanwhile, and he comes back on his own: *"Right, where
+  were we?"*
+- **Per-request speech-to-text hints** built from who is on the line and what
+  was last said. Whisper mangles proper nouns it has no reason to expect;
+  feeding it the likely ones took word accuracy on hard audio from **83% to
+  100%** at no latency cost. `ALFRED_WHISPER_MODEL` makes the model
+  configurable — though on measurement a model four times larger was three
+  times slower and no more accurate, so the default stands.
+
 ## [0.6.1] - 2026-09-04
 
 ### Fixed

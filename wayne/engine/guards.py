@@ -165,6 +165,26 @@ def echoes(text, recently_spoken, threshold=0.62):
     return False
 
 
+def count_repeats(prompt, previous_prompts, threshold=0.78):
+    """
+    How many times the operator has already said essentially this.
+
+    Not for suppressing anything — for *noticing*. A person you have told the
+    same thing to three times says so, and a contact who cannot tell is
+    obviously not listening. Paraphrase counts: "I should call her" and "I
+    ought to call her" are the same admission twice.
+    """
+    candidate = (prompt or "").strip().lower()
+    if len(candidate.split()) < 3:
+        # "yes", "go on", "ok" recur constantly and mean nothing by recurring.
+        return 0
+    return sum(
+        1 for previous in previous_prompts
+        if difflib.SequenceMatcher(None, candidate, (previous or "").strip().lower())
+        .ratio() >= threshold
+    )
+
+
 def strip_forbidden_address(text, terms):
     """
     Remove forms of address a character would never use.

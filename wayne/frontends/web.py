@@ -67,6 +67,14 @@ class Console:
         # What the contact has said lately, for recognising its own voice
         # arriving back through the microphone.
         self.recent_speech = deque(maxlen=12)
+        # Bumped whenever something supersedes the turn in flight. A turn that
+        # finds its epoch stale stops forwarding events and stops synthesising,
+        # which is what makes interrupting him actually interrupt him rather
+        # than queue behind whatever he was already saying.
+        self.turn_epoch = 0
+        # True while a turn is mid-flight, so the next input can tell whether it
+        # cut him off or merely followed him.
+        self.voice_busy = False
         self.boot_task = None
         self.migrated = migrate_legacy(config.DEFAULT_CONTACT)
 
@@ -139,10 +147,21 @@ class Console:
             self.audio_clips.popitem(last=False)
         return clip_id
 
-    async def drive(self, generator, contact):
+    def interrupt(self):
+        """Supersede whatever is being generated or spoken right now."""
+        self.turn_epoch += 1
+        return self.turn_epoch
+
+    async def drive(self, generator, contact, epoch=None):
         """
         Consume a blocking engine generator on a worker thread, forwarding its
         events to the socket and synthesizing each sentence as it appears.
+
+        The generator itself cannot be cancelled — it is blocked in a thread on
+        the model — but it can be abandoned. Once the turn is superseded,
+        nothing more is sent to the page and nothing more is synthesised, so a
+        contact talked over goes quiet immediately rather than finishing the
+        sentence he was on and then answering something you have moved past.
         """
         loop = asyncio.get_running_loop()
         queue = asyncio.Queue()
@@ -163,12 +182,15 @@ class Console:
 
         speech = asyncio.Queue()
         worker = asyncio.create_task(self._speech_worker(speech))
+        self.voice_busy = True
 
         try:
             while True:
                 event = await queue.get()
                 if event is done:
                     break
+                if epoch is not None and epoch != self.turn_epoch:
+                    break          # superseded; drain nothing further
                 if event.get("type") == "sentence" and self._can_speak(contact):
                     task = asyncio.create_task(
                         asyncio.to_thread(self.voice.synthesize, event["text"], contact.voice_id)
@@ -178,9 +200,11 @@ class Console:
         finally:
             speech.put_nowait(None)
             await worker
-            # Only now is the turn genuinely finished: the model has stopped
-            # writing and every sentence has been synthesized and released.
-            await self.broadcast(events.turn_complete())
+            self.voice_busy = False
+            if epoch is None or epoch == self.turn_epoch:
+                # Only now is the turn genuinely finished: the model has stopped
+                # writing and every sentence has been synthesized and released.
+                await self.broadcast(events.turn_complete())
 
     def _can_speak(self, contact):
         return self.voice.available and contact.has_voice
@@ -246,7 +270,7 @@ class Console:
                     f"Migrated existing {' and '.join(self.migrated)} into "
                     f"data/{config.DEFAULT_CONTACT}/.", "info"))
                 self.migrated = []
-            await self.drive(session.boot(), contact)
+            await self.drive(session.boot(), contact, self.interrupt())
 
     def _is_own_echo(self, text):
         """
@@ -264,11 +288,12 @@ class Console:
         not forget the conversation — but nothing is on the line afterwards, and
         a later call re-greets rather than resuming mid-sentence.
         """
+        self.interrupt()
         async with self.turn_lock:
             self.current_id = None
             self.recent_speech.clear()
 
-    async def nudge(self):
+    async def nudge(self, kind="check_in"):
         """
         Break a long silence. Not a notification — a turn like any other, so
         what he says is generated in character and differs every time. It is
@@ -280,7 +305,7 @@ class Console:
         async with self.turn_lock:
             contact = self.contact
             session = self.session_for(self.current_id)
-            await self.drive(session.check_in(), contact)
+            await self.drive(getattr(session, kind)(), contact, self.interrupt())
 
     async def submit(self, text, spoken=False):
         """
@@ -292,10 +317,18 @@ class Console:
             return
         if spoken and self._is_own_echo(text):
             return
+
+        # Supersede first, then queue: the running turn sees a stale epoch,
+        # stops, and releases the lock instead of making the new input wait for
+        # a reply nobody is listening to any more.
+        was_speaking = self.voice_busy
+        epoch = self.interrupt()
         async with self.turn_lock:
+            if epoch != self.turn_epoch:
+                return             # something newer arrived while we waited
             contact = self.contact
             session = self.session_for(self.current_id)
-            await self.drive(session.ask(text), contact)
+            await self.drive(session.ask(text, interrupted=was_speaking), contact, epoch)
 
 
 console = Console()
@@ -414,11 +447,27 @@ async def audio(clip_id: str):
     return Response(content=clip, media_type="audio/mpeg")
 
 
+def _speech_hint():
+    """
+    Words this particular conversation is likely to contain, fed to the decoder
+    so it stops inventing spellings for them. Whoever is on the line, whoever
+    is speaking, and the last thing said — which is usually what the next thing
+    is about.
+    """
+    parts = [config.USER_NAME]
+    contact = console.contact
+    if contact:
+        parts += [contact.name, contact.full_name]
+    if console.recent_speech:
+        parts.append(console.recent_speech[-1][1])
+    return ", ".join(p for p in parts if p)[:400]
+
+
 @app.post("/api/transcribe")
 async def transcribe(request: Request):
     """Raw little-endian float32 PCM at stt.SAMPLE_RATE, captured in the page."""
     body = await request.body()
-    text = await asyncio.to_thread(stt.transcribe_pcm, body)
+    text = await asyncio.to_thread(stt.transcribe_pcm, body, _speech_hint())
     return JSONResponse({"text": text})
 
 
@@ -439,6 +488,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(console.disconnect())
             elif kind == "nudge":
                 asyncio.create_task(console.nudge())
+            elif kind == "signoff":
+                asyncio.create_task(console.nudge("sign_off"))
+            elif kind == "resume":
+                asyncio.create_task(console.nudge("resume"))
     except WebSocketDisconnect:
         pass
     except Exception:

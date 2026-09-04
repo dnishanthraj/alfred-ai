@@ -195,3 +195,30 @@ class TestForbiddenAddress:
             forbidden_address=self.TERMS,
         )
         assert result == "Steady on."
+
+
+class TestRepeatCounting:
+    """
+    Noticing that something has been said before — the basis for "you've told
+    me this three times now", which is what separates listening from parsing.
+    """
+
+    SAID = [
+        "I really should call her back",
+        "work has been fine I suppose",
+        "I really ought to call her back",
+    ]
+
+    def test_counts_paraphrases_not_just_copies(self):
+        assert guards.count_repeats("I really should call her back", self.SAID) >= 2
+
+    def test_returns_zero_for_something_new(self):
+        assert guards.count_repeats("The car failed its MOT this morning", self.SAID) == 0
+
+    def test_ignores_short_filler(self):
+        # "yes" and "go on" recur constantly and mean nothing by recurring.
+        assert guards.count_repeats("yes", ["yes", "yes", "yes"]) == 0
+        assert guards.count_repeats("go on", ["go on", "go on"]) == 0
+
+    def test_nothing_said_before_counts_as_nothing(self):
+        assert guards.count_repeats("Anything at all here", []) == 0

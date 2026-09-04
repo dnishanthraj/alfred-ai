@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.6.1` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.7.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
@@ -160,12 +160,26 @@ Two microphone modes, switchable in the composer:
 
 Also: type and press Enter, or press **Esc** to silence playback.
 
-### Silence
+### Presence
 
-After a minute or so with nothing said, he breaks the silence himself — briefly,
-generated in character so it differs every time, and never written to memory.
-He gives up after the second attempt rather than nagging. Asking him for a
-minute buys you one.
+He breaks a silence himself after half a minute or so — briefly, generated in
+character so it differs every time, and never written to memory. The second
+check comes sooner than the first, and after that he closes the call rather
+than sitting on a dead line. Asking him for a minute buys you one; if *he* asks
+for a moment he takes it and comes back on his own.
+
+He also notices things a transcript would not: that you have said something
+three times now, or that you have talked over him again. Interrupting works —
+a new message stops the reply in flight rather than queueing behind it.
+
+### Hearing you
+
+Speech-to-text runs on `whisper-small.en`, chosen by measurement: ~0.2s on an
+M-series Mac, where a model four times the size was three times slower and no
+more accurate. The accuracy is instead in the hints — the console tells the
+decoder who is on the line and what was just said, which took word accuracy on
+hard audio from 83% to 100%. If a name is still coming out wrong, add it to
+`ALFRED_WHISPER_HINTS`.
 
 ### Feedback
 

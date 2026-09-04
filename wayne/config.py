@@ -25,6 +25,12 @@ MODEL_KEEP_ALIVE = os.getenv("ALFRED_MODEL_KEEP_ALIVE", "1h")
 # --- Speech-to-text ---
 WHISPER_HINT_PROMPT = os.getenv("ALFRED_WHISPER_HINTS", USER_NAME)
 
+# Speech-to-text model. `small.en` is the default on measurement, not habit: on
+# an M-series Mac it runs in ~0.2s, and a model four times its size was three
+# times slower without being more accurate on the same audio. Change it if your
+# room or accent says otherwise.
+WHISPER_MODEL = os.getenv("ALFRED_WHISPER_MODEL", "mlx-community/whisper-small.en-mlx")
+
 # --- ElevenLabs ---
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_MODEL = os.getenv("ALFRED_TTS_MODEL", "eleven_turbo_v2_5")

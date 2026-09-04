@@ -40,7 +40,9 @@
     generationDone: true,
     flushTimer: null,
     idleTimer: null,
+    resumeTimer: null,
     nudges: 0,        // consecutive unanswered check-ins
+    closing: false,   // he is signing off; hang up once he has finished
     quietUntil: 0     // he was asked for time; don't chase until then
   };
 
@@ -50,11 +52,20 @@
   var PTT_CODES = { Space: true, MetaRight: true };
 
   // How long a silence runs before he checks you are still there. Randomised
-  // so it never feels like a timer, and it gives up after two — a person who
-  // asks a third time is nagging.
-  var IDLE_MIN_MS = 26000;
-  var IDLE_SPREAD_MS = 22000;
-  var MAX_NUDGES = 2;
+  // so it never reads as a timer, and it *shortens* each time — someone who
+  // has asked once and heard nothing does not wait as long to ask again. After
+  // the second he stops asking and closes the call, because nobody sits on a
+  // dead line forever.
+  var IDLE_WINDOWS = [
+    [26000, 22000],   // first: half a minute or so
+    [17000, 12000]    // second: sooner, and it sounds like it
+  ];
+  var MAX_NUDGES = IDLE_WINDOWS.length;
+
+  // When he says he needs a moment, he takes one — and comes back on his own.
+  var HE_ASKED_FOR_TIME = /\b(give me|just|hold on|hang on|one|bear with)\s*(a\s*)?(moment|minute|second|sec|mo)\b|\blet me (think|check|see)\b/i;
+  var RESUME_MIN_MS = 6000;
+  var RESUME_SPREAD_MS = 7000;
 
   // Deliberately free of machinery. "Composing reply" and "voice synthesis"
   // describe a program; the point of this console is that it doesn't feel like
@@ -166,12 +177,22 @@
 
   function armIdleCheck() {
     clearTimeout(state.idleTimer);
-    if (!state.connectedId || state.nudges >= MAX_NUDGES) return;
-    var wait = IDLE_MIN_MS + Math.random() * IDLE_SPREAD_MS;
+    if (!state.connectedId) return;
+
+    // Past the last window he stops asking and hangs up instead.
+    var window_ = IDLE_WINDOWS[Math.min(state.nudges, MAX_NUDGES - 1)];
+    var closing = state.nudges >= MAX_NUDGES;
+    var wait = window_[0] + Math.random() * window_[1];
     var quietFor = state.quietUntil - Date.now();
     if (quietFor > 0) wait += quietFor;
+
     state.idleTimer = setTimeout(function () {
       if (!state.connectedId || ConsoleAudio.isPlaying) { armIdleCheck(); return; }
+      if (closing) {
+        state.closing = true;
+        send({ type: 'signoff' });
+        return;
+      }
       state.nudges += 1;
       send({ type: 'nudge' });
     }, wait);
@@ -276,6 +297,7 @@
     showHeard('');
     state.fresh = true;
     state.nudges = 0;
+    state.closing = false;
     state.quietUntil = 0;
 
     // Ring while he is being reached. This is not only dressing: it covers the
@@ -309,6 +331,8 @@
     ConsoleMic.close();
     setMode('ptt');
     clearTimeout(state.idleTimer);
+    clearTimeout(state.resumeTimer);
+    state.closing = false;
     send({ type: 'disconnect' });
     state.connectedId = null;
     state.ringingId = null;
@@ -366,6 +390,7 @@
       case 'reply_start':
         cancelFlush();
         state.generationDone = false;
+        state.fresh = true;
         break;
 
       case 'sentence':
@@ -381,13 +406,28 @@
         break;
 
       case 'reply_end':
-        break;   // audio may still be in flight; wait for turn_complete
+        // If he asked for a moment, he means it: nothing is expected of you
+        // until he comes back of his own accord.
+        clearTimeout(state.resumeTimer);
+        if (!event.interim && HE_ASKED_FOR_TIME.test(event.text || '')) {
+          clearTimeout(state.idleTimer);
+          state.resumeTimer = setTimeout(function () {
+            if (state.connectedId) send({ type: 'resume' });
+          }, RESUME_MIN_MS + Math.random() * RESUME_SPREAD_MS);
+        }
+        break;
 
       case 'turn_complete':
         state.generationDone = true;
         answered();
         scheduleFlush(60);
-        armIdleCheck();
+        if (state.closing) {
+          // Let the last line finish playing, then close the line.
+          state.closing = false;
+          setTimeout(function () { if (state.connectedId) hangUp(); }, 2600);
+        } else {
+          armIdleCheck();
+        }
         break;
 
       case 'notice':
