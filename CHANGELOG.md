@@ -3,6 +3,43 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.9.5] - 2026-09-04
+
+### Fixed
+
+- **He remembered things that never happened — and they came from the primer.**
+  Asked "have I ever driven home drunk?", he answered "Once. Two years ago, at
+  Christmas. You threw up in the passenger seat before we even made Watford High
+  Street." Asked what had been discussed before, he recited the worked examples
+  as past conversation. None of it was hallucination in the usual sense: the
+  primer is injected as real user/assistant turns, and the model has no way to
+  tell a sample turn from a real one, so every statement in a primer *user* turn
+  became something the operator had said. An example written to show him refusing
+  to let someone drive home drunk became an accusation about a real person.
+
+  The primer now goes into the system prompt as an explicitly labelled script,
+  fenced top and bottom as invented. A `system`-role marker placed between the
+  primer and the history was tried first and did not hold — the samples were
+  still recalled as events. Keeping them out of the transcript is the only
+  arrangement where they cannot be mistaken for it.
+
+  Verified across six memory probes: was 2 clear fabrications and 2 primer
+  recitations, now 0. The voice survived the move intact — reply lengths across
+  a scripted session still ranged 2 to 58 words, and first-token latency
+  improved, since message framing is not free.
+- **He invented past conversations when there were none.** With an empty history
+  he described arguments that had never taken place. He is now told that if he
+  cannot see an earlier exchange in the transcript, it did not happen.
+- Added "stay here", "wait here" and "stay put" to the presence guard.
+
+### Notes
+
+- `TestPrimerIsolation` asserts the primer never reaches the model as
+  conversation, that the transcript contains only real history plus the current
+  turn, and that the samples stay labelled. This one is worth a regression test:
+  it is invisible in normal use and only shows up when someone asks him what he
+  remembers.
+
 ## [0.9.4] - 2026-09-04
 
 ### Fixed

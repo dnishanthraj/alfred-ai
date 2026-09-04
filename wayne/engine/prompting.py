@@ -3,10 +3,13 @@ Context assembly.
 
 Three things shape the payload, in the order the model sees them:
 
-  1. Primer — worked examples as real user/assistant turns. A model imitates a
-     conversation it can see far more reliably than a prose description of one,
-     so these live here rather than as pasted text inside the system prompt.
-  2. History — the recent exchange, verbatim, with no injected scaffolding.
+  1. Primer — worked examples, rendered as a labelled script inside the system
+     prompt. They are written as dialogue because a model imitates a dialogue it
+     can see far better than a description of one; they are kept *out* of the
+     conversation because a model cannot tell a sample turn from a real one, and
+     sent as turns they were recalled as things the operator had said and done.
+  2. History — the recent exchange, verbatim, with no injected scaffolding. This
+     is the only thing in the payload he may treat as memory.
   3. The current turn — wrapped in a fenced reference block carrying time,
      relevant vault facts, and any search results.
 
@@ -119,8 +122,10 @@ PRESENCE_DIRECTIVE = (
 GROUNDING_DIRECTIVE = (
     "Never state anything about his life, day, work, feelings or surroundings "
     "unless he told you or it is in the facts below. Do not guess or fill gaps — "
-    "ask. Inventing something he did is the one thing you must never do. Your own "
-    "side is yours to say."
+    "ask. Inventing something he did is the one thing you must never do. Never "
+    "invent past conversations either: if you cannot see an earlier exchange in "
+    "this transcript, it did not happen — say you don't recall it. Your own side "
+    "is yours to say."
 )
 
 
@@ -278,17 +283,58 @@ def build_payload(contact, history, user_turn):
     `standing_directives`, which generates the text to paste there). Contacts
     that declare `system` in their profile get it merged with the directives,
     which is safe because there is no baked prompt to overwrite.
+
+    The primer goes in the system message as a labelled script, not into the
+    conversation as real turns. Real turns imitate better — that was the whole
+    reason for them — but the model has no way to tell them from history, so
+    every statement in a primer *user* turn silently became something the
+    operator had said. An example written to show him refusing to let someone
+    drive home drunk came back, asked directly, as "Once. Two years ago, at
+    Christmas. You threw up in the passenger seat" — a detailed, confident,
+    entirely fabricated accusation about a real person, sourced from a style
+    sample. Asked what they had discussed before, he recited the primer.
+
+    A `system`-role marker between the primer and the history was tried first
+    and did not hold; the samples were still recalled as events. Labelled script
+    inside the system prompt is the only arrangement where they cannot be
+    mistaken for the transcript, because they are not in it.
     """
     messages = []
     if contact.system:
-        messages.append({
-            "role": "system",
-            "content": contact.system + "\n\n" + standing_directives(contact),
-        })
-    messages.extend(contact.primer_messages())
+        parts = [contact.system, standing_directives(contact)]
+        script = _primer_script(contact)
+        if script:
+            parts.append(script)
+        messages.append({"role": "system", "content": "\n\n".join(parts)})
     messages.extend(list(history))
     messages.append({"role": "user", "content": user_turn})
     return messages
+
+
+def _primer_script(contact):
+    """
+    The worked examples, rendered as an explicitly labelled script.
+
+    Framed hard, and twice: once at the top and once at the bottom. The failure
+    mode being defended against is not the model misreading the label — it is
+    the model reading fifteen exchanges of convincing dialogue and concluding,
+    reasonably, that they happened.
+    """
+    exchanges = contact.primer_messages()
+    if not exchanges:
+        return ""
+    lines = []
+    for message in exchanges:
+        who = "HIM" if message["role"] == "user" else "YOU"
+        lines.append(f"{who}: {message['content']}")
+    return (
+        "=== HOW YOU SPEAK ===\n"
+        "Invented samples, written to show your voice, timing and range. None of "
+        "this happened. Nothing here is a fact about him, and you must never "
+        "recall, quote or refer to any of it as something he said or did.\n\n"
+        + "\n".join(lines)
+        + "\n\n=== END SAMPLES — none of the above occurred ==="
+    )
 
 
 def boot_prompt(contact, returning, since_last="", previous_greeting=""):

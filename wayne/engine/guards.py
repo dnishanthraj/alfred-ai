@@ -271,6 +271,7 @@ def count_repeats(prompt, previous_prompts, threshold=0.78):
 PRESENCE_PATTERNS = [
     r"\bcome (here|in|inside|over|through)\b",
     r"\bpull up a (chair|seat|pew)\b",
+    r"\bstay here\b", r"\bwait here\b", r"\bstay put\b",
     r"\bthat look on your face\b", r"\bthe look on your face\b",
     r"\bby the look of you\b",
     r"\b(sit|lie) down\b",

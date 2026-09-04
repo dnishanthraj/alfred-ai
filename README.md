@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.9.4` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.9.5` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
@@ -42,8 +42,11 @@ their own memory on disk.
   evening and a terminal to look things up on; what he cannot do is see you.
 - **He will not invent your life** — anything about your day, your work or your
   plans has to have been said by you or be in the vault, or he asks instead of
-  guessing. His own side is unrestricted: what *he* has been doing is his to
-  make up, and nobody can be contradicted about their own afternoon.
+  guessing. The worked examples that teach his voice are kept out of the
+  conversation entirely and labelled as fiction, because a model cannot tell a
+  sample turn from a real one and will otherwise recall them as your history.
+  His own side is unrestricted: what *he* has been doing is his to make up, and
+  nobody can be contradicted about their own afternoon.
 - **One character, several registers** — he banters when you are light, is dry
   and brief in passing, and goes wholly serious the moment something is actually
   wrong. The tone is decided per turn from what you just said and attached to it,

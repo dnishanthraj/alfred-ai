@@ -6,6 +6,7 @@ import pytest
 
 from wayne import config
 from wayne.contacts import Availability, Directory, directory
+from wayne.engine import prompting
 from wayne.engine.search import needs_search
 
 
@@ -15,7 +16,9 @@ class TestDirectory:
         assert alfred is not None
         assert alfred.full_name == "Alfred Pennyworth"
 
-    def test_primer_becomes_real_message_turns(self):
+    def test_primer_parses_into_alternating_turns(self):
+        # Still built as message dicts — that is what the script is rendered
+        # from — but they are no longer *sent* as turns. See TestPrimerIsolation.
         messages = directory().get("alfred").primer_messages()
         assert messages
         assert len(messages) % 2 == 0
@@ -99,3 +102,62 @@ class TestSearchRouting:
     def test_opinion_marker_beats_a_search_verb(self):
         # "look up" is present, but he's asking for a view, not a lookup.
         assert not needs_search("what do you think, should I look up her number?")
+
+
+class TestPrimerIsolation:
+    """
+    The primer must never reach the model as conversation.
+
+    It is written as dialogue because a model imitates a dialogue it can see far
+    better than a description of one — and that is exactly why it cannot be sent
+    as real turns: the model has no way to tell a sample from a memory. Sent as
+    turns, an example showing him refuse to let someone drive home drunk came
+    back, asked directly, as "Once. Two years ago, at Christmas. You threw up in
+    the passenger seat" — a detailed and entirely fabricated accusation about a
+    real person. Asked what they had discussed before, he recited the primer.
+
+    A system-role marker placed between the primer and the history was tried and
+    did not hold. The samples belong in the system prompt, labelled, where they
+    cannot be mistaken for the transcript.
+    """
+
+    def _payload(self):
+        contact = directory().get("alfred")
+        history = [{"role": "user", "content": "genuine turn"},
+                   {"role": "assistant", "content": "genuine reply"}]
+        return contact, prompting.build_payload(contact, history, "what now")
+
+    def test_primer_is_not_sent_as_conversation_turns(self):
+        contact, payload = self._payload()
+        conversation = [m for m in payload if m["role"] != "system"]
+        primer_texts = {m["content"] for m in contact.primer_messages()}
+        for message in conversation:
+            assert message["content"] not in primer_texts
+
+    def test_the_conversation_is_only_history_and_the_current_turn(self):
+        _, payload = self._payload()
+        conversation = [m for m in payload if m["role"] != "system"]
+        assert [m["content"] for m in conversation] == [
+            "genuine turn", "genuine reply", "what now"]
+
+    def test_primer_still_reaches_the_model_in_the_system_prompt(self):
+        contact, payload = self._payload()
+        system = "\n".join(m["content"] for m in payload if m["role"] == "system")
+        for message in contact.primer_messages():
+            assert message["content"] in system
+
+    def test_the_samples_are_labelled_as_not_having_happened(self):
+        _, payload = self._payload()
+        system = "\n".join(m["content"] for m in payload if m["role"] == "system")
+        assert "None of this happened" in system
+        assert "none of the above occurred" in system
+
+    def test_a_contact_with_no_primer_gets_no_script(self, tmp_path):
+        (tmp_path / "lucius.json").write_text(json.dumps({
+            "id": "lucius", "name": "Lucius", "model": "qwen2.5:14b",
+            "system": "You are Lucius Fox.",
+        }))
+        contact = Directory(profile_dir=tmp_path).get("lucius")
+        payload = prompting.build_payload(contact, [], "hello")
+        system = "\n".join(m["content"] for m in payload if m["role"] == "system")
+        assert "HOW YOU SPEAK" not in system
