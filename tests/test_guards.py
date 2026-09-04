@@ -62,8 +62,10 @@ class TestRegreeting:
         assert guards.strip_regreeting("Good evening. What's on your mind?") \
             == "What's on your mind?"
 
-    def test_keeps_sole_greeting_rather_than_emptying(self):
-        assert guards.strip_regreeting("Good evening.") == "Good evening."
+    def test_a_reply_that_is_only_a_greeting_empties(self):
+        # The caller substitutes something neutral. Returning the greeting
+        # unchanged — the old behaviour — meant he simply greeted twice.
+        assert guards.strip_regreeting("Good evening.") == ""
 
     def test_leaves_non_greeting_untouched(self):
         text = "Evening traffic was dreadful, apparently."
@@ -81,11 +83,15 @@ class TestLengthCap:
 
 
 class TestRepetition:
-    def test_terse_replies_are_exempt(self):
+    def test_backchannels_are_exempt(self):
         # The persona is built on these; flagging them as loops fought the
-        # Modelfile and forced a high-temperature regeneration.
-        for terse in ("Mm.", "Go on.", "Hm yourself."):
+        # Modelfile and forced a high-temperature regeneration. Exemption is by
+        # being a backchannel, not by being short — "Morning." is short too.
+        for terse in ("Mm.", "Go on.", "Quite.", "Right."):
             assert not guards.too_similar(terse, [terse])
+
+    def test_a_short_reply_that_is_not_a_backchannel_is_not_exempt(self):
+        assert guards.too_similar("Hm yourself.", ["Hm yourself."])
 
     def test_catches_a_verbatim_repeat(self):
         line = "That is a poor plan and you know it perfectly well"
@@ -222,3 +228,60 @@ class TestRepeatCounting:
 
     def test_nothing_said_before_counts_as_nothing(self):
         assert guards.count_repeats("Anything at all here", []) == 0
+
+
+class TestGreetingLoop:
+    """
+    Six consecutive "Morning."s reached a real conversation. Three guards each
+    declined to catch it, for three different reasons.
+    """
+
+    def test_a_reply_that_is_only_a_greeting_is_stripped_to_nothing(self):
+        # This returned the greeting unchanged, on the reasoning that a guard
+        # should never empty a reply — which defeated the guard precisely when
+        # it was needed.
+        assert guards.strip_regreeting("Morning.") == ""
+        assert guards.strip_regreeting("Good morning, sir.") == ""
+
+    def test_a_greeting_with_content_keeps_the_content(self):
+        assert guards.strip_regreeting("Good morning. Tea?") == "Tea?"
+
+    def test_the_stack_substitutes_rather_than_greeting_again(self):
+        result = guards.apply("Morning.", prompt="yeah", max_sentences=4,
+                              already_greeted=True)
+        assert result and "morning" not in result.lower()
+
+    def test_repeated_greetings_count_as_repetition(self):
+        # Exempting everything under four words also exempted "Morning.",
+        # so a greeting could repeat indefinitely unnoticed.
+        assert guards.too_similar("Morning.", ["Morning."])
+
+    @pytest.mark.parametrize("phrase", ["Mm.", "Go on.", "Quite.", "Indeed."])
+    def test_backchannels_stay_exempt(self, phrase):
+        # These are meant to recur; that is the character.
+        assert not guards.too_similar(phrase, [phrase])
+
+    def test_a_repeated_greeting_from_the_operator_is_noticed(self):
+        assert guards.count_repeats("Morning", ["Morning"] * 4) == 4
+
+    def test_filler_from_the_operator_is_not(self):
+        assert guards.count_repeats("yes", ["yes"] * 4) == 0
+
+
+class TestOpeningComparison:
+    """
+    The loop check runs on the first sentence of a reply, so it has to be
+    measured against the first sentence of earlier ones. Comparing a single
+    sentence against whole multi-sentence replies scores too low to ever fire.
+    """
+
+    LONG = ("You've said morning nine times now. "
+            "Is there something you're trying to tell me?")
+    NEXT = "You've said morning ten times now."
+
+    def test_a_sentence_against_a_whole_reply_misses(self):
+        assert not guards.too_similar(self.NEXT, [self.LONG])
+
+    def test_a_sentence_against_the_matching_opening_catches_it(self):
+        opening = guards.split_sentences(self.LONG)[0]
+        assert guards.too_similar(self.NEXT, [opening])

@@ -3,6 +3,37 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.7.1] - 2026-09-04
+
+### Fixed
+
+- **Six consecutive "Morning."s**, from a real conversation. Three guards each
+  declined to catch it for a different reason, and all three are fixed:
+  - `strip_regreeting` returned the greeting unchanged whenever stripping it
+    would empty the reply — which is exactly the reply most in need of
+    stripping. It now returns empty and the caller substitutes.
+  - `too_similar` exempted anything under four words, to protect "Mm." and
+    "Go on.". That also exempted "Morning.". Exemption is now by being a
+    *backchannel* — a phrase that carries meaning by recurring — not by length.
+  - `count_repeats` ignored anything under three words, so a repeated one-word
+    greeting was invisible. Same backchannel rule.
+- **The loop check compared a sentence against whole replies.** It runs on the
+  first sentence of a reply but measured it against entire previous ones, which
+  scores too low to ever fire — so "You've said morning nine times now… ten…
+  eleven…" could run indefinitely. Openings are now compared with openings.
+- **Repetition was remarked on every single turn**, announcing a running total,
+  which is as mechanical as the repetition it complains about. He says it once
+  and then deals with whatever is behind it. Observed afterwards: a remark,
+  then "You've said that. Care for some tea now?", then "Tea time?", then "Tea?".
+- **A check-in was not remembered.** He would ask "still with me?" and have no
+  idea he had asked. Self-initiated lines are now appended to his previous turn,
+  which keeps the alternation the model needs while preserving what was said.
+
+### Changed
+
+- History window raised from 16 exchanges to 30. The context freed by trimming
+  the system prompt is far better spent on what was actually said.
+
 ## [0.7.0] - 2026-09-04
 
 ### Fixed

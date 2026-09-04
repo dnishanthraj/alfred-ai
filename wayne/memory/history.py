@@ -12,9 +12,11 @@ import time
 from .. import paths
 from .store import atomic_write, read_text
 
-# Full exchanges (user + assistant pairs) kept as short-term memory. 16 pairs
-# is a solid recent-conversation window without bloating context.
-MAX_HISTORY_PAIRS = 16
+# Full exchanges kept as short-term memory. Raised from 16 once the system
+# prompt came down from 1440 words to ~490: the context freed up there is far
+# better spent on what was actually said than on restating rules. At roughly
+# 25 words a turn this is a few thousand tokens, which the prefix cache covers.
+MAX_HISTORY_PAIRS = 30
 MAX_HISTORY_MESSAGES = MAX_HISTORY_PAIRS * 2
 
 
@@ -105,6 +107,28 @@ class History:
 
     def append(self, role, content):
         self.messages.append({"role": role, "content": content, "at": time.time()})
+
+    def record_aside(self, text):
+        """
+        Record something the contact said unprompted — a check-in, a sign-off,
+        picking the thread back up after a pause.
+
+        It is appended to his previous turn rather than added as a new one.
+        Everything he says has to be remembered, or he asks "still with me?"
+        and then has no idea he asked; but a bare assistant message with no
+        user turn before it breaks the alternation the model relies on. Said
+        one after the other with nothing in between, they *were* one turn.
+        """
+        if not text:
+            return
+        if self.messages and self.messages[-1]["role"] == "assistant":
+            self.messages[-1]["content"] = (
+                self.messages[-1]["content"].rstrip() + " " + text.strip()
+            )
+            self.messages[-1]["at"] = time.time()
+        else:
+            self.append("assistant", text)
+        self.save()
 
     def record_exchange(self, prompt, reply):
         """Store only the raw exchange — never the injected reference context."""

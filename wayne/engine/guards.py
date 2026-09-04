@@ -55,10 +55,23 @@ GREETING_PATTERNS = [
     r"back again\b.*",
 ]
 
-# Replies shorter than this (in words) are exempt from the repetition guard.
-# A terse persona is *meant* to reuse "Mm." and "Go on."; flagging those as
-# loops fought the character rather than helping it.
-REPETITION_MIN_WORDS = 4
+# Short utterances that are *meant* to recur. A terse character says "Mm." and
+# "Go on." constantly and should not be scolded for it.
+#
+# This used to be a blanket exemption for anything under four words, which also
+# exempted "Morning." — so a greeting could repeat forever without any guard
+# noticing. The distinction is not length: it is whether the phrase carries
+# meaning by being said again. Backchannels do. Greetings emphatically do not.
+BACKCHANNELS = {
+    "mm", "mmm", "hm", "hmm", "ah", "oh", "quite", "indeed", "go on", "and",
+    "yes", "no", "yeah", "ok", "okay", "right", "sure", "well", "so", "i see",
+    "of course", "naturally", "possibly", "doubtful", "perhaps", "if you say so",
+}
+
+
+def _is_backchannel(text):
+    stripped = re.sub(r"[^\w\s']", "", (text or "").strip().lower()).strip()
+    return stripped in BACKCHANNELS
 
 
 def split_sentences(text):
@@ -84,14 +97,22 @@ def strip_signoffs(text):
 
 
 def strip_regreeting(text):
-    """Drop a leading re-greeting so nobody says 'Good morning' twice."""
+    """
+    Drop a leading re-greeting so nobody says "Good morning" twice.
+
+    Returns "" when the reply was *nothing but* a greeting. That case used to
+    fall back to the original text on the reasoning that a guard should never
+    empty a reply — which quietly defeated the guard entirely, because the reply
+    most in need of stripping is the one that is only a greeting. Six
+    consecutive "Morning."s came through that fallback. The caller decides what
+    to say instead; anything is better than greeting him again.
+    """
     sentences = split_sentences(text)
     if sentences:
         first = sentences[0].strip().lower()
         if any(re.match(pattern, first) for pattern in GREETING_PATTERNS):
             sentences.pop(0)
-    cleaned = " ".join(sentences).strip()
-    return cleaned if cleaned else text  # never return empty
+    return " ".join(sentences).strip()
 
 
 def cap_length(text, max_sentences):
@@ -113,7 +134,7 @@ def too_similar(candidate, recent, threshold=0.75):
     """
     cand = (candidate or "").strip().lower()
     words = cand.split()
-    if len(words) < REPETITION_MIN_WORDS:
+    if _is_backchannel(cand):
         return False
 
     opening = " ".join(words[:4])
@@ -175,7 +196,7 @@ def count_repeats(prompt, previous_prompts, threshold=0.78):
     ought to call her" are the same admission twice.
     """
     candidate = (prompt or "").strip().lower()
-    if len(candidate.split()) < 3:
+    if _is_backchannel(candidate):
         # "yes", "go on", "ok" recur constantly and mean nothing by recurring.
         return 0
     return sum(
@@ -223,5 +244,8 @@ def apply(text, prompt, max_sentences, already_greeted, forbidden_address=()):
     if not user_is_leaving(prompt):
         text = strip_signoffs(text)
     if already_greeted:
-        text = strip_regreeting(text)
+        stripped = strip_regreeting(text)
+        # Nothing left means the reply was only a greeting, and he has already
+        # greeted. A neutral acknowledgement is the honest substitute.
+        text = stripped or "Mm."
     return cap_length(text, max_sentences)

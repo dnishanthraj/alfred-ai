@@ -78,6 +78,9 @@ class ContactSession:
         self.already_greeted = False
         # How many times he has talked over a reply this session.
         self.interruptions = 0
+        # Phrases he has already been told he is repeating. Saying it twice is
+        # observant; saying it every turn is a counter with a voice.
+        self.remarked_on = set()
 
     # --- model calls ------------------------------------------------------
 
@@ -118,7 +121,14 @@ class ContactSession:
         """
         max_sentences = self.contact.max_reply_sentences
         leaving = guards.user_is_leaving(prompt)
-        recent = self.history.recent_assistant()
+
+        # Compared like with like. The loop check runs on the first sentence,
+        # so it has to be measured against the first sentence of previous
+        # replies — matching one sentence against whole multi-sentence replies
+        # scores too low to ever fire, which let "You've said morning nine
+        # times now… ten… eleven…" run indefinitely.
+        recent = [guards.split_sentences(reply)[0]
+                  for reply in self.history.recent_assistant(turns=12) if reply.strip()]
 
         buffer = ""          # tokens not yet forming a complete sentence
         held = []            # complete sentences that look like farewells
@@ -307,14 +317,27 @@ class ContactSession:
         """
         notes = []
 
-        repeats = guards.count_repeats(prompt, self.history.recent_user(turns=40))
-        if repeats == 1:
-            notes.append("He has said this to you before, earlier in the conversation.")
-        elif repeats >= 2:
-            notes.append(
-                f"He has now said this {repeats + 1} times. Say so — plainly, and "
-                "without pretending you hadn't noticed the first two."
-            )
+        repeats = guards.count_repeats(prompt, self.history.recent_user(turns=60))
+        if repeats:
+            # Only remark once. Announcing a running total every turn — "five
+            # times now", "six times now" — is as mechanical as the repetition
+            # it is complaining about. A person says it, and if it carries on
+            # they stop counting and deal with whatever is behind it.
+            key = re.sub(r"[^\w\s]", "", prompt.lower()).strip()
+            if key in self.remarked_on:
+                notes.append(
+                    "He is still repeating himself. Do not mention it again — you have "
+                    "already said so. Respond to whatever is actually behind it, or let "
+                    "it lie."
+                )
+            elif repeats == 1:
+                notes.append("He has said this to you before, earlier in the conversation.")
+            else:
+                self.remarked_on.add(key)
+                notes.append(
+                    f"He has now said this {repeats + 1} times. Say so once — plainly, "
+                    "and without pretending you hadn't noticed the earlier ones."
+                )
 
         if interrupted:
             self.interruptions += 1
@@ -366,9 +389,11 @@ class ContactSession:
 
     def _speak_aside(self, instruction, temperature, cap):
         """
-        A turn the contact initiates rather than answers. Never written to
-        history: a line spoken into silence should not become something he
-        remembers being told.
+        A turn the contact initiates rather than answers.
+
+        It *is* remembered — appended to his previous turn, since nothing was
+        said in between. A contact who asks "still with me?" and then cannot
+        recall asking is not someone you are having a conversation with.
         """
         payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
         try:
@@ -381,6 +406,7 @@ class ContactSession:
         for i, sentence in enumerate(guards.split_sentences(text)):
             if sentence.strip():
                 yield events.sentence(i, sentence.strip())
+        self.history.record_aside(text)
         yield events.reply_end(text)
         yield events.state(events.IDLE)
 
