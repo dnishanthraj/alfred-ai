@@ -570,15 +570,30 @@ html[data-link="ending"] .viz { opacity: 0; transform: scale(1.12); }
 .dossier__close:hover { color: var(--text); border-color: var(--hairline-2); }
 
 /* Portrait slot. Ships as a generated silhouette; drop a real image at
-   web/portraits/<id>.png and it is used instead. */
+   web/portraits/<id>.png (or .jpg/.webp) and it is used instead.
+
+   Framed rather than merely fitted. A supplied portrait is usually a full
+   square render — subject small in frame, plenty of air, and often a decorative
+   ring of its own, which lands just inside this element's border and reads as a
+   double ring. `cover` on a square image in a square box is a no-op: it shows
+   the whole thing, air and all, and at 112px the face ends up tiny.
+
+   So the background is scaled past the edges and pulled upward, which crops to
+   head-and-shoulders and pushes any drawn border outside the visible circle.
+   The percentage is a framing decision, not a fit — it belongs here rather than
+   baked into the file, so the original stays whole and re-croppable. */
 .dossier__portrait {
   width: 112px; height: 112px;
   margin: 0 auto 22px;
   border-radius: 50%;
   border: 1px solid var(--hairline-2);
   background-color: var(--surface-2);
-  background-size: cover;
-  background-position: center 22%;
+  /* Per layer: the supplied portrait is zoomed and pulled up; the silhouette
+     underneath was drawn for this box and is left alone. A single value would
+     apply to both and blow the fallback up too. */
+  background-size: 160%, 160%, 160%, cover;
+  background-position: center 15%, center 15%, center 15%, center 22%;
+  background-repeat: no-repeat;
   display: grid;
   place-items: center;
 }

@@ -191,7 +191,11 @@ so the wait reads as a call connecting rather than software thinking about it.
 
 Click a contact's **name** to open their personnel file — who they are to you,
 in your own words, editable and saved per contact. Drop an image at
-`web/portraits/<id>.png` for a portrait; otherwise a silhouette stands in. There is no
+`web/portraits/<id>.png` (`.jpg` and `.webp` work too) for a portrait; otherwise a
+silhouette stands in. No cropping needed — the slot frames to head-and-shoulders
+itself, so a full square render with air around the subject lands correctly. What
+you put there is gitignored, since a portrait is usually either personal or
+someone else's copyright. There is no
 transcript — only the last thing said to you stays on screen, alongside a quiet
 echo of what the console heard you say. A conversation held out loud does not
 need a log of itself, and a scrollback is the strongest possible reminder that

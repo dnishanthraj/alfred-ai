@@ -667,8 +667,17 @@
     document.documentElement.style.setProperty('--contact-accent', contact.accent);
 
     // A supplied portrait wins; otherwise the generated silhouette stands in.
+    //
+    // Several formats are listed rather than just .png, because "put a picture
+    // here" should not also mean "and convert it first". Stacked backgrounds
+    // make this work without any load handlers: layers paint front to back, a
+    // layer whose URL 404s simply paints nothing, and the first one that exists
+    // covers the rest. The silhouette is last, so it shows only if none do.
+    // Keep this list in step with the per-layer sizes in `.dossier__portrait`.
+    var base = "/static/portraits/" + contactId;
     el['dossier-portrait'].style.backgroundImage =
-      "url('/static/portraits/" + contactId + ".png'), url('/static/portraits/_silhouette.svg')";
+      "url('" + base + ".png'), url('" + base + ".jpg'), url('" + base + ".webp'), " +
+      "url('/static/portraits/_silhouette.svg')";
 
     el['dossier-text'].value = 'Loading…';
     fetch('/api/contacts/' + contactId + '/bio')
