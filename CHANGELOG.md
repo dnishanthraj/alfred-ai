@@ -3,6 +3,66 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.9.1] - 2026-09-04
+
+### Fixed
+
+- **Alfred answered almost everything with "Mm."** The model was returning an
+  empty string and the guards were substituting a neutral acknowledgement, so
+  the failure looked like terseness rather than a fault. The cause was the
+  derived Ollama model: `ollama create` against a qwen3.5 base produced a build
+  that generated nothing at all, while the same system prompt sent to the base
+  model worked perfectly. Profiles can now point `system_file` at a Modelfile
+  and have its `SYSTEM` block read at runtime, so the personality is used
+  directly with the base model and there is no derived build to go wrong. This
+  also keeps a personal prompt file gitignored while the profile referencing it
+  is committed.
+- **Latency climbed with the conversation and never came back down** — 5.3
+  seconds to the first word, with an identical repeated prompt no faster than
+  the first, which is the signature of a cache that is never hit. Ollama
+  defaults to a 4096-token context; a persona, a primer and a few turns of
+  history clear that, and once the prompt outgrows the window Ollama shifts
+  context, discards the KV cache and re-reads the entire prompt every turn. A
+  context window is now set for every contact (`ALFRED_CONTEXT_WINDOW`, default
+  8192). The same request answers in **1.8s**, and the model warm-up loads at
+  the contact's own context size — warming at the default and then asking at
+  8192 unloaded and reloaded the model, costing fifteen seconds on the first
+  real turn.
+- **"Who are you?" triggered a web search**, because it is `who` + `are` and
+  matches the factual-lookup patterns exactly. Questions about either person on
+  the line are now vetoed: that answer is in the persona or the vault, never
+  online. Opinion phrasings that read as questions of fact — "what do you make
+  of my job" — are vetoed too.
+- **Facts are looked up before the model is asked, not by it.** Asked to look
+  something up, this character would rather explain that he is an old man with
+  a cup of tea and no computer, and then guess — which is how a fictional
+  character's biography and a plainly invented London forecast were delivered
+  as fact. Clearly factual questions now search on the way in and hand him what
+  was found; he is still free to disbelieve it or refuse.
+- **The opening greeting was the one utterance nothing checked.** It bypassed
+  the guard stack entirely and was written into history as an example to
+  follow — it arrived as "welcome back, dear boy". The forbidden-address guard
+  now runs on it (only that one: the full stack strips greetings, which is
+  what this is).
+- **Forbidden forms of address were matched in declaration order**, so a
+  shorter term nested inside a longer one won and removed only its own half,
+  turning "welcome back, dear boy" into "welcome back, dear". Longest match
+  now wins. Vocatives before a semicolon or colon are caught as well —
+  "there you are, mate; come in" previously survived intact. `mate`, `buddy`,
+  `pal`, `chief`, `boss`, `dear boy` and `old boy` added to the list.
+- **A profile declaring neither `system` nor `system_file` crashed the whole
+  directory** with "Is a directory": the unset filename resolved to the project
+  root, which exists, so the guard passed and the read failed.
+
+### Changed
+
+- The primer is back to its full length. It had been trimmed to shrink the
+  prompt when the prefix was being re-read every turn; now that the prefix is
+  genuinely cached, those exchanges cost a one-time fill instead — and they are
+  what teach the one-word end of his range, which a model will not reach on its
+  own. Measured reply lengths across a scripted session: 6, 18, 29, 46, 55, 58,
+  58, 63 words.
+
 ## [0.9.0] - 2026-09-04
 
 ### Fixed

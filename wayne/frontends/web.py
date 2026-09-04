@@ -342,6 +342,11 @@ def _warm_model():
     reading the boot screen. Loading a 14B costs around 25 seconds, and paying
     that after they have already spoken is the difference between a console and
     a progress bar. Failures are silent: this is an optimisation, not a step.
+
+    The contact's own options are passed rather than a bare `num_predict`.
+    Ollama keys a resident model on its context size, so warming at the default
+    4096 and then asking at 8192 unloads and reloads it — the first real turn
+    paid fifteen seconds, and the warm-up was the reason.
     """
     contact = console.directory.get(config.DEFAULT_CONTACT)
     if contact is None:
@@ -351,7 +356,7 @@ def _warm_model():
         ollama.chat(
             model=contact.model,
             messages=[{"role": "user", "content": "."}],
-            options={"num_predict": 1},
+            options={**contact.options, "num_predict": 1},
             keep_alive=config.MODEL_KEEP_ALIVE,
         )
     except Exception:

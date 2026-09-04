@@ -16,6 +16,7 @@ repo, the alternative is best once you use it daily.
 """
 import concurrent.futures
 import os
+import re
 import warnings
 
 import requests
@@ -101,9 +102,66 @@ _SEARCH_VERBS = [
 # even if Alfred just asked an open question. Opinions are Alfred's job, not Google's.
 _OPINION_MARKERS = [
     'your opinion', 'opinion on', 'what do you think', 'do you think',
+    'what do you make of', 'what did you make of', 'how do you rate',
     'how do you feel', 'your view', 'your take', 'thoughts on',
     'what would you do', 'should i', 'do you reckon', 'agree',
 ]
+
+
+# Questions that plainly need a fact nobody in a kitchen would have. These are
+# searched *before* the model is asked anything.
+#
+# Letting the character decide was the better design and it does not survive
+# contact with this character: the persona insists, at length and in his own
+# voice, that he is an old man with a cup of tea and no computer. That is Alfred
+# — and asked to look something up he would rather say he has not heard of it,
+# or worse, guess. The lookup therefore happens on the way in, and he is handed
+# what was found. He still gets to refuse, disbelieve it, or tell the operator
+# to do his own homework.
+FACTUAL_PATTERNS = [
+    r"^\s*(who|what|when|where)\s+(is|are|was|were|does|did|do)\b",
+    r"\bwho'?s\b.*\?",
+    r"\bweather\b", r"\bforecast\b", r"\btemperature\b",
+    r"\bnews\b", r"\bheadlines\b",
+    r"\bprice of\b", r"\bhow much (is|does|are)\b",
+    r"\bwho won\b", r"\bwhat happened (to|in|with)\b",
+    r"\brelease date\b", r"\bfixtures?\b", r"\bscore\b",
+    r"\blook (it |this |that )?up\b", r"\bsearch (for|up)\b",
+    r"\bfind out\b", r"\bwhat do we have on\b", r"\btell me about\b",
+]
+
+
+# Questions whose subject is one of the two people on the line. They match the
+# factual patterns perfectly — "Who are you?" is `who` + `are` — and searching
+# them is both useless and absurd: the web does not know who he is, and asking it
+# produced a lookup for a butler while he stood there being one. Whatever the
+# answer is, it is in the persona or the vault, never online.
+_PERSONAL_SUBJECTS = [
+    r"\bwho\s+(are|were)\s+you\b",
+    r"\bwho\s+(am|was)\s+i\b",
+    r"\bwhat\s+(are|were)\s+you\b",
+    r"\bwhat\s+(is|was|are|were)\s+(my|your|our)\b",
+    r"\bwhat\s+do\s+(you|i|we)\b",
+    r"\bwhere\s+(are|were)\s+(you|we)\b",
+    r"\bhow\s+are\s+you\b",
+]
+
+
+def is_factual_lookup(prompt):
+    """
+    True when a question plainly needs a current fact.
+
+    Deliberately conservative — two vetoes come before the patterns. An opinion
+    marker vetoes it, because "what do you think of X" is not a lookup however
+    factual X sounds; and a question *about* either person on the line vetoes it,
+    because that answer never lived on the web.
+    """
+    lowered = (prompt or "").lower().strip()
+    if any(marker in lowered for marker in _OPINION_MARKERS):
+        return False
+    if any(re.search(subject, lowered) for subject in _PERSONAL_SUBJECTS):
+        return False
+    return any(re.search(pattern, lowered) for pattern in FACTUAL_PATTERNS)
 
 
 def needs_search(prompt, last_alfred_msg=""):

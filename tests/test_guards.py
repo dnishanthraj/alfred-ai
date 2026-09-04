@@ -170,7 +170,7 @@ class TestForbiddenAddress:
     smaller model ignores the instruction often enough to matter.
     """
 
-    TERMS = ["lad", "laddie", "my boy", "son", "young man"]
+    TERMS = ["lad", "laddie", "my boy", "dear boy", "boy", "son", "young man"]
 
     @pytest.mark.parametrize("text,expected", [
         ("It's past midnight, lad.", "It's past midnight."),
@@ -190,6 +190,24 @@ class TestForbiddenAddress:
     def test_leaves_ordinary_usage_alone(self, text):
         # Only clearly vocative uses go; the same word elsewhere survives.
         assert guards.strip_forbidden_address(text, self.TERMS) == text
+
+    @pytest.mark.parametrize("text,expected", [
+        # A vocative ends at any clause boundary, not only a full stop. Matching
+        # just `[.!?,]` let "there you are, lad; come in" through untouched.
+        ("Ah, there you are, lad; come on in.", "Ah, there you are; come on in."),
+        ("Now then, son: sit down.", "Now then: sit down."),
+    ])
+    def test_removes_the_vocative_before_a_clause_boundary(self, text, expected):
+        assert guards.strip_forbidden_address(text, self.TERMS) == expected
+
+    @pytest.mark.parametrize("text,expected", [
+        # Longest match first. Left to declaration order, "boy" matches inside
+        # "dear boy" and takes only its own half, leaving "welcome back, dear".
+        ("Welcome back, dear boy.", "Welcome back."),
+        ("Steady on, my boy.", "Steady on."),
+    ])
+    def test_a_longer_term_wins_over_one_nested_inside_it(self, text, expected):
+        assert guards.strip_forbidden_address(text, self.TERMS) == expected
 
     def test_no_terms_configured_is_a_no_op(self):
         assert guards.strip_forbidden_address("Right then, lad.", ()) == "Right then, lad."

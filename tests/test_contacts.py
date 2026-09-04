@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from wayne import config
 from wayne.contacts import Availability, Directory, directory
 from wayne.engine.search import needs_search
 
@@ -33,6 +34,27 @@ class TestDirectory:
         book = Directory(profile_dir=tmp_path)
         assert book.ids() == ["lucius"]
         assert book.get("lucius").system == "You are Lucius Fox."
+
+    def test_every_contact_gets_a_context_window(self, tmp_path):
+        # Ollama defaults to 4096 tokens. A persona, a primer and a few turns of
+        # history clear that, and once the prompt outgrows the window the KV
+        # cache is discarded and the entire prompt is re-read every turn — 5.3
+        # seconds to the first word instead of 1.8. So it is not left to the
+        # profile to remember: the default is applied to every contact.
+        (tmp_path / "lucius.json").write_text(json.dumps({
+            "id": "lucius", "name": "Lucius", "model": "qwen2.5:14b",
+        }))
+        assert Directory(profile_dir=tmp_path).get("lucius") \
+            .options["num_ctx"] == config.CONTEXT_WINDOW
+
+    def test_a_profile_may_override_the_context_window(self, tmp_path):
+        (tmp_path / "lucius.json").write_text(json.dumps({
+            "id": "lucius", "name": "Lucius", "model": "qwen2.5:14b",
+            "options": {"num_ctx": 16384, "temperature": 0.4},
+        }))
+        options = Directory(profile_dir=tmp_path).get("lucius").options
+        assert options["num_ctx"] == 16384
+        assert options["temperature"] == 0.4
 
     def test_a_malformed_profile_names_itself(self, tmp_path):
         (tmp_path / "broken.json").write_text('{"name": "no id here"}')

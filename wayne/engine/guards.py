@@ -266,13 +266,20 @@ def strip_forbidden_address(text, terms):
     illusion the whole console exists to sustain. Only clearly vocative uses
     are removed — the term adjacent to a comma or ending a sentence — so
     ordinary occurrences of the same word survive.
+
+    A vocative ends at any clause boundary, not only a full stop — ", mate;" and
+    ", boss:" are as vocative as ", mate." — so semicolons and colons count too.
+    Getting that wrong let "Ah, there you are, mate; come on in" through intact.
     """
     if not terms:
         return text
-    for term in terms:
+    # Longest first, so "dear boy" is removed whole. Left to declaration order,
+    # a shorter term nested inside a longer one matches first and takes only its
+    # own half — "welcome back, dear boy" became "welcome back, dear".
+    for term in sorted(terms, key=len, reverse=True):
         word = re.escape(term)
-        # ", lad." / ", lad?"  ->  "."
-        text = re.sub(rf",\s*{word}\b(?=\s*[.!?,]|$)", "", text, flags=re.I)
+        # ", lad." / ", lad?" / ", lad;"  ->  "."
+        text = re.sub(rf",\s*{word}\b(?=\s*[.!?,;:]|$)", "", text, flags=re.I)
         # "Lad, ..." at the start of a sentence — the word that follows has to
         # be re-capitalised, or removing the vocative leaves a lowercase start.
         text = re.sub(

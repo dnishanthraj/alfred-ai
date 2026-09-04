@@ -9,10 +9,12 @@ dropping a JSON profile next to Alfred's, not touching Python.
 """
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 
-from ..paths import PROFILE_DIR
+from .. import config
+from ..paths import PROFILE_DIR, ROOT_DIR
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,34 @@ class Contact:
         return messages
 
 
+# A Modelfile's SYSTEM block, so an existing personality file can be used
+# directly rather than duplicated into the profile.
+_MODELFILE_SYSTEM = re.compile(r'SYSTEM\s+"""(.*?)"""', re.S)
+
+
+def _read_system_file(name):
+    """
+    Load a character's system prompt from a file outside the repository.
+
+    It exists because the prompt contains real details about the operator and
+    must stay gitignored, while the profile that references it is committed.
+    Pointing at a Modelfile works too: its SYSTEM block is extracted, so the
+    same file can be used with `ollama create` or read directly.
+    """
+    # An unset `system_file` must not resolve to `ROOT_DIR / ""`, which is the
+    # project directory itself: it exists, so the guard below passes, and the
+    # read then fails with "Is a directory" — taking down every profile that
+    # simply declares neither `system` nor `system_file`.
+    if not name:
+        return ""
+    path = ROOT_DIR / name
+    if not path.exists() or not path.is_file():
+        return ""
+    text = path.read_text()
+    match = _MODELFILE_SYSTEM.search(text)
+    return (match.group(1) if match else text).strip()
+
+
 def _load_profile(path):
     with open(path) as f:
         raw = json.load(f)
@@ -112,9 +142,9 @@ def _load_profile(path):
         accent=raw.get("accent", "#4FA8E0"),
         max_reply_sentences=int(raw.get("max_reply_sentences", 4)),
         can_search=bool(raw.get("can_search", True)),
-        options=raw.get("options", {}),
+        options={"num_ctx": config.CONTEXT_WINDOW, **raw.get("options", {})},
         boot_prompts=raw.get("boot_prompts", {}),
-        system=raw.get("system", ""),
+        system=raw.get("system") or _read_system_file(raw.get("system_file", "")),
         think=raw.get("think"),
         forbidden_address=tuple(raw.get("forbidden_address", [])),
         bio=raw.get("bio", ""),

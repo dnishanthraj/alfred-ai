@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.9.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.9.1` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
@@ -30,10 +30,13 @@ their own memory on disk.
   `mlx-whisper` on Apple Silicon, `faster-whisper` on CPU elsewhere.
 - **Short- and long-term memory** — recent turns plus an explicit "remember that…"
   vault, per contact, with relevance retrieval once the vault grows.
-- **Search he decides to use** — not a keyword trigger. He looks things up when
-  a question needs something he could not know, asks what you mean when it is
-  vague, refuses when it is something you should do yourself, and says he has
-  no idea rather than inventing one. DuckDuckGo by default (no key needed); set
+- **Search that runs before he can invent an answer** — a question that plainly
+  needs a current fact is looked up on the way in and he is handed what was
+  found, rather than being trusted to ask for it. In character, asked to look
+  something up, he would sooner explain that he is an old man with a cup of tea
+  and no computer — and then guess. Opinions, feelings, and anything about
+  either of you never go to the web. He can still disbelieve the results, or
+  tell you to do your own homework. DuckDuckGo by default (no key needed); set
   `BRAVE_API_KEY` for a real search API.
 - **Deterministic conversation guards** — anti-repetition, sign-off suppression, and
   length capping run in code rather than relying on the model to police itself.
@@ -43,8 +46,8 @@ their own memory on disk.
 - macOS (uses `afplay` for playback and macOS Accessibility permissions for the global
   hotkey listener — this project is not cross-platform as written)
 - Python 3.11 or 3.12 (not 3.13+ — several dependencies are wheel-only)
-- [Ollama](https://ollama.com) installed and running, with the `qwen2.5:14b` base model
-  pulled (`ollama pull qwen2.5:14b`)
+- [Ollama](https://ollama.com) installed and running, with the `qwen3.5:9b` base model
+  pulled (`ollama pull qwen3.5:9b`)
 - An [ElevenLabs](https://elevenlabs.io) account and API key
 - A working microphone
 
@@ -76,11 +79,22 @@ their own memory on disk.
    ```
 
    Edit `Modelfile` and fill in the `BASELINE DOSSIER` section with real, current facts
-   about yourself. Then build the Ollama model:
+   about yourself. Then pull the base model it runs on:
 
    ```bash
-   ollama create alfred -f Modelfile
+   ollama pull qwen3.5:9b
    ```
+
+   That's the whole step — there is no `ollama create`. Alfred's profile points
+   `system_file` at your `Modelfile`, and its `SYSTEM` block is read at startup and
+   sent to the base model. So editing the personality takes effect on the next
+   launch rather than requiring a rebuild, and your details stay in a gitignored
+   file while the profile that references it is committed.
+
+   > A derived model is still supported — set `ALFRED_OLLAMA_MODEL` to its tag —
+   > but it is no longer the default. `ollama create` against a qwen3.5 base
+   > produced a build that returned empty replies for every prompt, which
+   > surfaced as Alfred answering everything with "Mm."
 
 3. **Configure secrets and identity**
 
@@ -95,11 +109,12 @@ their own memory on disk.
    | `ELEVENLABS_API_KEY` | Yes | Your ElevenLabs API key |
    | `ALFRED_VOICE_ID` | Yes | Voice ID from your ElevenLabs voice library |
    | `ALFRED_USER_NAME` | Yes | Your name — shown in the console and used as a Whisper hint |
-   | `ALFRED_OLLAMA_MODEL` | No | Ollama model tag for Alfred (default: `alfred`, matching step 2) |
+   | `ALFRED_OLLAMA_MODEL` | No | Ollama model tag for Alfred (default: `qwen3.5:9b`, from step 2) |
    | `WAYNE_PASSCODE` | No | Lock-screen passcode (default: `zorro`). Theatre, not security |
    | `ALFRED_WEB_PORT` | No | Console port (default: `8420`) |
    | `ALFRED_PTT_KEY` | No | [pynput](https://pynput.readthedocs.io) key for `--cli` push-to-talk (default: `Key.cmd_r`) |
    | `ALFRED_WHISPER_HINTS` | No | Comma-separated proper nouns to bias speech recognition |
+   | `ALFRED_CONTEXT_WINDOW` | No | Model context in tokens (default: `8192`). See [Latency](#latency) |
 
    Display name, role, voice, and sampling parameters are per-contact and live in
    [`wayne/contacts/profiles/alfred.json`](wayne/contacts/profiles/alfred.json).
@@ -296,9 +311,11 @@ Adding one is a file, not a code change:
 }
 ```
 
-A contact either carries its personality in its own built Ollama model (Alfred
-does — see `Modelfile`) or declares a `system` prompt and shares a base model.
-The second needs no `ollama create`.
+A contact declares its personality one of three ways: `system` inline (as above),
+`system_file` pointing at a Modelfile whose `SYSTEM` block is read at startup (what
+Alfred does, so the prompt can stay gitignored), or a pre-built Ollama model carrying
+it internally. Only the third needs `ollama create`, and it is the one to avoid unless
+you have reason to: a derived build can silently return empty replies.
 
 `max_reply_sentences` is a runaway ceiling, not a style control — length is
 steered by the prompt and, far more effectively, by the range demonstrated in
@@ -316,24 +333,35 @@ make a character sound like themselves.
 
 ## Latency
 
-Warm, on an M-series Mac: **~1.1s from sending to the first sentence, ~1.4s to
-audio playing.**
+Warm, on an M-series Mac with `qwen3.5:9b`: **~1.8s to the first token, ~2.6–4.0s
+to the first complete sentence** (a sentence has to finish before it can be
+spoken). Measured on the same machine, `qwen2.5:32b` was unusable at 0.3 tok/s —
+it swaps.
 
-Most of that budget is prompt evaluation, not generation, and the lever is
-what has to be re-read each turn. Standing instructions live in a directives
-message in the cached prefix; only genuinely per-turn context — the time, the
-relevant vault facts, what he has noticed — rides on the last message. Moving
-~350 words out of the tail took first-sentence latency from 4.0s to 1.1s. Measured on the same
-machine, `qwen2.5:14b` gave 0.33s / 23 tok/s and `qwen2.5:32b` was unusable at
-0.3 tok/s — it swaps.
+Almost all of that budget is prompt evaluation, not generation, so the only
+question that matters is how much of the prompt has to be re-read each turn.
+Three things decide that, in order of how much they cost when wrong:
 
-Two things matter more than the model:
-
+- **`ALFRED_CONTEXT_WINDOW`** (default `8192`). This is the big one. Ollama
+  defaults to 4096 tokens, and a persona plus a primer plus a few turns of
+  history clears that easily. Once the prompt outgrows the window Ollama shifts
+  context — which discards the KV cache and re-reads the *entire* prompt on
+  every single turn. The symptom is latency that climbs as the conversation
+  grows and never comes back down: 5.3s to the first word here, with an
+  identical repeated prompt no faster than the first, which is the tell. Sized
+  so the whole stable prefix fits with room to grow, the same request answers in
+  1.8s. Raise it for longer histories at the cost of memory.
+- **Prompt layout.** Standing instructions live in the cached prefix; only
+  genuinely per-turn context — the time, the relevant vault facts, what he has
+  noticed — rides on the last message. This is only worth anything if the prefix
+  is actually cacheable, which is what the setting above buys.
 - **`ALFRED_MODEL_KEEP_ALIVE`** (default `1h`). Ollama evicts a model after five
   minutes idle by default, and reloading a 14B costs around 25 seconds — which
   is the entire difference between "instant" and "did it crash?" for a
   conversation resumed after a coffee. The server also warms the default
-  contact's model at startup, while you are still reading the boot screen.
+  contact's model at startup, while you are still reading the boot screen —
+  using that contact's own options, because Ollama keys a resident model on its
+  context size and warming at one size then asking at another reloads it.
 - **Sentence pipelining.** Speech starts on sentence one rather than after the
   whole reply.
 

@@ -22,6 +22,18 @@ USER_NAME = os.getenv("ALFRED_USER_NAME") or os.getenv("WAYNE_USER_NAME") or "Op
 # trades RAM for the difference between "instant" and "did it crash?".
 MODEL_KEEP_ALIVE = os.getenv("ALFRED_MODEL_KEEP_ALIVE", "1h")
 
+# Ollama's default context is 4096 tokens. A persona, a primer and a few turns
+# of history clear that easily, and once the prompt outgrows the window Ollama
+# shifts context — which throws away the KV cache and re-reads the *entire*
+# prompt on every single turn. The symptom is latency that climbs with the
+# conversation and never comes back down: measured here at 5.3 seconds to the
+# first word, with a repeat of the identical prompt no faster than the first.
+#
+# Sized so the whole stable prefix fits with room for the conversation to grow,
+# which is what makes it cacheable. The same request then answers in 1.8s.
+# Raise it for longer histories at the cost of memory.
+CONTEXT_WINDOW = int(os.getenv("ALFRED_CONTEXT_WINDOW", "8192"))
+
 # --- Speech-to-text ---
 WHISPER_HINT_PROMPT = os.getenv("ALFRED_WHISPER_HINTS", USER_NAME)
 

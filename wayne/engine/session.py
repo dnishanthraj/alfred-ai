@@ -31,7 +31,7 @@ import ollama
 from .. import config, events
 from ..memory import History, Vault
 from . import guards, prompting
-from .search import format_search_results, google_search
+from .search import format_search_results, google_search, is_factual_lookup
 
 _PRE_SEARCH_PHRASES = [
     "One moment.",
@@ -346,7 +346,14 @@ class ContactSession:
         try:
             generated = self._chat_once(payload)
             if generated:
-                greeting = generated
+                # Only the address guard, never the full stack: that one strips
+                # greetings and sign-offs, which is precisely what this is.
+                # Without it the opening line was the one utterance in the whole
+                # session nothing checked — and it came back "welcome back, dear
+                # boy", spoken *and* written into history as an example to
+                # follow.
+                greeting = guards.strip_forbidden_address(
+                    generated, self.contact.forbidden_address) or generated
         except Exception as exc:
             yield events.notice(f"Cold start failed — using fallback. ({exc})", "warn")
 
@@ -542,7 +549,19 @@ class ContactSession:
         awareness = self._awareness(prompt, interrupted, confidence)
         vault_block = self.vault.as_block(prompt)
 
-        user_turn = prompting.compose_user_turn(prompt, vault_block, "", awareness)
+        # A plainly factual question is looked up before he is asked anything,
+        # so he answers from what was found rather than from what he can
+        # imagine. He is still free to be unimpressed by the result.
+        search_context = ""
+        if self.contact.can_search and is_factual_lookup(prompt):
+            yield events.state(events.SEARCHING)
+            holding = random.choice(_PRE_SEARCH_PHRASES)
+            yield events.sentence(0, holding)
+            yield events.reply_end(holding, interim=True)
+            search_context = yield from self._run_search(prompt)
+
+        user_turn = prompting.compose_user_turn(
+            prompt, vault_block, search_context, awareness)
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn)
 
         yield events.state(events.THINKING)
