@@ -41,6 +41,10 @@ _PRE_SEARCH_PHRASES = [
     "Give me a moment.",
 ]
 
+# Stored in place of the operator's turn when a call connects, so history stays
+# a well-formed alternation. Never shown, and superseded on the next call.
+_LINK_MARKER = "[link established]"
+
 _WIPE_COMMANDS = ["clear memory", "forget everything", "protocol zero", "wipe logs"]
 _MEMORIZE_PREFIXES = ("remember that", "remember to", "note that", "don't forget")
 _FORGET_PREFIXES = ("forget that", "forget about")
@@ -234,9 +238,12 @@ class ContactSession:
         yield events.state(events.THINKING)
 
         returning = bool(self.history)
+        # Read before pruning: this is the greeting about to be removed.
+        previous = self.history.last_greeting(_LINK_MARKER)
         payload = prompting.build_payload(
             self.contact, self.history.for_model(),
-            prompting.boot_prompt(self.contact, returning, self.history.time_since_last()),
+            prompting.boot_prompt(self.contact, returning,
+                                  self.history.time_since_last(), previous),
         )
 
         greeting = "Online. I'm here when you're ready."
@@ -247,8 +254,11 @@ class ContactSession:
         except Exception as exc:
             yield events.notice(f"Cold start failed — using fallback. ({exc})", "warn")
 
+        # Only the most recent connection belongs in the context.
+        self.history.drop_prior_greetings(_LINK_MARKER)
+
         # The 'user' side is a neutral placeholder, never shown on screen.
-        self.history.append("user", "[link established]")
+        self.history.append("user", _LINK_MARKER)
         self.history.append("assistant", greeting)
         self.history.save()
         self.already_greeted = True

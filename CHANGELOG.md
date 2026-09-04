@@ -3,6 +3,33 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.6.1] - 2026-09-04
+
+### Fixed
+
+- **"No active link" sat on top of a ringing call.** The overlay and the
+  visualizer were keyed to a `connecting` state that had been renamed to
+  `ringing`, so neither reacted to a call being placed, and both reappeared
+  mid-hang-up. Every phase other than "off" now clears the empty state.
+- **The directory claimed a connection while the line was still ringing** — it
+  read `connectedId`, which is set the moment Call is pressed. Ringing is now
+  its own state: amber, pulsing, labelled Connecting, with the button offering
+  Cancel rather than End.
+- **He repeated the same greeting on every call.** Each connection stored a
+  placeholder turn and its greeting, so a few calls left a stack of "Good
+  morning" in the context and the model wrote another. Superseded greetings are
+  now pruned — and because pruning also removes the evidence that he greeted at
+  all, the previous greeting is carried into the next boot prompt as something
+  to avoid rather than to copy.
+
+### Changed
+
+- **Calls ring for a varying moment before they are answered.** The model now
+  replies in a fraction of a second, which reads as a machine waiting for input
+  rather than a person crossing a room.
+- The silence check-in comes sooner — around half a minute rather than a minute
+  and a half, which is closer to how long a real pause runs before someone asks.
+
 ## [0.6.0] - 2026-09-04
 
 ### Fixed

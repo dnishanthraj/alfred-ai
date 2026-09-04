@@ -29,6 +29,7 @@
     order: [],
     currentId: null,     // who the console is showing
     connectedId: null,   // who is actually on the line
+    ringingId: null,     // who is being reached, not yet answered
     pending: {},         // sentences awaiting audio, by index
     rendered: {},        // sentence indices already shown
     fresh: true,         // next sentence starts a new utterance
@@ -51,8 +52,8 @@
   // How long a silence runs before he checks you are still there. Randomised
   // so it never feels like a timer, and it gives up after two — a person who
   // asks a third time is nagging.
-  var IDLE_MIN_MS = 55000;
-  var IDLE_SPREAD_MS = 40000;
+  var IDLE_MIN_MS = 26000;
+  var IDLE_SPREAD_MS = 22000;
   var MAX_NUDGES = 2;
 
   // Deliberately free of machinery. "Composing reply" and "voice synthesis"
@@ -210,10 +211,12 @@
     state.order.forEach(function (id) {
       var contact = state.contacts[id];
       var live = state.connectedId === id;
+      var ringing = state.ringingId === id;
 
       var li = document.createElement('li');
       li.className = 'book__item';
       li.dataset.live = live ? '1' : '0';
+      if (ringing) li.dataset.state = 'ringing';
       li.style.setProperty('--contact-accent', contact.accent);
 
       var row = document.createElement('div');
@@ -231,8 +234,9 @@
       name.textContent = contact.name;
       var role = document.createElement('span');
       role.className = 'book__role';
-      role.textContent = live ? 'Connected'
-                              : (contact.available ? contact.role : 'Unavailable');
+      role.textContent = ringing ? 'Connecting'
+                       : live ? 'Connected'
+                       : (contact.available ? contact.role : 'Unavailable');
       text.appendChild(name);
       text.appendChild(role);
       text.addEventListener('click', function () {
@@ -246,11 +250,11 @@
       var call = document.createElement('button');
       call.type = 'button';
       call.className = 'book__call';
-      call.dataset.live = live ? '1' : '0';
-      call.textContent = live ? 'End' : 'Call';
-      call.disabled = !contact.available && !live;
+      call.dataset.live = (live || ringing) ? '1' : '0';
+      call.textContent = ringing ? 'Cancel' : live ? 'End' : 'Call';
+      call.disabled = !contact.available && !live && !ringing;
       call.addEventListener('click', function () {
-        if (live) hangUp(); else placeCall(id);
+        if (live || ringing) hangUp(); else placeCall(id);
       });
 
       li.appendChild(row);
@@ -263,8 +267,8 @@
     var contact = state.contacts[contactId];
     if (!contact) return;
     state.currentId = contactId;
-    state.connectedId = contactId;
-    document.documentElement.style.setProperty('--contact-accent', contact.accent);
+    state.ringingId = contactId;
+    state.connectedId = contactId;   // input is accepted while it rings
     el['bar-title'].textContent = contact.full_name;
     document.title = contact.name + ' · WayneTech Console';
 
@@ -277,6 +281,7 @@
     // Ring while he is being reached. This is not only dressing: it covers the
     // seconds the model spends loading, so the wait reads as a call connecting
     // rather than as software thinking about it.
+    el['ringing-label'].textContent = 'Connecting to ' + contact.name + '…';
     setLink('ringing');
     setState('idle');
     ConsoleTones.startRinging();
@@ -288,6 +293,7 @@
   function answered() {
     if (document.documentElement.dataset.link === 'on') return;
     ConsoleTones.connected();
+    state.ringingId = null;
     var contact = state.contacts[state.connectedId];
     if (contact) {
       document.documentElement.style.setProperty('--contact-accent', contact.accent);
@@ -305,6 +311,7 @@
     clearTimeout(state.idleTimer);
     send({ type: 'disconnect' });
     state.connectedId = null;
+    state.ringingId = null;
     el['bar-title'].textContent = '';
     document.title = 'WayneTech Console';
     setState('idle');

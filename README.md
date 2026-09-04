@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.6.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.6.1` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding

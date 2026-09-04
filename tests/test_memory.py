@@ -195,3 +195,51 @@ class TestElapsedTime:
         h.record_exchange("hello", "Mm.")
         assert all(set(m) == {"role", "content"} for m in h.for_model())
         assert h.seconds_since_last() < 5
+
+
+class TestGreetingPileUp:
+    """
+    Each call stores a placeholder turn and the greeting answering it. Left in
+    place, a handful of calls fill the context with greetings and the model
+    writes another — which is how a character starts sounding like it has no
+    memory of ever speaking to you.
+    """
+
+    MARKER = "[link established]"
+
+    def _history(self, tmp_path, monkeypatch):
+        h = History("test")
+        monkeypatch.setattr(h, "path", tmp_path / "history.json")
+        h.messages = []
+        return h
+
+    def test_drops_earlier_greetings(self, tmp_path, monkeypatch):
+        h = self._history(tmp_path, monkeypatch)
+        for greeting in ("Morning.", "Morning again.", "Good morning."):
+            h.append("user", self.MARKER)
+            h.append("assistant", greeting)
+            h.append("user", "how are you")
+            h.append("assistant", "Fine.")
+
+        h.drop_prior_greetings(self.MARKER)
+        contents = [m["content"] for m in h.messages]
+        assert self.MARKER not in contents
+        assert not any("orning" in c for c in contents)
+        # The actual conversation is untouched.
+        assert contents == ["how are you", "Fine."] * 3
+
+    def test_leaves_a_history_with_no_greetings_alone(self, tmp_path, monkeypatch):
+        h = self._history(tmp_path, monkeypatch)
+        h.append("user", "hello")
+        h.append("assistant", "Mm.")
+        before = list(h.messages)
+        h.drop_prior_greetings(self.MARKER)
+        assert h.messages == before
+
+    def test_does_not_strip_a_marker_the_operator_actually_typed(self, tmp_path, monkeypatch):
+        # Only a marker immediately followed by an assistant turn is a greeting
+        # pair; the same words at the end of a log are just a message.
+        h = self._history(tmp_path, monkeypatch)
+        h.append("user", self.MARKER)
+        h.drop_prior_greetings(self.MARKER)
+        assert len(h.messages) == 1

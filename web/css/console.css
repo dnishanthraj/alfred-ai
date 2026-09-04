@@ -283,7 +283,8 @@ html[data-state="searching"] .bar__brand svg { animation: spin 3s linear infinit
   border-left: 2px solid transparent;
   transition: background 0.22s var(--ease);
 }
-.book__item[data-live="1"] .book__row {
+.book__item[data-live="1"] .book__row,
+.book__item[data-state="ringing"] .book__row {
   background: var(--surface-2);
   border-left-color: var(--contact-accent, var(--primary));
 }
@@ -298,6 +299,12 @@ html[data-state="searching"] .bar__brand svg { animation: spin 3s linear infinit
   background: var(--contact-accent, var(--primary));
   box-shadow: 0 0 0 3px rgba(79, 168, 224, 0.14);
 }
+.book__item[data-state="ringing"] .book__dot {
+  background: #e0a33e;
+  box-shadow: 0 0 0 3px rgba(224, 163, 62, 0.16);
+  animation: dim 1.3s ease-in-out infinite;
+}
+.book__item[data-state="ringing"] .book__role { color: #e0a33e; }
 
 .book__name { display: block; font-size: 14px; color: var(--text); }
 .book__role { display: block; color: var(--text-faint); margin-top: 1px; }
@@ -369,8 +376,7 @@ html[data-state="searching"] .bar__brand svg { animation: spin 3s linear infinit
   transform: scale(0.86);
   transition: opacity 0.75s var(--ease), transform 0.75s var(--ease);
 }
-html[data-link="on"] .viz,
-html[data-link="connecting"] .viz { opacity: 1; transform: none; }
+html[data-link="on"] .viz { opacity: 1; transform: none; }
 
 #viz { width: 100%; height: 100%; display: block; }
 
@@ -424,8 +430,10 @@ html[data-state="listening"] .status { color: var(--alert); }
   gap: 8px;
   transition: opacity 0.5s var(--ease);
 }
-html[data-link="on"] .empty,
-html[data-link="connecting"] .empty { opacity: 0; pointer-events: none; }
+/* The empty state belongs to a console with nothing on the line. Any other
+   phase — ringing, connected, hanging up — must clear it, or it sits on top of
+   the call it is claiming does not exist. */
+html:not([data-link="off"]) .empty { opacity: 0; pointer-events: none; }
 
 .empty__line {
   margin: 0;
@@ -648,7 +656,8 @@ html[data-link="ending"] .viz { opacity: 0; transform: scale(1.12); }
   background: var(--surface);
   transition: opacity 0.4s var(--ease);
 }
-html[data-link="off"] .compose { opacity: 0.35; pointer-events: none; }
+html[data-link="off"] .compose,
+html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
 
 .modes { display: flex; border: 1px solid var(--hairline-2); flex: none; }
 

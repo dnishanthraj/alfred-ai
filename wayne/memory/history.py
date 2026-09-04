@@ -69,6 +69,40 @@ class History:
         """
         return [{"role": m["role"], "content": m["content"]} for m in self.messages]
 
+    def last_greeting(self, marker):
+        """The greeting from the most recent connection, or '' if there is none."""
+        for index in range(len(self.messages) - 2, -1, -1):
+            if (self.messages[index]["role"] == "user"
+                    and self.messages[index]["content"] == marker
+                    and self.messages[index + 1]["role"] == "assistant"):
+                return self.messages[index + 1]["content"]
+        return ""
+
+    def drop_prior_greetings(self, marker):
+        """
+        Remove earlier connection greetings, keeping the conversation itself.
+
+        Every call stores a placeholder user turn and the greeting that answered
+        it. Across a few calls that leaves a stack of "Good morning" in the
+        context, and a model reading four greetings writes a fifth — which is
+        exactly how a character starts sounding like it has no memory of
+        speaking to you.
+        """
+        kept = []
+        index = 0
+        while index < len(self.messages):
+            message = self.messages[index]
+            is_pair = (message["role"] == "user"
+                       and message["content"] == marker
+                       and index + 1 < len(self.messages)
+                       and self.messages[index + 1]["role"] == "assistant")
+            if is_pair:
+                index += 2      # drop the placeholder and the greeting with it
+                continue
+            kept.append(message)
+            index += 1
+        self.messages = kept
+
     def append(self, role, content):
         self.messages.append({"role": role, "content": content, "at": time.time()})
 

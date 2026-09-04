@@ -133,7 +133,7 @@ def build_payload(contact, history, user_turn):
     return messages
 
 
-def boot_prompt(contact, returning, since_last=""):
+def boot_prompt(contact, returning, since_last="", previous_greeting=""):
     """
     The opening line. `since_last` is how long ago the last exchange was, in
     plain words — it is the difference between "Evening again" after ten
@@ -150,9 +150,18 @@ def boot_prompt(contact, returning, since_last=""):
         )
 
     gap = f"\nLast exchange: {since_last}." if (returning and since_last) else ""
+
+    # Superseded greetings are pruned from the history so they don't stack up,
+    # which also removes the only evidence that he greeted at all — and a model
+    # that cannot see its last greeting cheerfully writes the same one again.
+    # It comes back here instead, as something to avoid rather than to copy.
+    avoid = (f"\nYou opened the last call with: \"{previous_greeting}\". "
+             f"Do not reuse that phrasing or that time of day."
+             if previous_greeting else "")
+
     return (
         "[REFERENCE — context only]\n"
-        f"Time: {time_context()}.{'' if returning else ' Fresh session.'}{gap}\n"
+        f"Time: {time_context()}.{'' if returning else ' Fresh session.'}{gap}{avoid}\n"
         f"{SPEECH_CONSTRAINT}\n"
         "[END REFERENCE]\n\n"
         f"{instruction}"

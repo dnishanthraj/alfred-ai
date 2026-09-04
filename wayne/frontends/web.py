@@ -15,6 +15,7 @@ model finishes writing it, several in flight at once, but the resulting clips
 are released to the page strictly in order.
 """
 import asyncio
+import random
 import threading
 import time
 import uuid
@@ -42,6 +43,10 @@ _MAX_CACHED_CLIPS = 64
 # Long enough to cover a reply playing out plus the transcription round trip,
 # short enough that legitimately repeating a phrase later still gets through.
 ECHO_WINDOW_SECONDS = 25
+
+# How long a call rings before it is answered. Varied, because a constant delay
+# is only marginally less mechanical than none at all.
+PICKUP_DELAY = (0.9, 3.4)
 
 
 class Console:
@@ -227,6 +232,12 @@ class Console:
                 await self.broadcast(events.notice(
                     contact.availability.away_message, "warn"))
                 return
+
+            # Nobody answers the instant it rings. The model is now fast enough
+            # to reply in a fraction of a second, which reads as a machine
+            # waiting for input rather than a person crossing a room — so the
+            # line rings for a varying moment first.
+            await asyncio.sleep(random.uniform(*PICKUP_DELAY))
 
             for problem in config.missing_requirements():
                 await self.broadcast(events.notice(problem, "warn"))
