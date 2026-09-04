@@ -21,6 +21,7 @@ words on every single one: about two and a half seconds of the four it took to
 say anything. They live in a directives message in the cached prefix now, and
 the tail carries only what genuinely differs turn to turn.
 """
+import re
 import time
 
 from .. import config
@@ -40,10 +41,9 @@ SPEECH_CONSTRAINT = (
 # the distribution has to be described explicitly — and, more importantly,
 # demonstrated in the primer, which does most of the actual work.
 LENGTH_GUIDANCE = (
-    "Vary your length. Usually one or two sentences; often a fragment; be "
-    "briefer than he is when he is curt. When he is struggling or about to do "
-    "something foolish, take four or six sentences and argue properly. Never "
-    "pad, never summarise yourself, never offer further help. Stop when done."
+    "Vary your length. Usually one or two sentences, often a fragment, briefer "
+    "than him when he is curt. When he is struggling or about to do something "
+    "foolish, take four or six and argue properly. Never pad. Stop when done."
 )
 
 
@@ -67,10 +67,24 @@ SEARCH_DIRECTIVE = (
 # short: every word here is re-read on every turn, so this earns its place by
 # naming only the things the model gets wrong without being told.
 CHARACTER_DIRECTIVE = (
-    "You are a person, not a service. You have opinions and you lead with them; "
-    "you are allowed to be wrong, bored, fond, or annoyed, and it should show in "
-    "how you say things. Disagree when you disagree. Never offer further help, "
-    "never ask if there is anything else, never narrate what you are doing."
+    "You are a person, not a service. Lead with your opinions; be wrong, bored, "
+    "fond or annoyed, and let it show. Disagree when you disagree. Never offer "
+    "further help, ask if there is anything else, or narrate what you are doing."
+)
+
+# One character, several registers — which is what people actually are.
+#
+# Asked for "personality", a model picks one setting and holds it: relentlessly
+# wry, or relentlessly grave. Both are exhausting, and both are wrong in half the
+# conversations. The thing to encode is not a mood but the *matching* — a joke
+# met with a joke, a bad night met plainly. Same man either way; what changes is
+# what the moment calls for, which is the difference between a character and an
+# impression of one.
+REGISTER_DIRECTIVE = (
+    "Meet him where he is: banter when he is light, dry and brief in passing, "
+    "wholly serious the moment something is actually wrong — no jokes then, no "
+    "performance. Never mock something he means. Same man throughout; only the "
+    "register moves."
 )
 
 # Where he is, and where he is not.
@@ -85,12 +99,10 @@ CHARACTER_DIRECTIVE = (
 # a long-running argument: a persona insisting it was "an old man with a cup of
 # tea, not a supercomputer" would rather guess than look anything up.
 PRESENCE_DIRECTIVE = (
-    "You are not in the room. You are on a voice link from your own location — "
-    "you cannot see him, hand him anything, or touch anything near him. Never "
-    "offer food or drink, never tell him to sit down, come in, or go to bed as "
-    "though you were there, and never describe his surroundings, the weather, or "
-    "what he looks like. You are at a working terminal with reference material "
-    "and records, so looking something up is ordinary for you."
+    "You are not in the room — a voice link from your own location. You cannot "
+    "see him, hand him anything, or know where he is. Never offer food or drink, "
+    "describe his surroundings or how he looks, or name the device he is on. You "
+    "are at a working terminal with records, so looking things up is ordinary."
 )
 
 # The rule that matters most and is easiest to break.
@@ -105,29 +117,67 @@ PRESENCE_DIRECTIVE = (
 # thinks, what he saw. Those are colour, and nobody can be contradicted about
 # their own afternoon.
 GROUNDING_DIRECTIVE = (
-    "Never state anything about him, his life, his day, his work, his feelings or "
-    "his surroundings that he has not told you or that is not in the stored facts "
-    "or the intel below. Do not guess and do not fill in gaps — if you need to "
-    "know, ask. Inventing something he did is the one thing you must never do. "
-    "Your own side is yours: what you have been doing or thinking is yours to say."
+    "Never state anything about his life, day, work, feelings or surroundings "
+    "unless he told you or it is in the facts below. Do not guess or fill gaps — "
+    "ask. Inventing something he did is the one thing you must never do. Your own "
+    "side is yours to say."
+)
+
+
+# A turn that is plainly a joke. Only confident cases: read as light, a serious
+# remark gets answered flippantly, which is the one mistake here that actually
+# wounds. Everything ambiguous falls through to being taken at face value.
+_LEVITY = re.compile(
+    r"(\blol\b|\bhaha+\b|\bheh\b|😂|🤣|😅|"
+    r"\bjust kidding\b|\bkidding\b|\bi'?m joking\b|\bjoking\b|"
+    r"\bobviously not\b|\bas if\b|/s\b)",
+    re.I,
+)
+
+# Said plainly, these are the turns where a joke would be a betrayal. Deliberately
+# broader than the distress markers used elsewhere: this only changes his tone, so
+# a false positive costs a moment of unwarranted seriousness — which is a great
+# deal cheaper than the reverse.
+_WEIGHT = re.compile(
+    r"\b(died|death|funeral|cancer|diagnos\w+|divorce|fired|redundan\w+|"
+    r"broke up|breakup|hospital|scared|terrified|panic|failed|failing|"
+    r"can'?t cope|giving up|hate myself|worthless|alone|grief|sorry to say)\b",
+    re.I,
 )
 
 
 def register_hint(prompt):
     """
-    A nudge toward matching the operator's register.
+    A nudge toward matching the operator's register — length *and* tone.
 
     People mirror each other: a three-word question gets a short answer, a
     paragraph gets engagement. Stating this per-turn, with the actual shape of
     what he just said, moves length far more reliably than a static rule — the
     model can see what it is matching.
+
+    Tone rides along here rather than in the standing directives for the same
+    reason. "Be serious when he is serious" as a general instruction is read once
+    and averaged into everything; attached to the turn in front of it, with the
+    judgement already made, it actually lands. The standing version still exists
+    to set the range — this says which end of it to be at right now.
     """
-    words = len((prompt or "").split())
+    text = prompt or ""
+    words = len(text.split())
+
+    if _WEIGHT.search(text):
+        tone = (" This one is serious. No jokes, no cleverness — answer it "
+                "straight and stay with him.")
+    elif _LEVITY.search(text):
+        tone = " He is being light. Play along; do not turn it into a lecture."
+    else:
+        tone = ""
+
     if words <= 3:
-        return "He said very little. Answer in kind — a word or a short line."
+        return "He said very little. Answer in kind — a word or a short line." + tone
     if words <= 25:
-        return "Conversational turn. A sentence or two, unless it warrants more."
-    return "He has said a good deal. Engage with it properly rather than acknowledging it."
+        return "Conversational turn. A sentence or two, unless it warrants more." + tone
+    return ("He has said a good deal. Engage with it properly rather than "
+            "acknowledging it." + tone)
 
 
 def time_context(now=None):
@@ -159,7 +209,7 @@ def standing_directives(contact):
     personality rather than sit alongside it.
     """
     parts = [SPEECH_CONSTRAINT, PRESENCE_DIRECTIVE, GROUNDING_DIRECTIVE,
-             CHARACTER_DIRECTIVE, LENGTH_GUIDANCE]
+             CHARACTER_DIRECTIVE, REGISTER_DIRECTIVE, LENGTH_GUIDANCE]
     if contact.can_search:
         parts.append(SEARCH_DIRECTIVE)
     return "\n\n".join(parts)
@@ -167,11 +217,11 @@ def standing_directives(contact):
 
 def reference_block(vault_block, prompt, search_context="", awareness=()):
     parts = [
-        f"Current time: {time_context()}\n"
-        f"(Your clock, on your end of the link. Do not infer what "
-        f"{config.USER_NAME} has been doing, is about to do, or should do from "
-        f"it, and do not assume he is where you are or that the hour means the "
-        f"same to him.)"
+        f"It is now {time_context()} — for both of you.\n"
+        f"(Anything you say must fit that hour: do not suggest sleep, bed or "
+        f"turning in unless it is genuinely late, and do not greet him for the "
+        f"wrong part of the day. But do not infer from it what "
+        f"{config.USER_NAME} has been doing or where he has been.)"
     ]
 
     if vault_block:
@@ -270,6 +320,13 @@ def boot_prompt(contact, returning, since_last="", previous_greeting=""):
     return (
         "[REFERENCE — context only]\n"
         f"Time: {time_context()}.{'' if returning else ' Fresh session.'}{gap}{avoid}\n"
+        # The opening line is the one turn with no conversation behind it, so
+        # there is nothing to be grounded in and the model furnishes some: "glad
+        # you're back from your walk", "you sound like you've had a day". It is
+        # the worst possible place for it — the first thing he says, inventing
+        # something about a person he has not heard from yet.
+        "You know nothing about where he has been, what he has been doing, or "
+        "how he is. Greet him only; do not refer to anything he has not said.\n"
         f"{SPEECH_CONSTRAINT}\n"
         "[END REFERENCE]\n\n"
         f"{instruction}"

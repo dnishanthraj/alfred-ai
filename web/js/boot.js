@@ -89,8 +89,12 @@
     return delay(760).then(function () {
       el.gate.setAttribute('hidden', '');
       document.documentElement.dataset.phase = 'live';
-      delete el.gate.dataset.auth;
       if (onAuthenticated) onAuthenticated();
+      // Only once the gate has finished fading. Clearing it here — as this used
+      // to, in the same tick as hiding — dropped the granted styles instantly,
+      // so the rings snapped back to full brightness and speed while the panel
+      // was still visibly on screen.
+      setTimeout(function () { delete el.gate.dataset.auth; }, 800);
     });
   }
 

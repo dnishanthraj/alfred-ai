@@ -270,8 +270,11 @@ def count_repeats(prompt, previous_prompts, threshold=0.78):
 # survive: telling someone to look after themselves is most of what he is for.
 PRESENCE_PATTERNS = [
     r"\bcome (here|in|inside|over|through)\b",
+    r"\bpull up a (chair|seat|pew)\b",
+    r"\bthat look on your face\b", r"\bthe look on your face\b",
+    r"\bby the look of you\b",
     r"\b(sit|lie) down\b",
-    r"\bsit (yourself )?(down|there)\b",
+    r"\bsit (yourself )?(down|there|still|tight)\b",
     r"\bstand (up|there)\b",
     r"\b(drink|finish) (your|that) (tea|coffee|drink)\b",
     r"\b(have|take) (a|another) (cup|cuppa|biscuit)\b",
@@ -280,12 +283,22 @@ PRESENCE_PATTERNS = [
     r"\bthe kettle('?s| is)\b",
     r"\bput the kettle on\b",
     r"\blet me (look at|see) you\b",
+    # He hears a voice and nothing else. "Good to see you" is the single most
+    # natural greeting in English and the one he cannot honestly make.
+    r"\b(see|seeing) (you|your face|your ugly mug)\b",
+    r"\bsight of you\b",
     # He cannot see him. Anything describing how the operator *looks* is
     # invention dressed as observation, which is the most convincing kind.
     r"\byou look (like|as if|about|tired|awful|dreadful|terrible|pale|"
     r"exhausted|worse|better|well|rough|grey|ill)\b",
     r"\byou'?re (soaked|drenched|white as|shaking|swaying)\b",
     r"\byou'?re looking\b",           # "you're looking tired" — same claim, other grammar
+    # He does not know what he is being called on. It might be a laptop, a
+    # console in a room, a headset — "put the phone down" is a guess presented
+    # as a fact about the operator's hands.
+    r"\byour phone\b",
+    r"\b(put|pick up|picking up|answer|answering|get off|check) the phone\b",
+    r"\bon the phone\b",
     r"\byou sound (drunk|slurred)\b",  # he hears the line; he does not see through it
     r"\bhand me\b", r"\bgive me your\b",
     r"\bin front of me\b", r"\bover here\b", r"\bnext to me\b", r"\bbeside me\b",

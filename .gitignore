@@ -39,3 +39,10 @@ WayneTech Console.app/
 
 # Personal working notes (rough, not curated for public consumption)
 TODO.md
+
+# Contact portraits added through the console. Whatever you drop on a bio card
+# is yours — a photograph, or an actor's likeness with someone else's copyright
+# on it — and neither belongs in a public repository. The shipped placeholder
+# silhouette is committed; nothing else here is.
+web/portraits/*
+!web/portraits/_silhouette.svg

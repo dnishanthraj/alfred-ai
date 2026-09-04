@@ -25,6 +25,7 @@ only way that actually works mid-stream:
 """
 import random
 import re
+from collections import deque
 
 import ollama
 
@@ -113,6 +114,12 @@ class ContactSession:
         # observant; saying it every turn is a counter with a voice.
         self.remarked_on = set()
         self._last_deflection = None
+        # Check-ins and sign-offs he has already made. `record_aside` keeps only
+        # the newest against his last turn — deliberately, so they don't stack —
+        # which means by the third check-in the model can see only the second and
+        # cheerfully writes a third in the same shape. "Still drawing breath?"
+        # followed by "Still breathing yet?" is a machine with two phrasings.
+        self._recent_asides = deque(maxlen=6)
 
     # --- model calls ------------------------------------------------------
 
@@ -371,16 +378,26 @@ class ContactSession:
 
         greeting = "Online. I'm here when you're ready."
         try:
-            generated = self._chat_once(payload)
-            if generated:
-                # Only the address guard, never the full stack: that one strips
-                # greetings and sign-offs, which is precisely what this is.
-                # Without it the opening line was the one utterance in the whole
-                # session nothing checked — and it came back "welcome back, dear
-                # boy", spoken *and* written into history as an example to
-                # follow.
-                greeting = guards.strip_forbidden_address(
-                    generated, self.contact.forbidden_address) or generated
+            # Two attempts. The opening line is generated with no conversation
+            # behind it, which is exactly when the model furnishes some — "pull
+            # up a chair before that look on your face worries me" was the
+            # greeting, in full, from a man on the other end of a phone line.
+            # If the guards empty it, the whole line was staging and there is
+            # nothing to salvage; asking again costs less than opening the call
+            # on the one utterance that gets remembered as an example to follow.
+            for attempt in range(2):
+                generated = self._chat_once(
+                    payload, temperature=0.85 + 0.15 * attempt)
+                if not generated:
+                    continue
+                # The address guard, then presence — but never the full stack,
+                # which strips greetings and sign-offs, and this is a greeting.
+                cleaned = guards.strip_forbidden_address(
+                    generated, self.contact.forbidden_address)
+                cleaned = guards.strip_presence(cleaned).strip()
+                if cleaned:
+                    greeting = cleaned
+                    break
         except Exception as exc:
             yield events.notice(f"Cold start failed — using fallback. ({exc})", "warn")
 
@@ -419,12 +436,19 @@ class ContactSession:
         instruction = (
             "[REFERENCE — context only]\n"
             f"He has said nothing for {gap}. The link is still open.\n"
+            # He has no way of knowing whether the operator stepped out, is
+            # thinking, or simply did not hear. Left to itself the model decides
+            # — "you've gone quiet on me", "I'll leave you to it" — and states a
+            # conclusion it cannot have reached, which is the same invention
+            # problem as any other, only about the silence.
+            "You cannot see him and have no idea whether he is still there, "
+            "busy, or thinking. Do not conclude which.\n"
             f"{prompting.SPEECH_CONSTRAINT}\n"
             "[END REFERENCE]\n\n"
-            "Break the silence yourself, briefly — a few words at most. You might "
-            "check he is still there, or say nothing of consequence at all, the way "
-            "someone in the same room does. Do not ask what he needs, do not offer "
-            "help, and do not start a new subject."
+            "Break the silence yourself, briefly — a few words at most. Ask "
+            "whether he is still on the line, or simply say something small to "
+            "show you are. Do not ask what he needs, do not offer help, do not "
+            "start a new subject, and do not assume he has gone."
         )
         yield from self._speak_aside(instruction, temperature=0.9, cap=2)
 
@@ -546,14 +570,23 @@ class ContactSession:
         said in between. A contact who asks "still with me?" and then cannot
         recall asking is not someone you are having a conversation with.
         """
+        if self._recent_asides:
+            instruction += ("\n\nYou have already said, unanswered: "
+                            + "; ".join(f'"{a}"' for a in self._recent_asides)
+                            + ". Say something different in shape as well as words.")
         payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
         try:
             text = self._chat_once(payload, temperature=temperature)
+            if guards.too_similar(text, list(self._recent_asides)):
+                # One retry, hotter. Breaking a silence with the same line you
+                # broke the last one with is worse than not breaking it at all.
+                text = self._chat_once(payload, temperature=min(temperature + 0.2, 1.1))
         except Exception:
             yield events.state(events.IDLE)
             return
         text = guards.apply(text, "", cap, self.already_greeted,
                             self.contact.forbidden_address)
+        self._recent_asides.append(text)
         for i, sentence in enumerate(guards.split_sentences(text)):
             if sentence.strip():
                 yield events.sentence(i, sentence.strip())

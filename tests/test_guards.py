@@ -373,7 +373,10 @@ class TestPresence:
         ("Stop making yourself small. Sit down and breathe. Tell me why.",
          "Stop making yourself small. Tell me why."),
         ("Coffee's ready when you get home. Don't be late.", "Don't be late."),
-        ("Come here. Put the phone down.", "Put the phone down."),
+        # Both halves go: the first is presence, the second assumes he knows
+        # what device the call is on.
+        ("Come here. Talk to me.", "Talk to me."),
+        ("Put the phone down and listen. What happened?", "What happened?"),
         ("You look exhausted. What happened?", "What happened?"),
         ("Drink your tea before it gets cold. Now talk.", "Now talk."),
     ])
@@ -390,6 +393,29 @@ class TestPresence:
         "Sorting through old files while waiting for tea to cool.",
     ])
     def test_leaves_advice_and_his_own_side_alone(self, text):
+        assert guards.strip_presence(text) == text
+
+    @pytest.mark.parametrize("text,expected", [
+        # He hears a voice and nothing else, so the most natural greeting in
+        # English is the one he cannot honestly make.
+        ("Good to see you. What's happened?", "What's happened?"),
+        ("Glad to see your face again. Go on.", "Go on."),
+        # He does not know what he is being called on.
+        ("I'll be here whenever you pick up the phone. Right.", "Right."),
+        ("Put your phone away. Talk to me.", "Talk to me."),
+    ])
+    def test_removes_what_he_cannot_know(self, text, expected):
+        assert guards.strip_presence(text) == expected
+
+    @pytest.mark.parametrize("text", [
+        # He *can* hear, and these are ordinary idiom rather than observation.
+        "Glad to hear your voice again.",
+        "I see what you mean.",
+        "See to it yourself.",
+        "I had to phone the office about it.",
+        "You sound tired.",
+    ])
+    def test_hearing_and_idiom_survive(self, text):
         assert guards.strip_presence(text) == text
 
     def test_reports_a_reply_that_was_only_staging(self):

@@ -92,12 +92,32 @@ body::before {
 .gate[data-auth="checking"] .mark__ring--1 { animation-duration: 1.1s; }
 .gate[data-auth="checking"] .mark__ring--2 { animation-duration: 0.8s; }
 .gate[data-auth="checking"] .mark__ring--3 { animation-duration: 0.5s; }
-.gate[data-auth="granted"] .mark { animation: flare 0.9s var(--ease) forwards; }
+/* Accepted. The aperture settles rather than detonating.
 
-@keyframes flare {
-  0%   { transform: scale(1);    opacity: 1; }
-  55%  { transform: scale(1.14); opacity: 1; }
-  100% { transform: scale(2.6);  opacity: 0; }
+   This used to scale the mark to 2.6× — inside a centred grid, which meant it
+   grew straight through the message and the form beneath it, then vanished while
+   the gate was still fading, so it read as an overlap followed by a snap back.
+   Scale is the wrong instrument here: it is the one property that cannot help
+   colliding with its neighbours. The rings spinning down and the core coming up
+   to full says "unlocked" without moving anything into anything else. */
+.gate[data-auth="granted"] .mark { animation: settle 0.62s var(--ease) forwards; }
+.gate[data-auth="granted"] .mark__ring {
+  animation-duration: 2.4s !important;
+  transition: opacity 0.5s var(--ease);
+  opacity: 0.25;
+}
+.gate[data-auth="granted"] .mark__core { animation: core-lit 0.62s var(--ease) forwards; }
+
+@keyframes settle {
+  0%   { transform: scale(1);    filter: none; }
+  40%  { transform: scale(1.05); filter: brightness(1.5); }
+  100% { transform: scale(1);    filter: brightness(1.15); }
+}
+
+@keyframes core-lit {
+  0%   { opacity: 1; }
+  40%  { opacity: 0.35; }
+  100% { opacity: 1; }
 }
 
 /* --- gate ---------------------------------------------------------------- */

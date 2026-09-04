@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.9.3` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.9.4` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
@@ -44,6 +44,12 @@ their own memory on disk.
   plans has to have been said by you or be in the vault, or he asks instead of
   guessing. His own side is unrestricted: what *he* has been doing is his to
   make up, and nobody can be contradicted about their own afternoon.
+- **One character, several registers** — he banters when you are light, is dry
+  and brief in passing, and goes wholly serious the moment something is actually
+  wrong. The tone is decided per turn from what you just said and attached to it,
+  rather than set once and averaged into everything.
+- **He knows what time it is, for both of you** — no suggesting bed at three in
+  the afternoon, and no greeting you for the wrong half of the day.
 - **Deterministic conversation guards** — anti-repetition, sign-off suppression,
   physical-presence stripping, and length capping run in code rather than relying
   on the model to police itself.
@@ -385,6 +391,12 @@ the bottleneck. `qwen2.5:32b` was unusable at 0.3 tok/s; it swaps.
 
 What is worth doing is making sure the prompt does not grow. Three things decide
 that, in order of how much they cost when wrong:
+
+The prompt is ~1,500 words: your `Modelfile` persona (~530), the standing
+directives (~300), the primer of worked examples (~370), history (~260) and the
+per-turn reference block (~90). At the measured prefill rate that is most of the
+wait, and **your `Modelfile` is the largest single block** — if you want it
+faster than this, that is the honest place to cut, at the cost of character.
 
 - **`ALFRED_HISTORY_WORDS`** (default `260`). How much conversation is sent to
   the model. Uncapped history is why a session got steadily slower the longer it

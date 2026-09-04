@@ -3,6 +3,68 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.9.4] - 2026-09-04
+
+### Fixed
+
+- **He told you to get some sleep in the middle of the afternoon.** The time was
+  in the prompt, but the note attached to it — added in 0.9.3 to stop him
+  inferring your movements from the clock — also said the hour did not
+  necessarily apply to you, so he stopped using it for anything at all. It now
+  says the time is *shared* and that what he says has to fit it, while still
+  forbidding inferences about where you have been.
+- **Check-ins concluded you had gone.** He cannot know whether you stepped out,
+  are thinking, or did not hear, and he was deciding. He now asks, or says
+  something small to show he is there. The instruction also told him to behave
+  "the way someone in the same room does", which contradicted the presence rule
+  outright.
+- **Consecutive check-ins repeated themselves** — "Still drawing breath?" then
+  "Still breathing yet?". Asides are deliberately not stacked in history, which
+  meant by the third he could see only the second; the session now keeps the
+  recent ones and tells him what not to repeat, with one hotter retry if it does.
+- **The opening greeting invented context** ("glad you're back from your walk")
+  and put him in the room ("pull up a chair before that look on your face"). It
+  is the one turn with no conversation behind it, which is exactly when the model
+  furnishes some, and it is written to history as an example to follow. It now
+  carries an explicit no-context rule, runs through the presence guard, and
+  regenerates once if the guards empty it.
+- **He assumed you were on a phone.** You might be on a laptop, a headset, or a
+  console in a room — "put the phone down" is a guess about your hands stated as
+  fact. Also stripped: "good to see you" and anything about how you look, which
+  he cannot know. "You sound tired" survives, because he can hear.
+
+### Added
+
+- **Register matching.** He banters when you are light, stays dry and brief in
+  passing, and goes wholly serious the moment something is actually wrong — no
+  jokes, no performance. The judgement is made per turn from what you just said
+  and attached to that turn, rather than stated once in the standing directives
+  where it is averaged into everything. A serious turn answered flippantly is the
+  one mistake here that actually wounds, so the levity test is deliberately
+  narrow and the gravity test deliberately broad.
+
+### Changed
+
+- **Login animation.** The mark scaled to 2.6× inside a centred grid, so it grew
+  through the message and the form beneath it, then vanished while the gate was
+  still fading — an overlap followed by a snap. Scale is the wrong instrument
+  there: it is the one property that cannot help colliding with its neighbours.
+  The rings spin down and the core comes up instead. The granted styles are also
+  no longer cleared in the same tick as hiding the gate, which was dropping them
+  mid-fade.
+- **Prompt trimmed ~1,660 → ~1,500 words.** Standing directives compressed from
+  394 to 304 (three of them separately said "never offer further help"), and the
+  long primer exchange from 129 words to 96 — it still has to demonstrate the
+  long-form end of his range, but not at that price on every turn.
+
+### Notes
+
+- Thinking mode is confirmed off and is not a latency source: `think=False` is
+  sent and produces zero reasoning tokens, where omitting it produces 205
+  characters of reasoning and no reply at all. Prefill batch size was tested and
+  makes no useful difference. The remaining latency is prompt size, and the
+  README now breaks down where those words go.
+
 ## [0.9.3] - 2026-09-04
 
 ### Fixed
