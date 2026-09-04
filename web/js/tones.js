@@ -79,10 +79,48 @@
     note(330, t + 0.11, 0.3, 0.045);
   }
 
+  /* --- the lock screen -----------------------------------------------------
+     The gate is stagecraft, and stagecraft with no sound is half-built: a
+     passcode that lands in silence gives you nothing to feel. These are the
+     same three-note vocabulary as the call tones so it reads as one instrument.
+     ---------------------------------------------------------------------- */
+
+  /** Accepted: a rising major triad — resolved, and obviously so. */
+  function granted() {
+    var t = ctx().currentTime;
+    note(392, t, 0.11, 0.05);
+    note(523, t + 0.09, 0.11, 0.05);
+    note(784, t + 0.18, 0.34, 0.05);
+  }
+
+  /** Rejected: a flat two-note buzz on a tritone. Deliberately unpleasant. */
+  function denied() {
+    var t = ctx().currentTime;
+    note(233, t, 0.16, 0.05);
+    note(220, t + 0.13, 0.22, 0.05);
+  }
+
+  /** Locked out: lower, slower, and it does not resolve. */
+  function lockedOut() {
+    var t = ctx().currentTime;
+    note(196, t, 0.3, 0.055);
+    note(185, t + 0.26, 0.5, 0.055);
+  }
+
+  /** One tick per second of a lockout, so the wait is audible rather than dead. */
+  function tick() {
+    var t = ctx().currentTime;
+    note(147, t, 0.05, 0.02);
+  }
+
   global.ConsoleTones = {
     startRinging: startRinging,
     stopRinging: stopRinging,
     connected: connected,
-    disconnected: disconnected
+    disconnected: disconnected,
+    granted: granted,
+    denied: denied,
+    lockedOut: lockedOut,
+    tick: tick
   };
 })(window);

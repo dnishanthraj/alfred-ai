@@ -7,17 +7,34 @@ whether the last exchange was ten minutes or three weeks ago, which is most of
 the difference between "Evening again" and "It's been a while."
 """
 import json
+import os
 import time
 
 from .. import paths
 from .store import atomic_write, read_text
 
-# Full exchanges kept as short-term memory. Raised from 16 once the system
-# prompt came down from 1440 words to ~490: the context freed up there is far
-# better spent on what was actually said than on restating rules. At roughly
-# 25 words a turn this is a few thousand tokens, which the prefix cache covers.
+# Full exchanges kept on disk as short-term memory.
 MAX_HISTORY_PAIRS = 30
 MAX_HISTORY_MESSAGES = MAX_HISTORY_PAIRS * 2
+
+# How much of that history is actually sent to the model, in words.
+#
+# The disk cap above is generous because storage is cheap. This one is not,
+# because prompt evaluation is the entire latency budget and it is paid again
+# on every turn: Ollama here re-reads the whole prompt each time — measured at
+# ~770 tokens/second, with `prompt_eval_count` reporting the full count on a
+# verbatim repeat — so nothing about the prefix is free.
+#
+# Which is why the previous "the prefix cache covers it" reasoning was wrong,
+# and wrong in the worst direction: history is the one part of the prompt that
+# grows, so latency climbed steadily through a conversation and never came back
+# down. Measured on the same machine, the same turn cost 0.83s with no history
+# and 3.29s with 593 words of it.
+#
+# A word budget rather than a turn count, because turns are wildly uneven — one
+# long answer costs as much as ten short ones, and a cap on pairs lets that
+# through. Oldest whole exchanges are dropped first.
+HISTORY_WORD_BUDGET = int(os.getenv("ALFRED_HISTORY_WORDS", "260"))
 
 
 def describe_gap(seconds):
@@ -63,13 +80,19 @@ class History:
     def __len__(self):
         return len(self.messages)
 
-    def for_model(self):
+    def for_model(self, word_budget=None):
         """
         The messages as the model expects them: role and content only.
         Timestamps are ours, not the model's, and sending unknown keys to
         Ollama is asking for trouble.
+
+        Trimmed to a word budget from the most recent end, dropping whole
+        exchanges so the transcript never starts on an answer to a question the
+        model cannot see. This is the single biggest lever on how quickly he
+        answers — see `HISTORY_WORD_BUDGET`.
         """
-        return [
+        budget = HISTORY_WORD_BUDGET if word_budget is None else word_budget
+        messages = [
             {
                 "role": m["role"],
                 "content": (m["content"] + " " + m["aside"]).strip()
@@ -77,6 +100,33 @@ class History:
             }
             for m in self.messages
         ]
+        if budget is None or budget <= 0:
+            return messages
+
+        # Walk back in pairs, keeping whole exchanges until the budget runs out.
+        kept, used = [], 0
+        for index in range(len(messages) - 1, -1, -1):
+            cost = len(messages[index]["content"].split())
+            if used + cost > budget and kept:
+                break
+            kept.append(messages[index])
+            used += cost
+        kept.reverse()
+        # Never open on an assistant turn: an answer with its question removed
+        # reads as something he volunteered, and he will follow that example.
+        while kept and kept[0]["role"] == "assistant":
+            kept.pop(0)
+
+        # One exchange longer than the whole budget trims to nothing at all —
+        # the single reply that fits is an assistant turn, and stripping it
+        # leaves an empty list. Losing the last thing said is far worse than
+        # going over budget, so the most recent exchange is kept regardless.
+        if not kept:
+            for index in range(len(messages) - 1, -1, -1):
+                if messages[index]["role"] == "user":
+                    return messages[index:]
+            return messages[-1:]
+        return kept
 
     def last_greeting(self, marker):
         """The greeting from the most recent connection, or '' if there is none."""

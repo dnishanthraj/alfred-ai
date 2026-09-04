@@ -16,6 +16,7 @@ are released to the page strictly in order.
 """
 import asyncio
 import random
+import re
 import threading
 import time
 import uuid
@@ -23,7 +24,7 @@ from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .. import config, events, paths
@@ -363,11 +364,35 @@ def _warm_model():
         pass
 
 
+def _warm_speech():
+    """
+    Load and exercise the Whisper model before anyone speaks.
+
+    Resolving the backend and decoding the first clip costs about two seconds;
+    every clip after that takes a tenth of one. Left to happen on demand, that
+    two seconds lands on the first thing the operator ever says — which is
+    exactly when the console is being judged, and it reads as a slow microphone
+    rather than a one-off load. A short buffer of silence is enough to force the
+    whole path: backend resolution, weights, and the first decode.
+    """
+    try:
+        import numpy as np
+
+        from ..audio import stt
+        stt.transcribe_audio(np.zeros(stt.SAMPLE_RATE, dtype=np.float32))
+    except Exception:
+        pass
+
+
 @asynccontextmanager
 async def lifespan(_app):
-    warm = asyncio.create_task(asyncio.to_thread(_warm_model))
+    warm = [
+        asyncio.create_task(asyncio.to_thread(_warm_model)),
+        asyncio.create_task(asyncio.to_thread(_warm_speech)),
+    ]
     yield
-    warm.cancel()
+    for task in warm:
+        task.cancel()
 
 
 app = FastAPI(title="WayneTech Console", docs_url=None, redoc_url=None,
@@ -388,9 +413,35 @@ def _contact_payload(contact):
     }
 
 
+def _asset_version():
+    """
+    A token that changes whenever any front-end file does.
+
+    The console runs in a Chrome window with its own persistent profile, which
+    caches `/static/js/app.js` by URL and keeps serving the old one after an
+    edit — so a code change appeared not to take, and the obvious next move is
+    to rebuild the .app, which changes nothing because the bundle is only a
+    launcher. Stamping the URLs makes an edit take effect on reload, full stop.
+
+    Recomputed per request rather than at import: during development the whole
+    point is that the file just changed, and the cost is a handful of stats.
+    """
+    stamp = max(
+        (path.stat().st_mtime for path in WEB_DIR.rglob("*")
+         if path.is_file() and path.suffix in (".js", ".css")),
+        default=0.0,
+    )
+    return f"{stamp:.0f}"
+
+
 @app.get("/")
 async def index():
-    return FileResponse(WEB_DIR / "index.html")
+    # Rewritten in memory; index.html on disk stays clean and directly openable.
+    html = (WEB_DIR / "index.html").read_text()
+    html = re.sub(r'(/static/[\w./-]+\.(?:js|css))"',
+                  rf'\1?v={_asset_version()}"', html)
+    return Response(content=html, media_type="text/html",
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/session")
@@ -457,17 +508,36 @@ async def audio(clip_id: str):
 def _speech_hint():
     """
     Words this particular conversation is likely to contain, fed to the decoder
-    so it stops inventing spellings for them. Whoever is on the line, whoever
-    is speaking, and the last thing said — which is usually what the next thing
-    is about.
+    so it stops inventing spellings for them. Whoever is on the line, whoever is
+    speaking, and any proper nouns from the last thing said.
+
+    Names only — deliberately. Whisper's `initial_prompt` is not a glossary, it
+    is a prefix the decoder continues from, so it biases output toward *whatever
+    is in it*. This used to pass the contact's entire last sentence, which meant
+    every take was nudged toward the words he had just spoken: his phrasing
+    appeared in transcripts of things the operator never said, the reply
+    answered that, and the conversation walked off in a direction nobody had
+    asked for. It also gave acoustic echo a helping hand, since the hint agreed
+    with whatever the microphone picked up off the speakers.
+
+    Capitalised words survive because a name is what Whisper actually gets wrong
+    and what a hint genuinely fixes. Prose is what does the damage.
     """
     parts = [config.USER_NAME]
     contact = console.contact
     if contact:
         parts += [contact.name, contact.full_name]
     if console.recent_speech:
-        parts.append(console.recent_speech[-1][1])
-    return ", ".join(p for p in parts if p)[:400]
+        spoken = console.recent_speech[-1][1] or ""
+        # Mid-sentence capitals: proper nouns, minus whatever starts a sentence.
+        parts += re.findall(r"(?<![.!?]\s)(?<!^)\b[A-Z][a-zA-Z'’-]{2,}", spoken)[:6]
+    seen, unique = set(), []
+    for part in parts:
+        key = (part or "").strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(part.strip())
+    return ", ".join(unique)[:200]
 
 
 @app.post("/api/transcribe")

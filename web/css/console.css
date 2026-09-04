@@ -191,6 +191,22 @@ body::before {
 .auth__msg[data-tone="bad"]  { color: var(--alert); }
 .auth__msg[data-tone="good"] { color: var(--good); }
 
+/* Locked out after too many wrong attempts. The field is disabled in script;
+   this is what makes that legible rather than looking like a broken input. */
+.gate[data-auth="locked"] .auth__input,
+.gate[data-auth="locked"] .auth__btn {
+  opacity: 0.35;
+  filter: grayscale(1);
+  cursor: not-allowed;
+}
+.gate[data-auth="locked"] .mark {
+  animation: none;
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+.gate[data-auth="locked"] .auth__msg { animation: pulse-alert 1s steps(2) infinite; }
+@keyframes pulse-alert { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
 .auth.is-denied { animation: shake 0.4s var(--ease); }
 @keyframes shake {
   0%, 100% { transform: translateX(0); }

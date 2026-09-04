@@ -51,20 +51,26 @@ LENGTH_GUIDANCE = (
 # re-read every turn. Gating a lookup behind keywords meant that questions
 # needing one never reached the decision at all, leaving invention as the only
 # option — which is exactly what happened.
+# Deliberately short. Questions that plainly need a current fact are searched
+# before the model is ever asked (see `search.is_factual_lookup`) and the results
+# arrive in the reference block, so this is only the fallback for the ones the
+# classifier does not catch. It used to run to 142 words of insistence — which
+# was 142 words of prompt evaluation on every single turn, argued with the
+# persona on every one of them, and still lost.
 SEARCH_DIRECTIVE = (
-    "YOU CAN LOOK THINGS UP, AND YOU MUST WHEN IT MATTERS.\n"
-    "If answering needs a fact you could not already know — a person, a company, "
-    "an event, a result, a price, the news, the weather, anything current — then "
-    "your entire reply must be exactly:\n"
-    "[SEARCH: what to look up]\n"
-    "Nothing else, no preamble. You will be given what is found and then you "
-    "answer properly. This is not optional for facts you do not have: inventing "
-    "one, or guessing, or saying you have never heard of it, are all worse than "
-    "looking.\n"
-    "Do NOT use it for conversation, opinions, feelings, or anything about him "
-    "or about yourself — you have those already. If the request is vague, ask "
-    "what he means. If he should do it himself, say so.\n"
-    "Never claim you lack real-time data or cannot reach the internet."
+    "If answering needs a current fact you do not have and none was provided, "
+    "reply with exactly [SEARCH: what to look up] and nothing else. Never invent "
+    "a fact, a figure or a result; say you don't know instead."
+)
+
+# What makes him a person rather than an assistant with a costume on. Kept
+# short: every word here is re-read on every turn, so this earns its place by
+# naming only the things the model gets wrong without being told.
+CHARACTER_DIRECTIVE = (
+    "You are a person, not a service. You have opinions and you lead with them; "
+    "you are allowed to be wrong, bored, fond, or annoyed, and it should show in "
+    "how you say things. Disagree when you disagree. Never offer further help, "
+    "never ask if there is anything else, never narrate what you are doing."
 )
 
 
@@ -113,7 +119,7 @@ def standing_directives(contact):
     SYSTEM block, because a system message sent at runtime would replace that
     personality rather than sit alongside it.
     """
-    parts = [SPEECH_CONSTRAINT, LENGTH_GUIDANCE]
+    parts = [SPEECH_CONSTRAINT, CHARACTER_DIRECTIVE, LENGTH_GUIDANCE]
     if contact.can_search:
         parts.append(SEARCH_DIRECTIVE)
     return "\n\n".join(parts)

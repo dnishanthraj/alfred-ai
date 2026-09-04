@@ -73,6 +73,45 @@ class TestHistory:
         h.record_exchange("what's my name", "Wayne.")
         assert json.loads((tmp_path / "history.json").read_text())[-1]["content"] == "Wayne."
 
+    def _conversation(self, pairs, words_each=10):
+        h = History.__new__(History)
+        h.contact_id = "test"
+        h.messages = []
+        for i in range(pairs):
+            h.messages.append({"role": "user", "content": f"u{i} " + "word " * words_each})
+            h.messages.append({"role": "assistant", "content": f"a{i} " + "word " * words_each})
+        return h
+
+    def test_history_sent_to_the_model_is_capped(self):
+        # Prompt evaluation is the whole latency budget and it is paid again
+        # every turn, so an uncapped history means a conversation that gets
+        # steadily slower the longer it runs.
+        h = self._conversation(pairs=30)
+        sent = h.for_model(word_budget=60)
+        assert len(sent) < len(h.messages)
+        assert sum(len(m["content"].split()) for m in sent) <= 60
+
+    def test_the_cap_keeps_the_most_recent_turns(self):
+        h = self._conversation(pairs=30)
+        assert h.for_model(word_budget=60)[-1]["content"].startswith("a29")
+
+    def test_the_cap_never_opens_on_an_answer(self):
+        # An assistant turn whose question was trimmed away reads as something
+        # he volunteered, and he follows that example.
+        h = self._conversation(pairs=30)
+        for budget in (12, 40, 100, 250):
+            sent = h.for_model(word_budget=budget)
+            assert not sent or sent[0]["role"] == "user", budget
+
+    def test_a_budget_of_zero_disables_trimming(self):
+        h = self._conversation(pairs=30)
+        assert len(h.for_model(word_budget=0)) == 60
+
+    def test_one_enormous_turn_is_still_returned(self):
+        # Better an over-budget prompt than a turn with no context at all.
+        h = self._conversation(pairs=1, words_each=500)
+        assert len(h.for_model(word_budget=60)) >= 1
+
     def test_corrupt_history_is_treated_as_empty_not_fatal(self, tmp_path, monkeypatch):
         path = tmp_path / "history.json"
         path.write_text("{ this is not json")

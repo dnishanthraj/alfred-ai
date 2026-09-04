@@ -154,13 +154,22 @@ class ContactSession:
         max_sentences = self.contact.max_reply_sentences
         leaving = guards.user_is_leaving(prompt)
 
-        # Compared like with like. The loop check runs on the first sentence,
-        # so it has to be measured against the first sentence of previous
-        # replies — matching one sentence against whole multi-sentence replies
-        # scores too low to ever fire, which let "You've said morning nine
-        # times now… ten… eleven…" run indefinitely.
-        recent = [guards.split_sentences(reply)[0]
-                  for reply in self.history.recent_assistant(turns=12) if reply.strip()]
+        # Compared like with like: sentence against sentence. Matching one
+        # sentence against whole multi-sentence replies scores too low to ever
+        # fire, which let "You've said morning nine times now… ten… eleven…"
+        # run indefinitely.
+        #
+        # Every sentence of each recent reply, not just its opening. Comparing
+        # against openings alone meant a line could only be caught if he had
+        # once used it to *start* a reply — so an observation made in passing
+        # came back almost verbatim two turns later, in full, and nothing
+        # noticed. What matters is whether he has said this before, not where in
+        # the reply he happened to say it.
+        recent = [
+            sentence
+            for reply in self.history.recent_assistant(turns=12) if reply.strip()
+            for sentence in guards.split_sentences(reply) if sentence.strip()
+        ]
 
         buffer = ""          # tokens not yet forming a complete sentence
         held = []            # complete sentences that look like farewells

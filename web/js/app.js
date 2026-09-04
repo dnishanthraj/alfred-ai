@@ -44,6 +44,7 @@
     resumeTimer: null,
     nudges: 0,        // consecutive unanswered check-ins
     closing: false,   // he is signing off; hang up once he has finished
+    hangUpWhenQuiet: false,  // sign-off written; waiting on the voice to stop
     quietUntil: 0     // he was asked for time; don't chase until then
   };
 
@@ -231,7 +232,22 @@
     }, wait);
   }
 
+  /* He decided to end the call. Let him land the sentence first: hanging up
+     over his own voice is the one thing that would make it obvious the timing
+     is a timer rather than a person. Interrupting still cancels it — cutting
+     him off is your prerogative, not the clock's. */
+  function closeIfFinished() {
+    if (!state.hangUpWhenQuiet) return;
+    if (ConsoleAudio.isPlaying) return;            // still talking; wait for onIdle
+    state.hangUpWhenQuiet = false;
+    // A beat after the last word, the way anyone pauses before ringing off.
+    setTimeout(function () { if (state.connectedId) hangUp(); }, 700);
+  }
+
   function noteActivity(opts) {
+    // Anything from the operator cancels a pending hang-up — he was leaving
+    // because nobody was there, and now somebody is.
+    state.hangUpWhenQuiet = false;
     state.nudges = 0;
     if (opts && opts.quietFor) state.quietUntil = Date.now() + opts.quietFor;
     armIdleCheck();
@@ -331,6 +347,7 @@
     state.fresh = true;
     state.nudges = 0;
     state.closing = false;
+    state.hangUpWhenQuiet = false;
     state.quietUntil = 0;
 
     // Ring while he is being reached. This is not only dressing: it covers the
@@ -366,6 +383,7 @@
     clearTimeout(state.idleTimer);
     clearTimeout(state.resumeTimer);
     state.closing = false;
+    state.hangUpWhenQuiet = false;
     send({ type: 'disconnect' });
     state.connectedId = null;
     state.ringingId = null;
@@ -456,9 +474,14 @@
         answered();
         scheduleFlush(60);
         if (state.closing) {
-          // Let the last line finish playing, then close the line.
+          // Hang up once he has actually finished speaking — not on a timer.
+          // `turn_complete` means the model stopped *writing*; the audio queue
+          // is still draining well behind it, so a fixed 2.6s wait cut him off
+          // mid-sentence on anything longer than a single short line. The
+          // handoff is in ConsoleAudio's idle callback instead.
           state.closing = false;
-          setTimeout(function () { if (state.connectedId) hangUp(); }, 2600);
+          state.hangUpWhenQuiet = true;
+          closeIfFinished();
         } else {
           armIdleCheck();
         }
@@ -609,6 +632,7 @@
     ConsoleAudio.on('onIdle', function () {
       if (document.documentElement.dataset.state === 'speaking') setState('idle');
       if (state.generationDone) scheduleFlush(40);
+      closeIfFinished();
     });
   }
 

@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.9.1` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.9.2` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
@@ -115,6 +115,7 @@ their own memory on disk.
    | `ALFRED_PTT_KEY` | No | [pynput](https://pynput.readthedocs.io) key for `--cli` push-to-talk (default: `Key.cmd_r`) |
    | `ALFRED_WHISPER_HINTS` | No | Comma-separated proper nouns to bias speech recognition |
    | `ALFRED_CONTEXT_WINDOW` | No | Model context in tokens (default: `8192`). See [Latency](#latency) |
+   | `ALFRED_HISTORY_WORDS` | No | Conversation words sent to the model (default: `260`). The main latency dial |
 
    Display name, role, voice, and sampling parameters are per-contact and live in
    [`wayne/contacts/profiles/alfred.json`](wayne/contacts/profiles/alfred.json).
@@ -142,8 +143,15 @@ their own memory on disk.
    That produces **WayneTech Console.app** — its own Dock icon, a window with no
    tabs or address bar, its own browser profile. It starts Ollama and the server
    if they aren't running, and stops the server when you quit. Open it once,
-   then right-click the Dock icon → Options → Keep in Dock. Re-run the script if
-   you move the project.
+   then right-click the Dock icon → Options → Keep in Dock.
+
+   > **You do not rebuild it when you change the code.** The bundle is a
+   > launcher that points at this directory — it contains no copy of the
+   > project — so Python changes take effect when you quit and reopen it, and
+   > front-end changes on a reload (asset URLs are stamped with a version that
+   > follows the files, so the browser cannot serve you a stale `app.js`).
+   > Editing your `Modelfile` likewise just needs a restart. Re-run the script
+   > only if you **move the project**, since the path is baked into the launcher.
 
    [`scripts/launch.command`](scripts/launch.command) still works if you'd
    rather have a browser tab.
@@ -333,28 +341,43 @@ make a character sound like themselves.
 
 ## Latency
 
-Warm, on an M-series Mac with `qwen3.5:9b`: **~1.8s to the first token, ~2.6–4.0s
-to the first complete sentence** (a sentence has to finish before it can be
-spoken). Measured on the same machine, `qwen2.5:32b` was unusable at 0.3 tok/s —
-it swaps.
+Warm, on an M-series Mac with `qwen3.5:9b`: **~1.0–2.2s to the first spoken
+sentence on an unloaded machine**, and roughly twice that when the same machine
+is busy — this varies far more with what else is running than with anything in
+the code, so treat single numbers with suspicion and compare like with like.
+Speech-to-text is ~0.1s and speech synthesis ~0.3s; essentially all the rest is
+the model.
 
-Almost all of that budget is prompt evaluation, not generation, so the only
-question that matters is how much of the prompt has to be re-read each turn.
-Three things decide that, in order of how much they cost when wrong:
+**Prompt evaluation is the entire budget, and it is paid again every turn.**
+Ollama here does not reuse its KV cache between requests — sending a byte-identical
+prompt twice reports the same `prompt_eval_count` both times, and the second is no
+faster — so there is no free prefix. Latency is, near enough, prompt size ÷ prefill
+rate, measured at 400–1100 tokens/second depending on machine load.
 
-- **`ALFRED_CONTEXT_WINDOW`** (default `8192`). This is the big one. Ollama
-  defaults to 4096 tokens, and a persona plus a primer plus a few turns of
-  history clears that easily. Once the prompt outgrows the window Ollama shifts
-  context — which discards the KV cache and re-reads the *entire* prompt on
-  every single turn. The symptom is latency that climbs as the conversation
-  grows and never comes back down: 5.3s to the first word here, with an
-  identical repeated prompt no faster than the first, which is the tell. Sized
-  so the whole stable prefix fits with room to grow, the same request answers in
-  1.8s. Raise it for longer histories at the cost of memory.
-- **Prompt layout.** Standing instructions live in the cached prefix; only
-  genuinely per-turn context — the time, the relevant vault facts, what he has
-  noticed — rides on the last message. This is only worth anything if the prefix
-  is actually cacheable, which is what the setting above buys.
+That has a consequence worth stating plainly: **sub-second replies are not
+reachable with a character this size.** A persona, a primer and a few turns of
+history come to ~1,400 words; there is no arrangement of them that evaluates in
+under a second, and cutting them to fit is just deleting the personality. A
+smaller model does not rescue it either — `qwen3.5:4b` measured *slower* to the
+first token than the 9B, because prefill dominates and generation speed is not
+the bottleneck. `qwen2.5:32b` was unusable at 0.3 tok/s; it swaps.
+
+What is worth doing is making sure the prompt does not grow. Three things decide
+that, in order of how much they cost when wrong:
+
+- **`ALFRED_HISTORY_WORDS`** (default `260`). How much conversation is sent to
+  the model. Uncapped history is why a session got steadily slower the longer it
+  ran and never recovered: measured on one machine, a twenty-exchange
+  conversation cost **8.1s** to the first token untrimmed and **4.2s** trimmed,
+  and the untrimmed figure keeps climbing while the trimmed one does not. A word
+  budget rather than a turn count, because one long answer costs as much as ten
+  short ones.
+
+- **`ALFRED_CONTEXT_WINDOW`** (default `8192`). Ollama defaults to 4096 tokens,
+  and a persona plus a primer plus a few turns of history clears that easily.
+  Once the prompt outgrows the window Ollama shifts context, which costs more
+  again on top of the re-read. Raise it for longer histories at the cost of
+  memory.
 - **`ALFRED_MODEL_KEEP_ALIVE`** (default `1h`). Ollama evicts a model after five
   minutes idle by default, and reloading a 14B costs around 25 seconds — which
   is the entire difference between "instant" and "did it crash?" for a

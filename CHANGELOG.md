@@ -3,6 +3,72 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.9.2] - 2026-09-04
+
+### Fixed
+
+- **Replies got slower the longer you talked, and never recovered.** History was
+  sent to the model uncapped, and since Ollama here re-reads the whole prompt on
+  every turn — a byte-identical prompt reports the same `prompt_eval_count`
+  twice and the second is no faster — every stored exchange was paid for again
+  on each turn, for the rest of the session. History is now trimmed to a word
+  budget (`ALFRED_HISTORY_WORDS`, default 260), dropping whole exchanges from the
+  oldest end. Measured on one machine, a twenty-exchange conversation went from
+  **8.1s to 4.2s** to the first token, and the untrimmed figure keeps climbing
+  while the trimmed one does not.
+- **The first thing you said each session took two seconds to transcribe.**
+  Nothing warmed Whisper, so the initial decode paid the model load; every one
+  after took 0.1s. It is now warmed at startup alongside the language model,
+  while you are still reading the boot screen.
+- **The microphone was biased toward the words he had just spoken.** His entire
+  last sentence was passed to Whisper as `initial_prompt`, which is not a
+  glossary but a prefix the decoder continues from — so his phrasing turned up
+  in transcripts of things that were never said, he answered that, and the
+  conversation wandered off. It also helped acoustic echo get through. Only
+  proper nouns are passed now, which is what a hint actually fixes.
+- **He was cut off mid-sentence when he ended the call himself.** The hang-up ran
+  on a fixed 2.6s timer after `turn_complete` — but that event means the model
+  stopped *writing*, while the audio queue is still draining well behind it.
+  It now waits for the voice to actually stop, and any input from you cancels it.
+- **A line he had already used could come back almost verbatim.** The repetition
+  guard only ever compared against the *first* sentence of previous replies, so
+  anything said mid-reply was invisible to it. It compares every sentence now.
+- Trimming history could return *nothing* when a single exchange was longer than
+  the whole budget: the one message that fit was an assistant turn, and stripping
+  it (correctly, so the transcript never opens on an answer) emptied the list.
+  The most recent exchange is now kept regardless of budget.
+
+### Added
+
+- **Sound on the lock screen**, in the same synthesised idiom as the call tones:
+  a rising triad on success, a flat tritone on refusal, and a lower unresolved
+  pair on lockout.
+- **Three wrong passcodes locks the terminal** for 15s, then 30s, then 60s, with
+  the remaining time counted down on screen and ticking audibly. Capped
+  deliberately — this is a console you are meant to get into. Like the passcode
+  itself it is client-side, and the file says so.
+
+### Changed
+
+- **Front-end assets are stamped with a version that follows the files**, so an
+  edit to `app.js` or `console.css` takes effect on reload. The console runs in a
+  Chrome window with a persistent profile, which was happily serving cached
+  copies — making code changes look like they had not applied, and rebuilding
+  the `.app` look like the fix, which it never was.
+- `SEARCH_DIRECTIVE` cut from 142 words to 34. Factual questions are searched
+  before the model is asked, so the long version was re-read on every turn,
+  argued with the persona on every one of them, and still lost. A short
+  `CHARACTER_DIRECTIVE` takes its place, on the things a model gets wrong without
+  being told: have opinions, lead with them, never offer further help.
+
+### Notes
+
+- Sub-second replies are not reachable with a character this size, and the
+  README now says so rather than implying otherwise. Prefill runs at 400–1100
+  tokens/second with no cache reuse, and a persona plus primer plus history is
+  ~1,400 words. `qwen3.5:4b` was measured *slower* to the first token than the
+  9B — prefill dominates, so a smaller model does not help.
+
 ## [0.9.1] - 2026-09-04
 
 ### Fixed

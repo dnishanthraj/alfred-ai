@@ -26,6 +26,25 @@
   var onAuthenticated = null;
   var ran = false;
 
+  // Wrong attempts before the gate stops accepting any, and how long it stops
+  // for. Escalating, because a second run of three wrong guesses is a different
+  // thing from the first — but capped at a minute: this is a console you are
+  // meant to get into, and punishing a typo with a five-minute wait would be
+  // the kind of security theatre that only ever inconveniences the owner.
+  //
+  // Client-side, like the passcode itself. It raises the cost of guessing at a
+  // keyboard, which is the threat this screen is actually for; it stops nobody
+  // who opens the network tab. See the note at the top of this file.
+  var MAX_ATTEMPTS = 3;
+  var LOCKOUTS_MS = [15000, 30000, 60000];
+
+  var attempts = 0;
+  var lockouts = 0;
+  var lockedUntil = 0;
+  var lockTimer = null;
+
+  function isLocked() { return Date.now() < lockedUntil; }
+
   function delay(ms) {
     return new Promise(function (resolve) { setTimeout(resolve, ms); });
   }
@@ -62,8 +81,11 @@
   }
 
   function grant() {
+    attempts = 0;
+    lockouts = 0;
     el.gate.dataset.auth = 'granted';
     message('Access granted', 'good');
+    tone('granted');
     return delay(760).then(function () {
       el.gate.setAttribute('hidden', '');
       document.documentElement.dataset.phase = 'live';
@@ -72,17 +94,70 @@
     });
   }
 
+  /**
+   * Play one of the gate's tones, if the audio context will have us.
+   *
+   * Everything here runs inside a form submit, which is the gesture browsers
+   * want before an AudioContext will start — but the context may still be
+   * suspended on the first attempt, so it is resumed rather than assumed. A
+   * silent failure is correct: no sound is a worse console, not a broken one.
+   */
+  function tone(name) {
+    try {
+      global.ConsoleAudio.resume().then(function () {
+        global.ConsoleTones[name]();
+      }, function () {});
+    } catch (err) { /* no audio; the screen still works */ }
+  }
+
   function deny() {
     el.gate.dataset.auth = '';
     el.auth.classList.add('is-denied');
-    message('Access denied', 'bad');
     el.input.value = '';
     setTimeout(function () { el.auth.classList.remove('is-denied'); }, 450);
+
+    attempts += 1;
+    if (attempts >= MAX_ATTEMPTS) {
+      attempts = 0;
+      beginLockout();
+      return;
+    }
+    var left = MAX_ATTEMPTS - attempts;
+    message('Access denied — ' + left + ' attempt' + (left === 1 ? '' : 's') +
+            ' remaining', 'bad');
+    tone('denied');
     el.input.focus();
+  }
+
+  function beginLockout() {
+    var span = LOCKOUTS_MS[Math.min(lockouts, LOCKOUTS_MS.length - 1)];
+    lockouts += 1;
+    lockedUntil = Date.now() + span;
+    el.gate.dataset.auth = 'locked';
+    el.input.disabled = true;
+    tone('lockedOut');
+
+    clearInterval(lockTimer);
+    lockTimer = setInterval(function () {
+      var left = Math.ceil((lockedUntil - Date.now()) / 1000);
+      if (left > 0) {
+        message('Terminal locked — ' + left + 's', 'bad');
+        global.ConsoleTones.tick();
+        return;
+      }
+      clearInterval(lockTimer);
+      lockTimer = null;
+      el.gate.dataset.auth = '';
+      el.input.disabled = false;
+      message('Passcode required');
+      el.input.focus();
+    }, 1000);
+    message('Terminal locked — ' + Math.round(span / 1000) + 's', 'bad');
   }
 
   function submit(event) {
     event.preventDefault();
+    if (isLocked()) return;
     var code = el.input.value;
     if (!code) return;
 
