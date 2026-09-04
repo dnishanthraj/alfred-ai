@@ -37,8 +37,23 @@
     mode: 'ptt',
     spaceDown: false,
     generationDone: true,
-    flushTimer: null
+    flushTimer: null,
+    idleTimer: null,
+    nudges: 0,        // consecutive unanswered check-ins
+    quietUntil: 0     // he was asked for time; don't chase until then
   };
+
+  // Held keys that count as push-to-talk. Space is the obvious one; Right
+  // Command sits under the thumb and is the only modifier that isn't already
+  // spoken for by the browser.
+  var PTT_CODES = { Space: true, MetaRight: true };
+
+  // How long a silence runs before he checks you are still there. Randomised
+  // so it never feels like a timer, and it gives up after two — a person who
+  // asks a third time is nagging.
+  var IDLE_MIN_MS = 55000;
+  var IDLE_SPREAD_MS = 40000;
+  var MAX_NUDGES = 2;
 
   // Deliberately free of machinery. "Composing reply" and "voice synthesis"
   // describe a program; the point of this console is that it doesn't feel like
@@ -56,8 +71,10 @@
 
   function cacheElements() {
     ['input', 'compose', 'ptt', 'clock', 'bar-title', 'book', 'lock',
-     'heard', 'utterance', 'status', 'empty', 'viz-wrap',
-     'mode-ptt', 'mode-ambient'].forEach(function (id) { el[id] = $(id); });
+     'heard', 'utterance', 'status', 'empty', 'viz-wrap', 'ringing-label',
+     'mode-ptt', 'mode-ambient', 'dossier', 'dossier-close', 'dossier-name',
+     'dossier-role', 'dossier-text', 'dossier-save', 'dossier-saved',
+     'dossier-portrait'].forEach(function (id) { el[id] = $(id); });
   }
 
   /* --- the spoken line ---------------------------------------------------- */
@@ -140,6 +157,39 @@
       .forEach(function (index) { revealSentence(state.pending[index], index, 0); });
   }
 
+  /* --- presence -------------------------------------------------------------
+     Silence is part of a conversation, but an unbounded silence is just a dead
+     line. After a while he asks — once, then once more, then leaves you alone.
+     Any activity resets it, and asking him for a minute buys you one.
+     ------------------------------------------------------------------------ */
+
+  function armIdleCheck() {
+    clearTimeout(state.idleTimer);
+    if (!state.connectedId || state.nudges >= MAX_NUDGES) return;
+    var wait = IDLE_MIN_MS + Math.random() * IDLE_SPREAD_MS;
+    var quietFor = state.quietUntil - Date.now();
+    if (quietFor > 0) wait += quietFor;
+    state.idleTimer = setTimeout(function () {
+      if (!state.connectedId || ConsoleAudio.isPlaying) { armIdleCheck(); return; }
+      state.nudges += 1;
+      send({ type: 'nudge' });
+    }, wait);
+  }
+
+  function noteActivity(opts) {
+    state.nudges = 0;
+    if (opts && opts.quietFor) state.quietUntil = Date.now() + opts.quietFor;
+    armIdleCheck();
+  }
+
+  // "Give me a minute" should buy a minute, not be answered and then chased.
+  var ASK_FOR_TIME = /\b(give me|hold on|hang on|one|just a|wait a|need a)\s*(a\s*)?(second|sec|minute|min|moment|mo)\b|\bhold on\b|\bone moment\b/i;
+
+  function requestedTime(text) {
+    if (!ASK_FOR_TIME.test(text || '')) return 0;
+    return /\bminute|\bmin\b/i.test(text) ? 90000 : 45000;
+  }
+
   /* --- status ------------------------------------------------------------- */
 
   function setState(value) {
@@ -172,7 +222,10 @@
       var dot = document.createElement('span');
       dot.className = 'book__dot';
 
-      var text = document.createElement('span');
+      var text = document.createElement('button');
+      text.type = 'button';
+      text.className = 'book__open';
+      text.title = 'Open personnel file';
       var name = document.createElement('span');
       name.className = 'book__name';
       name.textContent = contact.name;
@@ -182,6 +235,10 @@
                               : (contact.available ? contact.role : 'Unavailable');
       text.appendChild(name);
       text.appendChild(role);
+      text.addEventListener('click', function () {
+        el.dossier.dataset.contact = id;
+        openDossier(id);
+      });
 
       row.appendChild(dot);
       row.appendChild(text);
@@ -214,25 +271,54 @@
     clearUtterance();
     showHeard('');
     state.fresh = true;
-    setLink('connecting');
-    setState('thinking');
+    state.nudges = 0;
+    state.quietUntil = 0;
+
+    // Ring while he is being reached. This is not only dressing: it covers the
+    // seconds the model spends loading, so the wait reads as a call connecting
+    // rather than as software thinking about it.
+    setLink('ringing');
+    setState('idle');
+    ConsoleTones.startRinging();
     send({ type: 'connect', id: contactId });
     el.input.focus();
   }
 
+  /** He has picked up: stop the ring, mark the link live, go blue. */
+  function answered() {
+    if (document.documentElement.dataset.link === 'on') return;
+    ConsoleTones.connected();
+    var contact = state.contacts[state.connectedId];
+    if (contact) {
+      document.documentElement.style.setProperty('--contact-accent', contact.accent);
+    }
+    setLink('on');
+    armIdleCheck();
+  }
+
   function hangUp() {
     ConsoleAudio.stop();
+    ConsoleTones.stopRinging();
+    ConsoleTones.disconnected();
     ConsoleMic.close();
     setMode('ptt');
+    clearTimeout(state.idleTimer);
     send({ type: 'disconnect' });
     state.connectedId = null;
     el['bar-title'].textContent = '';
     document.title = 'WayneTech Console';
-    clearUtterance();
-    showHeard('');
-    state.fresh = true;
-    setLink('off');
     setState('idle');
+
+    // Flash the alert colour, then let everything fade before clearing, so the
+    // line visibly closes instead of blinking out.
+    setLink('ending');
+    setTimeout(function () {
+      clearUtterance();
+      showHeard('');
+      state.fresh = true;
+      document.documentElement.style.removeProperty('--contact-accent');
+      setLink('off');
+    }, 480);
   }
 
   /* --- socket ------------------------------------------------------------- */
@@ -260,6 +346,7 @@
       case 'message':
         if (event.role === 'user') {
           cancelFlush();
+          noteActivity({ quietFor: requestedTime(event.text) });
           showHeard(event.text);
           // Clear his last line straight away. Leaving it up pairs your new
           // question with his answer to the previous one, which reads as a
@@ -279,7 +366,7 @@
         cancelFlush();
         state.generationDone = false;
         state.pending[event.index] = event.text;
-        if (document.documentElement.dataset.link === 'connecting') setLink('on');
+        answered();
         break;
 
       case 'speak':
@@ -291,8 +378,9 @@
 
       case 'turn_complete':
         state.generationDone = true;
-        if (document.documentElement.dataset.link === 'connecting') setLink('on');
+        answered();
         scheduleFlush(60);
+        armIdleCheck();
         break;
 
       case 'notice':
@@ -362,6 +450,7 @@
       if (!text || !state.connectedId) return;
       ConsoleAudio.stop();
       el.input.value = '';
+      noteActivity({ quietFor: requestedTime(text) });
       send({ type: 'prompt', text: text });
     });
 
@@ -385,6 +474,12 @@
       if (state.connectedId) setMode('ambient');
     });
 
+    el['dossier-close'].addEventListener('click', function () { el.dossier.hidden = true; });
+    el['dossier-save'].addEventListener('click', saveDossier);
+    el.dossier.addEventListener('click', function (e) {
+      if (e.target === el.dossier) el.dossier.hidden = true;
+    });
+
     el.lock.addEventListener('click', function () {
       if (state.connectedId) hangUp();
       ConsoleBoot.lock();
@@ -394,8 +489,10 @@
     window.addEventListener('keydown', function (e) {
       if (document.documentElement.dataset.phase !== 'live') return;
       if (e.key === 'Escape') { ConsoleAudio.stop(); return; }
-      if (e.code !== 'Space' || state.spaceDown) return;
-      if (document.activeElement === el.input) return;
+      if (!PTT_CODES[e.code] || state.spaceDown) return;
+      // Space types; Right Command does not, so only Space is blocked while
+      // the composer has focus.
+      if (e.code === 'Space' && document.activeElement === el.input) return;
       if (state.mode !== 'ptt' || !state.connectedId) return;
       e.preventDefault();
       state.spaceDown = true;
@@ -404,9 +501,19 @@
       ConsoleMic.pushStart();
     });
     window.addEventListener('keyup', function (e) {
-      if (e.code !== 'Space' || !state.spaceDown) return;
+      if (!PTT_CODES[e.code] || !state.spaceDown) return;
       state.spaceDown = false;
       ConsoleMic.pushStop();
+    });
+
+    // A held modifier can swallow its own keyup — switch apps mid-hold and the
+    // release never arrives, leaving the microphone open indefinitely.
+    ['blur', 'visibilitychange'].forEach(function (name) {
+      window.addEventListener(name, function () {
+        if (!state.spaceDown) return;
+        state.spaceDown = false;
+        ConsoleMic.pushStop();
+      });
     });
   }
 
@@ -434,6 +541,47 @@
     });
     ConsoleMic.on('onError', function () {
       el.status.textContent = 'Microphone unavailable';
+    });
+  }
+
+  /* --- dossier --------------------------------------------------------------
+     Who this person is to you, in your own words. Stored per contact on the
+     server so it survives a reload, and editable here because a relationship
+     someone else wrote for you is not one you would recognise.
+     ------------------------------------------------------------------------ */
+
+  function openDossier(contactId) {
+    var contact = state.contacts[contactId];
+    if (!contact) return;
+    el['dossier-name'].textContent = contact.full_name;
+    el['dossier-role'].textContent = contact.role;
+    el['dossier-saved'].dataset.show = '0';
+    document.documentElement.style.setProperty('--contact-accent', contact.accent);
+
+    // A supplied portrait wins; otherwise the generated silhouette stands in.
+    el['dossier-portrait'].style.backgroundImage =
+      "url('/static/portraits/" + contactId + ".png'), url('/static/portraits/_silhouette.svg')";
+
+    el['dossier-text'].value = 'Loading…';
+    fetch('/api/contacts/' + contactId + '/bio')
+      .then(function (r) { return r.json(); })
+      .then(function (d) { el['dossier-text'].value = d.bio || ''; })
+      .catch(function () { el['dossier-text'].value = ''; });
+
+    el.dossier.hidden = false;
+  }
+
+  function saveDossier() {
+    var id = el.dossier.dataset.contact;
+    if (!id) return;
+    fetch('/api/contacts/' + id + '/bio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bio: el['dossier-text'].value })
+    }).then(function () {
+      el['dossier-saved'].textContent = 'Saved';
+      el['dossier-saved'].dataset.show = '1';
+      setTimeout(function () { el['dossier-saved'].dataset.show = '0'; }, 1800);
     });
   }
 

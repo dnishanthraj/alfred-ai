@@ -3,6 +3,53 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.6.0] - 2026-09-04
+
+### Fixed
+
+- **Every reply took 3 seconds longer than it needed to.** The Modelfile's
+  SYSTEM prompt had grown to 1440 words and was evaluated on every turn:
+  0.27s to first token on the base model against 3.27s with it. Roughly 900 of
+  those words were worked examples now carried far more effectively by
+  `primer`, and several rules had since become code guards. Trimmed to ~490
+  words — **3.27s to 0.13s**.
+
+### Added
+
+- **Natural dialogue length.** `max_reply_sentences` was a style control that
+  truncated anything longer, so a monologue was impossible by construction.
+  It is now a runaway ceiling (9), and length is steered by the prompt: an
+  explicit description of the distribution, a per-turn hint that mirrors the
+  operator's own register, and a primer rewritten to demonstrate the full range
+  from one word to a paragraph. Observed replies now run 1, 2, 3, 9, 36 and 50
+  words to different prompts.
+- **Search is a decision, not a trigger.** A keyword no longer forces a lookup.
+  When a request *might* be one, the contact answers first and may ask what is
+  actually wanted, refuse on principle, or emit a marker asking to go and look —
+  only the last costs a search. "Look it up for me" now gets "look what up,
+  precisely?"; "the weather in London tomorrow" gets a search; "trace who owns
+  this number" gets refused.
+- **Call tones and a ringing state.** Synthesised with oscillators rather than
+  shipped as files, so the ring stops dead on the beat it is answered. Ringing
+  is amber and pulses; connecting turns it blue; hanging up flashes red and
+  dissolves the instrument. The ring also covers model load, so the wait reads
+  as a call connecting rather than software thinking.
+- **He notices silence.** After a minute or so with nothing said, he breaks it
+  himself — generated in character, so it varies, and never stored in history.
+  He gives up after two. Asking for a minute buys you one.
+- **Right Command as push-to-talk**, alongside Space. A held modifier can
+  swallow its own keyup, so losing window focus now closes the microphone.
+- **Personnel file per contact** — who they are to you, in your own words,
+  editable in the console and stored per contact. Ships with a default written
+  from the operator's side, and a portrait slot: drop an image at
+  `web/portraits/<id>.png`, otherwise a silhouette stands in.
+
+### Changed
+
+- Alfred's Modelfile now distinguishes surveillance from ordinary lookups. It
+  previously said he "cannot look things up", which contradicted the search
+  capability and made him refuse the weather.
+
 ## [0.5.0] - 2026-09-04
 
 ### Fixed

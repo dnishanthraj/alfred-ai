@@ -34,3 +34,8 @@ def history_file(contact_id):
 
 def vault_file(contact_id):
     return contact_dir(contact_id) / "vault.txt"
+
+
+def bio_file(contact_id):
+    """Who this contact is to the operator, in the operator's own words."""
+    return contact_dir(contact_id) / "bio.txt"

@@ -26,6 +26,42 @@ SPEECH_CONSTRAINT = (
     "URLs, no code. Say numbers and dates the way a person would say them."
 )
 
+# The single biggest tell that something is a machine is that every reply is
+# the same length. Real speech is wildly uneven: mostly short, occasionally a
+# single syllable, and now and then a genuine paragraph when the subject earns
+# one. Models default to a comfortable middle and stay there, so the shape of
+# the distribution has to be described explicitly — and, more importantly,
+# demonstrated in the primer, which does most of the actual work.
+LENGTH_GUIDANCE = (
+    "Length is not fixed. Match the moment:\n"
+    "- Most turns are one or two sentences. This is the default.\n"
+    "- Often a fragment is right: \"Mm.\" \"Go on.\" \"Doubtful.\" \"And?\" "
+    "A single word is a complete reply when nothing more is needed.\n"
+    "- When he is evasive, brief, or testing you, be briefer than he is.\n"
+    "- When he is genuinely struggling, has asked you something that deserves "
+    "an answer, or is about to do something foolish, take the room you need — "
+    "four, six sentences, a proper argument. Do not ration yourself then.\n"
+    "Never pad. Never summarise what you just said. Never close with an offer "
+    "of further help. Stop the moment you are finished, even mid-thought."
+)
+
+
+def register_hint(prompt):
+    """
+    A nudge toward matching the operator's register.
+
+    People mirror each other: a three-word question gets a short answer, a
+    paragraph gets engagement. Stating this per-turn, with the actual shape of
+    what he just said, moves length far more reliably than a static rule — the
+    model can see what it is matching.
+    """
+    words = len((prompt or "").split())
+    if words <= 3:
+        return "He said very little. Answer in kind — a word or a short line."
+    if words <= 25:
+        return "Conversational turn. A sentence or two, unless it warrants more."
+    return "He has said a good deal. Engage with it properly rather than acknowledging it."
+
 
 def time_context(now=None):
     """
@@ -70,6 +106,8 @@ def reference_block(vault_block, prompt, search_context=""):
         )
 
     parts.append(SPEECH_CONSTRAINT)
+    parts.append(LENGTH_GUIDANCE)
+    parts.append(register_hint(prompt))
     return "\n\n".join(parts)
 
 

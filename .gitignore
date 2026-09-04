@@ -11,8 +11,12 @@ __pycache__/
 *.env
 !.env.example
 
-# Personal configuration (contains your real name/details — see .example templates)
+# Personal configuration (contains your real name/details — see .example templates).
+# The glob catches backups too: Modelfile.bak holds the same personal content.
 Modelfile
+Modelfile.bak
+Modelfile.*
+!Modelfile.example
 
 # Audio/video assets (large, machine-local)
 *.wav

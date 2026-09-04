@@ -25,12 +25,13 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .. import config, events
+from .. import config, events, paths
 from ..audio import stt
 from ..audio.tts import get_voice_engine
 from ..contacts import directory
 from ..engine import ContactSession, guards
 from ..memory import migrate_legacy
+from ..memory.store import atomic_write, read_text
 from ..paths import WEB_DIR
 
 # Synthesized clips waiting to be fetched. Bounded — a long session would
@@ -256,6 +257,20 @@ class Console:
             self.current_id = None
             self.recent_speech.clear()
 
+    async def nudge(self):
+        """
+        Break a long silence. Not a notification — a turn like any other, so
+        what he says is generated in character and differs every time. It is
+        never stored in history: a check-in that went unanswered shouldn't
+        become part of what he remembers of the conversation.
+        """
+        if not self.current_id:
+            return
+        async with self.turn_lock:
+            contact = self.contact
+            session = self.session_for(self.current_id)
+            await self.drive(session.check_in(), contact)
+
     async def submit(self, text, spoken=False):
         """
         Run one turn. `spoken` marks input that came from a microphone, which is
@@ -358,6 +373,28 @@ async def unlock(request: Request):
     return JSONResponse({"ok": supplied == config.CONSOLE_PASSCODE.strip().lower()})
 
 
+@app.get("/api/contacts/{contact_id}/bio")
+async def read_bio(contact_id: str):
+    """
+    The relationship in the operator's own words. Falls back to whatever the
+    profile shipped with, so the file reads as written rather than empty.
+    """
+    contact = console.directory.get(contact_id)
+    if contact is None:
+        return Response(status_code=404)
+    stored = read_text(paths.bio_file(contact_id))
+    return JSONResponse({"bio": stored or contact.bio})
+
+
+@app.post("/api/contacts/{contact_id}/bio")
+async def write_bio(contact_id: str, request: Request):
+    if console.directory.get(contact_id) is None:
+        return Response(status_code=404)
+    body = await request.json()
+    atomic_write(paths.bio_file(contact_id), (body.get("bio") or "").strip())
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/audio/{clip_id}")
 async def audio(clip_id: str):
     clip = console.audio_clips.get(clip_id)
@@ -389,6 +426,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(console.connect(payload.get("id", "")))
             elif kind == "disconnect":
                 asyncio.create_task(console.disconnect())
+            elif kind == "nudge":
+                asyncio.create_task(console.nudge())
     except WebSocketDisconnect:
         pass
     except Exception:

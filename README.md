@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.5.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.6.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
@@ -133,8 +133,15 @@ without one. **The passcode is not security** — it is checked in the page, the
 server gates nothing on it, and it sits in plain text in `.env`. Don't put
 anything behind it that needs protecting.
 
-**Nobody is on the line until you call them.** Press **Call** next to a contact
-and the instrument materialises; press **End** and it dissolves. There is no
+**Nobody is on the line until you call them.** Press **Call** and it rings —
+amber, pulsing, with a tone — until they pick up, at which point the instrument
+materialises and turns blue. Press **End** and it flashes red and dissolves.
+The ring is not only dressing: it covers the seconds the model spends loading,
+so the wait reads as a call connecting rather than software thinking about it.
+
+Click a contact's **name** to open their personnel file — who they are to you,
+in your own words, editable and saved per contact. Drop an image at
+`web/portraits/<id>.png` for a portrait; otherwise a silhouette stands in. There is no
 transcript — only the last thing said to you stays on screen, alongside a quiet
 echo of what the console heard you say. A conversation held out loud does not
 need a log of itself, and a scrollback is the strongest possible reminder that
@@ -144,14 +151,21 @@ you are typing at software.
 
 Two microphone modes, switchable in the composer:
 
-- **Push** — hold the mic button or hold **Space**, speak, release. Reliable in
-  a noisy room.
+- **Push** — hold the mic button, **Space**, or **Right Command**, speak,
+  release. Reliable in a noisy room.
 - **Ambient** — the channel stays open. A voice-activity detector decides when
   an utterance starts and ends, and **speaking over a reply cuts it off**, the
   way interrupting a person does. The mic button becomes *send now*, so you
   never have to sit through the pause.
 
 Also: type and press Enter, or press **Esc** to silence playback.
+
+### Silence
+
+After a minute or so with nothing said, he breaks the silence himself — briefly,
+generated in character so it differs every time, and never written to memory.
+He gives up after the second attempt rather than nagging. Asking him for a
+minute buys you one.
 
 ### Feedback
 
@@ -244,6 +258,10 @@ Adding one is a file, not a code change:
 A contact either carries its personality in its own built Ollama model (Alfred
 does — see `Modelfile`) or declares a `system` prompt and shares a base model.
 The second needs no `ollama create`.
+
+`max_reply_sentences` is a runaway ceiling, not a style control — length is
+steered by the prompt and, far more effectively, by the range demonstrated in
+`primer`. A primer whose replies are all the same length teaches exactly that.
 
 `forbidden_address` is enforced in code rather than left to the prompt: a
 smaller, faster model will ignore "never call him lad" often enough to matter,

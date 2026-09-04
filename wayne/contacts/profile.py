@@ -65,6 +65,9 @@ class Contact:
     # because a smaller model will ignore the instruction often enough to
     # matter, and one "lad" undoes a great deal of careful prompting.
     forbidden_address: tuple = ()
+    # The relationship, written from the operator's side. Editable in the
+    # console; this is only what it says before anyone edits it.
+    bio: str = ""
     primer: tuple = ()
     availability: Availability = field(default_factory=Availability)
 
@@ -114,6 +117,7 @@ def _load_profile(path):
         system=raw.get("system", ""),
         think=raw.get("think"),
         forbidden_address=tuple(raw.get("forbidden_address", [])),
+        bio=raw.get("bio", ""),
         primer=tuple(raw.get("primer", [])),
         availability=availability,
     )

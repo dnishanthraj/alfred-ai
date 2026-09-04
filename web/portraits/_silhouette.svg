@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <!-- Stand-in portrait. Drop a real image at web/portraits/<contact id>.png
+       and it is used instead; this is what shows until then. Deliberately a
+       silhouette rather than a face: a wrong face is worse than no face. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#243447"/>
+      <stop offset="1" stop-color="#131a24"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" fill="url(#g)"/>
+  <g fill="#0a0e15" opacity="0.85">
+    <circle cx="60" cy="47" r="19"/>
+    <path d="M60 71c-19 0-33 12-36 30h72c-3-18-17-30-36-30z"/>
+  </g>
+  <circle cx="60" cy="60" r="59" fill="none" stroke="#4fa8e0" stroke-opacity="0.18"/>
+</svg>

@@ -71,6 +71,28 @@
       </section>
     </aside>
 
+    <!-- Dossier -->
+    <aside class="dossier" id="dossier" hidden>
+      <div class="dossier__inner">
+        <button class="dossier__close" id="dossier-close" type="button"
+                aria-label="Close dossier">Close</button>
+
+        <div class="dossier__portrait" id="dossier-portrait"></div>
+
+        <p class="dossier__eyebrow">Personnel file</p>
+        <h2 class="dossier__name" id="dossier-name"></h2>
+        <p class="dossier__role" id="dossier-role"></p>
+
+        <label class="dossier__label" for="dossier-text">Who he is to me</label>
+        <textarea class="dossier__text" id="dossier-text" spellcheck="false"
+                  rows="10"></textarea>
+        <div class="dossier__actions">
+          <span class="dossier__saved" id="dossier-saved"></span>
+          <button class="dossier__save" id="dossier-save" type="button">Save</button>
+        </div>
+      </div>
+    </aside>
+
     <!-- The link itself -->
     <section class="stage">
 
@@ -81,6 +103,7 @@
           <canvas id="viz" aria-hidden="true"></canvas>
         </div>
 
+        <p class="ringing-label" id="ringing-label">Ringing</p>
         <p class="utterance" id="utterance" role="status" aria-live="polite"></p>
         <p class="status" id="status"></p>
 
@@ -111,6 +134,7 @@
 
   <script src="/static/js/visualizer.js"></script>
   <script src="/static/js/audio.js"></script>
+  <script src="/static/js/tones.js"></script>
   <script src="/static/js/mic.js"></script>
   <script src="/static/js/boot.js"></script>
   <script src="/static/js/app.js"></script>
