@@ -58,6 +58,10 @@ class TestFactualLookup:
         "What is my schedule?",
         "How are you?",
         "Where are we?",
+        "What did I have for lunch?",
+        "Where am I meant to be?",
+        "What have I told you about her?",
+        "When did we last speak?",
     ])
     def test_questions_about_the_two_people_on_the_line_never_search(self, prompt):
         # "Who are you?" is `who` + `are`, so it matched the factual patterns and

@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.9.2` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.9.3` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
@@ -32,14 +32,21 @@ their own memory on disk.
   vault, per contact, with relevance retrieval once the vault grows.
 - **Search that runs before he can invent an answer** — a question that plainly
   needs a current fact is looked up on the way in and he is handed what was
-  found, rather than being trusted to ask for it. In character, asked to look
-  something up, he would sooner explain that he is an old man with a cup of tea
-  and no computer — and then guess. Opinions, feelings, and anything about
-  either of you never go to the web. He can still disbelieve the results, or
+  found, rather than being trusted to ask for it — a character asked to look
+  something up will happily explain why he cannot, and then guess. Opinions,
+  feelings, and anything about either of you never go to the web. He can still disbelieve the results, or
   tell you to do your own homework. DuckDuckGo by default (no key needed); set
   `BRAVE_API_KEY` for a real search API.
-- **Deterministic conversation guards** — anti-repetition, sign-off suppression, and
-  length capping run in code rather than relying on the model to police itself.
+- **He knows he is on a link, not in the room** — no offering you tea, no telling
+  you to sit down, no remarking on how you look. He has his own location, his own
+  evening and a terminal to look things up on; what he cannot do is see you.
+- **He will not invent your life** — anything about your day, your work or your
+  plans has to have been said by you or be in the vault, or he asks instead of
+  guessing. His own side is unrestricted: what *he* has been doing is his to
+  make up, and nobody can be contradicted about their own afternoon.
+- **Deterministic conversation guards** — anti-repetition, sign-off suppression,
+  physical-presence stripping, and length capping run in code rather than relying
+  on the model to police itself.
 
 ## Requirements
 
@@ -269,6 +276,20 @@ English first.
 - **"remember that …" / "note that …"** — stores a fact in that contact's vault.
 - **"forget that …"** — removes matching facts.
 - **"clear memory" / "protocol zero"** — wipes that contact's history and vault.
+
+To wipe it by hand, delete the files under `data/<contact>/` — for Alfred:
+
+```bash
+rm data/alfred/history.json    # the conversation; safe to delete any time
+rm data/alfred/vault.txt       # long-term facts he was told to remember
+rm data/alfred/bio.txt         # your edits to his dossier card
+rm -rf data/                   # everything, for every contact
+```
+
+Only `history.json` is the running conversation — deleting it starts him fresh
+without losing what he has been told to remember. The whole directory is
+gitignored and is recreated on the next launch, so there is nothing to restore.
+Do it with the server stopped, or it will write the in-memory copy back out.
 
 Memory is encrypted at rest when `WAYNE_MEMORY_KEY` is set:
 

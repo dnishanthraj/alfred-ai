@@ -136,13 +136,17 @@ FACTUAL_PATTERNS = [
 # them is both useless and absurd: the web does not know who he is, and asking it
 # produced a lookup for a butler while he stood there being one. Whatever the
 # answer is, it is in the persona or the vault, never online.
+# Any question whose subject is one of the two people on the line. Written as
+# one general rule rather than a list of the specific ones that have bitten so
+# far: "Who are you?" was the first, "What did I have for lunch?" the second —
+# both `question word` + `auxiliary` + a first- or second-person subject, and
+# both sent to a search engine that could not possibly know.
 _PERSONAL_SUBJECTS = [
-    r"\bwho\s+(are|were)\s+you\b",
-    r"\bwho\s+(am|was)\s+i\b",
-    r"\bwhat\s+(are|were)\s+you\b",
-    r"\bwhat\s+(is|was|are|were)\s+(my|your|our)\b",
-    r"\bwhat\s+do\s+(you|i|we)\b",
-    r"\bwhere\s+(are|were)\s+(you|we)\b",
+    r"\b(what|where|when|who|how|why|which)\s+"
+    r"(do|did|does|am|is|are|was|were|have|has|had|"
+    r"will|would|shall|should|can|could|must)\s+"
+    r"(i|we|you|my|your|our)\b",
+    r"\bwho\s+am\s+i\b",
     r"\bhow\s+are\s+you\b",
 ]
 

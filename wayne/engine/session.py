@@ -174,6 +174,7 @@ class ContactSession:
         buffer = ""          # tokens not yet forming a complete sentence
         held = []            # complete sentences that look like farewells
         spoken = []          # sentences actually emitted
+        dropped_presence = 0  # sentences discarded for putting him in the room
         index = 0
         checked_opening = False
         can_search = self.contact.can_search
@@ -188,6 +189,16 @@ class ContactSession:
             text = guards.strip_forbidden_address(
                 sentence.strip(), self.contact.forbidden_address)
             if not text:
+                return False, None
+            # He is on a voice link, not in the room. Checked here as well as in
+            # `guards.apply`, because this is the streaming path — which is the
+            # path nearly every reply actually takes, and it was applying only
+            # the address and greeting guards. Dropping the sentence beats
+            # regenerating: the staging almost always arrives inside an
+            # otherwise good answer, one clause of three.
+            if guards.presumes_presence(text):
+                nonlocal dropped_presence
+                dropped_presence += 1
                 return False, None
             if index == 0 and not spoken and self.already_greeted:
                 text = guards.strip_regreeting(text).strip()
@@ -278,6 +289,13 @@ class ContactSession:
             if emit and len(spoken) < max_sentences:
                 spoken.append(text)
                 yield events.sentence(index, text)
+
+        if not spoken and dropped_presence:
+            # He said something, and all of it was staging. Falling through to
+            # the neutral acknowledgement below would answer a real question
+            # with "Mm." — which is how a guard turns into the bug it was
+            # written to prevent. One more attempt is cheaper than that.
+            return (yield from self._regenerate(payload, prompt, recent))
 
         if not spoken:
             fallback = "Mm."

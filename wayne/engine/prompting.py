@@ -73,6 +73,45 @@ CHARACTER_DIRECTIVE = (
     "never ask if there is anything else, never narrate what you are doing."
 )
 
+# Where he is, and where he is not.
+#
+# Left unsaid, the model puts him in the room: it offers tea, tells the operator
+# to sit down or come inside, and comments on weather it cannot see. Every one of
+# those is a small, immediate lie, and they are the kind that break the illusion
+# fastest — you are wearing headphones, and he has just handed you a cup.
+#
+# The other half is the more useful half. He is at a terminal with real reference
+# material, which is both true (lookups happen before he is asked) and the end of
+# a long-running argument: a persona insisting it was "an old man with a cup of
+# tea, not a supercomputer" would rather guess than look anything up.
+PRESENCE_DIRECTIVE = (
+    "You are not in the room. You are on a voice link from your own location — "
+    "you cannot see him, hand him anything, or touch anything near him. Never "
+    "offer food or drink, never tell him to sit down, come in, or go to bed as "
+    "though you were there, and never describe his surroundings, the weather, or "
+    "what he looks like. You are at a working terminal with reference material "
+    "and records, so looking something up is ordinary for you."
+)
+
+# The rule that matters most and is easiest to break.
+#
+# A model asked to sound like it knows someone will supply the details — a job,
+# a habit, an argument last week — and deliver them in exactly the register of
+# something remembered. Invented history about the operator is worse than any
+# other failure here, because it is indistinguishable from real memory until he
+# notices, and then nothing else in the conversation can be trusted either.
+#
+# His own side is deliberately unrestricted: what he has been doing, what he
+# thinks, what he saw. Those are colour, and nobody can be contradicted about
+# their own afternoon.
+GROUNDING_DIRECTIVE = (
+    "Never state anything about him, his life, his day, his work, his feelings or "
+    "his surroundings that he has not told you or that is not in the stored facts "
+    "or the intel below. Do not guess and do not fill in gaps — if you need to "
+    "know, ask. Inventing something he did is the one thing you must never do. "
+    "Your own side is yours: what you have been doing or thinking is yours to say."
+)
+
 
 def register_hint(prompt):
     """
@@ -119,7 +158,8 @@ def standing_directives(contact):
     SYSTEM block, because a system message sent at runtime would replace that
     personality rather than sit alongside it.
     """
-    parts = [SPEECH_CONSTRAINT, CHARACTER_DIRECTIVE, LENGTH_GUIDANCE]
+    parts = [SPEECH_CONSTRAINT, PRESENCE_DIRECTIVE, GROUNDING_DIRECTIVE,
+             CHARACTER_DIRECTIVE, LENGTH_GUIDANCE]
     if contact.can_search:
         parts.append(SEARCH_DIRECTIVE)
     return "\n\n".join(parts)
@@ -128,8 +168,10 @@ def standing_directives(contact):
 def reference_block(vault_block, prompt, search_context="", awareness=()):
     parts = [
         f"Current time: {time_context()}\n"
-        f"(Factual context only. Do not infer what {config.USER_NAME} has been doing, "
-        f"is about to do, or should do based on this.)"
+        f"(Your clock, on your end of the link. Do not infer what "
+        f"{config.USER_NAME} has been doing, is about to do, or should do from "
+        f"it, and do not assume he is where you are or that the hour means the "
+        f"same to him.)"
     ]
 
     if vault_block:

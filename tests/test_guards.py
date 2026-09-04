@@ -360,3 +360,48 @@ class TestBackchannelEchoes:
     @pytest.mark.parametrize("phrase", ["Mm.", "Go on.", "Quite."])
     def test_but_his_own_recurrence_is_still_fine(self, phrase):
         assert not guards.too_similar(phrase, [phrase])
+
+
+class TestPresence:
+    """
+    He is on a voice link, not in the room. A directive says so and does not
+    finish the job — the model has a strong prior that a butler is standing
+    beside you, and it reasserts itself exactly when the conversation gets warm.
+    """
+
+    @pytest.mark.parametrize("text,expected", [
+        ("Stop making yourself small. Sit down and breathe. Tell me why.",
+         "Stop making yourself small. Tell me why."),
+        ("Coffee's ready when you get home. Don't be late.", "Don't be late."),
+        ("Come here. Put the phone down.", "Put the phone down."),
+        ("You look exhausted. What happened?", "What happened?"),
+        ("Drink your tea before it gets cold. Now talk.", "Now talk."),
+    ])
+    def test_removes_the_staging(self, text, expected):
+        assert guards.strip_presence(text) == expected
+
+    @pytest.mark.parametrize("text", [
+        # Advice about the body is not presence, and it is most of what he is
+        # for. Losing this to the guard would cost far more than it saves.
+        "Go and eat something. Get some rest. You have earned it.",
+        "No. Absolutely not. Put those keys down this instant.",
+        "Then stop moving for an hour and let the ache settle.",
+        # His own side of the link is his to describe.
+        "Sorting through old files while waiting for tea to cool.",
+    ])
+    def test_leaves_advice_and_his_own_side_alone(self, text):
+        assert guards.strip_presence(text) == text
+
+    def test_reports_a_reply_that_was_only_staging(self):
+        assert guards.strip_presence("Come here. Sit down.") == ""
+
+    def test_the_stack_keeps_the_reply_when_it_was_all_staging(self):
+        # Better slightly wrong than silent: an empty reply reads as a crash.
+        out = guards.apply("Come here. Sit down.", prompt="hello",
+                           max_sentences=4, already_greeted=False)
+        assert out.strip()
+
+    def test_runs_as_part_of_the_stack(self):
+        out = guards.apply("Sit down. You've done enough. Sleep well.",
+                           prompt="hi there", max_sentences=4, already_greeted=False)
+        assert out == "You've done enough."

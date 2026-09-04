@@ -257,6 +257,64 @@ def count_repeats(prompt, previous_prompts, threshold=0.78):
     )
 
 
+# Things that can only be said by someone in the room.
+#
+# A directive saying "you are not there" moves this a long way and does not
+# finish the job: the model has a very strong prior that a butler is standing
+# beside you, and it reasserts itself the moment the conversation gets warm —
+# which is precisely when the illusion is worth most. So the clear cases are
+# removed in code, the way sign-offs and forbidden address already are.
+#
+# Only unambiguous staging. Advice that happens to concern the body ("go and
+# eat", "get some rest", "stop moving for an hour") is not presence and must
+# survive: telling someone to look after themselves is most of what he is for.
+PRESENCE_PATTERNS = [
+    r"\bcome (here|in|inside|over|through)\b",
+    r"\b(sit|lie) down\b",
+    r"\bsit (yourself )?(down|there)\b",
+    r"\bstand (up|there)\b",
+    r"\b(drink|finish) (your|that) (tea|coffee|drink)\b",
+    r"\b(have|take) (a|another) (cup|cuppa|biscuit)\b",
+    r"\bi'?ve (made|poured|put) (you|the kettle)\b",
+    r"\b(tea|coffee|supper|dinner|breakfast)'?s (ready|on|poured|waiting|getting cold)\b",
+    r"\bthe kettle('?s| is)\b",
+    r"\bput the kettle on\b",
+    r"\blet me (look at|see) you\b",
+    # He cannot see him. Anything describing how the operator *looks* is
+    # invention dressed as observation, which is the most convincing kind.
+    r"\byou look (like|as if|about|tired|awful|dreadful|terrible|pale|"
+    r"exhausted|worse|better|well|rough|grey|ill)\b",
+    r"\byou'?re (soaked|drenched|white as|shaking|swaying)\b",
+    r"\byou'?re looking\b",           # "you're looking tired" — same claim, other grammar
+    r"\byou sound (drunk|slurred)\b",  # he hears the line; he does not see through it
+    r"\bhand me\b", r"\bgive me your\b",
+    r"\bin front of me\b", r"\bover here\b", r"\bnext to me\b", r"\bbeside me\b",
+    r"\bget (inside|indoors)\b", r"\bout of the (rain|cold)\b",
+    r"\byou'?re dripping\b", r"\byou'?re shivering\b",
+]
+
+
+def presumes_presence(sentence):
+    lowered = (sentence or "").lower()
+    return any(re.search(pattern, lowered) for pattern in PRESENCE_PATTERNS)
+
+
+def strip_presence(text):
+    """
+    Drop sentences that put him in the room with the operator.
+
+    Sentence-level rather than whole-reply, because these arrive one clause at a
+    time inside otherwise good answers — "Stop making yourself small. Sit down
+    and breathe. Tell me why." The middle sentence is the only problem, and
+    discarding the other two to be rid of it would cost far more than it saves.
+
+    Returns "" if every sentence was staging, which is the caller's signal that
+    there is nothing left worth saying.
+    """
+    kept = [s for s in split_sentences(text) if s.strip() and not presumes_presence(s)]
+    return " ".join(kept).strip()
+
+
 def strip_forbidden_address(text, terms):
     """
     Remove forms of address a character would never use.
@@ -299,6 +357,10 @@ def apply(text, prompt, max_sentences, already_greeted, forbidden_address=()):
     """
     if forbidden_address:
         text = strip_forbidden_address(text, forbidden_address)
+    # Before the rest: a sentence removed here must not first be counted toward
+    # the length cap, or a reply gets trimmed to make room for staging that is
+    # then thrown away.
+    text = strip_presence(text) or text
     if not user_is_leaving(prompt):
         text = strip_signoffs(text)
     if already_greeted:

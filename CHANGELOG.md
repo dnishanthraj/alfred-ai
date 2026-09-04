@@ -3,6 +3,52 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.9.3] - 2026-09-04
+
+### Fixed
+
+- **He behaved as though he were standing next to you.** He offered tea, told
+  you to sit down or come in out of the rain, and remarked on how tired you
+  looked — all of it invented, none of it possible over a voice link, and it is
+  the kind of small lie that breaks the illusion fastest. He now has a location
+  of his own and a working terminal, and knows he cannot see you.
+
+  A directive alone did not hold: the model's prior that a butler is standing
+  beside you reasserts itself exactly when the conversation gets warm, which is
+  when it matters most. So the clear cases are removed in code, sentence by
+  sentence, the way sign-offs already were — the staging usually arrives inside
+  an otherwise good answer ("Stop making yourself small. *Sit down and breathe.*
+  Tell me why"), so one clause is dropped rather than the reply regenerated.
+  Advice about the body survives untouched: "go and eat", "get some rest" and
+  "put those keys down" are not presence, and they are most of what he is for.
+  He can still hear you — "you sound tired" stays, "you look tired" goes.
+  Measured across a scripted session: 1 slip in 8 with prompting alone, 0 in 11
+  with the guard.
+- **He invented things about you.** Details of your week, plans you had never
+  mentioned, a lunch you never described — delivered in the register of
+  something remembered, which is worse than any other failure here because it is
+  indistinguishable from real memory until you notice, and then nothing else in
+  the conversation can be trusted either. He now asks instead of guessing: *"You
+  didn't say anything. Not once."* His own side is deliberately unrestricted —
+  what he has been doing or thinking is his to make up.
+- **"What did I have for lunch?" ran a web search.** Same class of bug as "Who
+  are you?": a question word plus an auxiliary plus a first- or second-person
+  subject matched the factual-lookup patterns. Replaced the growing list of
+  specific cases with the general rule.
+- **A reply that was entirely staging became "Mm."** — a guard turning into the
+  bug it was written to prevent. It regenerates once instead.
+- The presence guard ran only in `guards.apply`, which the streaming path — the
+  path nearly every reply actually takes — does not use.
+
+### Changed
+
+- Three primer exchanges rewritten. Two put him in the room ("Sit down", "a cup
+  of tea and eight hours"); the third had him refusing a database lookup as "an
+  old man with a cup of tea, sir, not a supercomputer", which was the single
+  strongest reason he would rather guess than look anything up. Three new
+  exchanges demonstrate the grounding rules rather than describing them.
+- README documents how to clear memory by hand, and which file is which.
+
 ## [0.9.2] - 2026-09-04
 
 ### Fixed
