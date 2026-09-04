@@ -192,7 +192,7 @@ class TerminalConsole:
                     audio = stt.record_while(lambda: KEY_STATE['ptt'])
                     print(f"\r\033[K{Colors.DIM}[Transcribing...]{Colors.RESET}",
                           end="", flush=True)
-                    text = stt.transcribe_audio(audio)
+                    text, _confidence = stt.transcribe_audio(audio)
                     print("\r\033[K", end="")
                     if text:
                         self.render(self.session.ask(text))

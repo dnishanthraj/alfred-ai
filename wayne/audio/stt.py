@@ -30,6 +30,45 @@ _backend = None
 _backend_lock = threading.Lock()
 
 
+# Whisper loops when it is unsure, emitting the same clause over and over:
+# "the film was made in the early 90s, and the film was made in the early 90s".
+# That reached the model as a real sentence and got answered as one.
+_LOOP = re.compile(r"(\b[\w' ]{8,60}?\b)[,.]?\s*(?:and\s+)?(?:\1[,.]?\s*(?:and\s+)?){2,}", re.I)
+
+
+def collapse_loops(text):
+    """Fold Whisper's stutter back into a single occurrence of the phrase."""
+    return _LOOP.sub(lambda m: m.group(1).strip() + " ", text or "").strip()
+
+
+def _confidence(result):
+    """
+    How much to trust this transcription, from the decoder's own signals.
+
+    `avg_logprob` is the model's confidence; `compression_ratio` climbs when the
+    output repeats itself; `no_speech_prob` says it may have been silence.
+    Passing this on lets a contact hedge — "I didn't catch that" — instead of
+    confidently answering something that was never said.
+    """
+    segments = result.get("segments") or []
+    if not segments:
+        return 1.0
+    logprob = sum(s.get("avg_logprob", -0.3) for s in segments) / len(segments)
+    repetition = max((s.get("compression_ratio", 1.0) for s in segments), default=1.0)
+    silence = max((s.get("no_speech_prob", 0.0) for s in segments), default=0.0)
+
+    score = 1.0
+    if logprob < -0.9:
+        score -= 0.5
+    elif logprob < -0.6:
+        score -= 0.25
+    if repetition > 2.4:
+        score -= 0.4
+    if silence > 0.6:
+        score -= 0.3
+    return max(0.0, min(1.0, score))
+
+
 def _meaningful(text):
     """
     Whisper hallucinates punctuation from silence — an empty take comes back as
@@ -63,7 +102,11 @@ def backend_name():
 
 def transcribe_audio(audio, hint=None):
     """
-    Transcribe a float32 mono array at SAMPLE_RATE. Returns '' if too short.
+    Transcribe a float32 mono array at SAMPLE_RATE.
+
+    Returns (text, confidence). Confidence is the decoder's own uncertainty,
+    passed along so a contact can hedge rather than confidently answer
+    something that was never said.
 
     `hint` biases decoding toward words the speaker is likely to use. Whisper
     mangles proper nouns it has no reason to expect — names, places, whatever
@@ -73,7 +116,7 @@ def transcribe_audio(audio, hint=None):
     where the accuracy actually is.
     """
     if audio is None or len(audio) < _MIN_SAMPLES:
-        return ""
+        return "", 1.0
 
     # Normalize to full scale — helps with quiet mic input.
     max_amp = np.max(np.abs(audio))
@@ -98,8 +141,8 @@ def transcribe_audio(audio, hint=None):
                 )
             finally:
                 sys.stderr = old_stderr
-        text = result.get("text", "").strip()
-        return text if _meaningful(text) else ""
+        text = collapse_loops(result.get("text", "").strip())
+        return (text, _confidence(result)) if _meaningful(text) else ("", 1.0)
 
     from scipy.io.wavfile import write as wav_write
     audio_int16 = np.int16(audio * 32767)
@@ -122,8 +165,13 @@ def transcribe_audio(audio, hint=None):
         initial_prompt=hint or WHISPER_HINT_PROMPT,
         condition_on_previous_text=False,
     )
-    text = " ".join(s.text for s in segments).strip()
-    return text if _meaningful(text) else ""
+    text = collapse_loops(" ".join(s.text for s in segments).strip())
+    # faster-whisper exposes the same fields on its segment objects.
+    payload = {"segments": [{"avg_logprob": getattr(s, "avg_logprob", -0.3),
+                             "compression_ratio": getattr(s, "compression_ratio", 1.0),
+                             "no_speech_prob": getattr(s, "no_speech_prob", 0.0)}
+                            for s in segments]}
+    return (text, _confidence(payload)) if _meaningful(text) else ("", 1.0)
 
 
 def transcribe_pcm(raw_bytes, hint=None):
@@ -133,10 +181,10 @@ def transcribe_pcm(raw_bytes, hint=None):
     entirely — the page already has an AudioContext doing the resampling.
     """
     if not raw_bytes:
-        return ""
+        return "", 1.0
     audio = np.frombuffer(raw_bytes, dtype=np.float32)
     if audio.size == 0:
-        return ""
+        return "", 1.0
     return transcribe_audio(audio.copy(), hint)
 
 
@@ -172,5 +220,5 @@ def record_while(should_continue, max_seconds=_MAX_RECORD_SECONDS):
 
 def listen_for_hold(should_continue):
     """Record while the predicate holds, then transcribe. Returns '' on a short take."""
-    audio = record_while(should_continue)
-    return transcribe_audio(audio)
+    text, _confidence_score = transcribe_audio(record_while(should_continue))
+    return text

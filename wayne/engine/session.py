@@ -394,12 +394,29 @@ class ContactSession:
         )
         yield from self._speak_aside(instruction, temperature=0.9, cap=2)
 
-    def _awareness(self, prompt, interrupted):
+    def _awareness(self, prompt, interrupted, confidence=1.0):
         """
         What a person on the other end would have registered about this turn,
         beyond its words. Kept short: a list of observations, not a briefing.
         """
         notes = []
+
+        if confidence < 0.6:
+            # Speech-to-text does not fail by going quiet — it fails by
+            # producing a confident sentence nobody said, and answering that
+            # sends the conversation somewhere it was never going. Better to
+            # ask than to take it at face value.
+            notes.append(
+                "The audio was poor and this transcription is unreliable. If it does "
+                "not follow from what you were talking about, do not take it at face "
+                "value and do not change the subject to suit it — say you did not "
+                "catch that and ask him to say it again."
+            )
+        elif confidence < 0.8:
+            notes.append(
+                "The audio was imperfect; this may not be exactly what he said. If it "
+                "reads oddly, check what he meant rather than assuming."
+            )
 
         repeats = guards.count_repeats(prompt, self.history.recent_user(turns=60))
         if repeats:
@@ -510,7 +527,7 @@ class ContactSession:
         yield events.reply_end(text)
         yield events.state(events.IDLE)
 
-    def ask(self, prompt, interrupted=False):
+    def ask(self, prompt, interrupted=False, confidence=1.0):
         """Run one full turn."""
         prompt = (prompt or "").strip()
         if not prompt:
@@ -522,7 +539,7 @@ class ContactSession:
         if handled:
             return
 
-        awareness = self._awareness(prompt, interrupted)
+        awareness = self._awareness(prompt, interrupted, confidence)
         vault_block = self.vault.as_block(prompt)
 
         user_turn = prompting.compose_user_turn(prompt, vault_block, "", awareness)

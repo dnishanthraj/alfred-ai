@@ -307,7 +307,7 @@ class Console:
             session = self.session_for(self.current_id)
             await self.drive(getattr(session, kind)(), contact, self.interrupt())
 
-    async def submit(self, text, spoken=False):
+    async def submit(self, text, spoken=False, confidence=1.0):
         """
         Run one turn. `spoken` marks input that came from a microphone, which is
         the only kind that can be an acoustic echo — typed text never is.
@@ -328,7 +328,9 @@ class Console:
                 return             # something newer arrived while we waited
             contact = self.contact
             session = self.session_for(self.current_id)
-            await self.drive(session.ask(text, interrupted=was_speaking), contact, epoch)
+            await self.drive(
+                session.ask(text, interrupted=was_speaking, confidence=confidence),
+                contact, epoch)
 
 
 console = Console()
@@ -467,8 +469,8 @@ def _speech_hint():
 async def transcribe(request: Request):
     """Raw little-endian float32 PCM at stt.SAMPLE_RATE, captured in the page."""
     body = await request.body()
-    text = await asyncio.to_thread(stt.transcribe_pcm, body, _speech_hint())
-    return JSONResponse({"text": text})
+    text, confidence = await asyncio.to_thread(stt.transcribe_pcm, body, _speech_hint())
+    return JSONResponse({"text": text, "confidence": round(confidence, 2)})
 
 
 @app.websocket("/ws")
@@ -481,7 +483,9 @@ async def websocket_endpoint(websocket: WebSocket):
             kind = payload.get("type")
             if kind == "prompt":
                 asyncio.create_task(console.submit(
-                    payload.get("text", ""), spoken=bool(payload.get("spoken"))))
+                    payload.get("text", ""),
+                    spoken=bool(payload.get("spoken")),
+                    confidence=float(payload.get("confidence", 1.0))))
             elif kind == "connect":
                 asyncio.create_task(console.connect(payload.get("id", "")))
             elif kind == "disconnect":

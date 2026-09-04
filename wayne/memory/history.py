@@ -69,7 +69,14 @@ class History:
         Timestamps are ours, not the model's, and sending unknown keys to
         Ollama is asking for trouble.
         """
-        return [{"role": m["role"], "content": m["content"]} for m in self.messages]
+        return [
+            {
+                "role": m["role"],
+                "content": (m["content"] + " " + m["aside"]).strip()
+                           if m.get("aside") else m["content"],
+            }
+            for m in self.messages
+        ]
 
     def last_greeting(self, marker):
         """The greeting from the most recent connection, or '' if there is none."""
@@ -122,9 +129,12 @@ class History:
         if not text:
             return
         if self.messages and self.messages[-1]["role"] == "assistant":
-            self.messages[-1]["content"] = (
-                self.messages[-1]["content"].rstrip() + " " + text.strip()
-            )
+            # Kept in its own field, not concatenated. Appending to the content
+            # meant a second check-in stacked onto the first — "Still here.
+            # Still here." — and once that was in the context he produced more
+            # of it. One turn has at most one trailing aside; a newer one
+            # replaces the older, because that is what actually happened.
+            self.messages[-1]["aside"] = text.strip()
             self.messages[-1]["at"] = time.time()
         else:
             self.append("assistant", text)

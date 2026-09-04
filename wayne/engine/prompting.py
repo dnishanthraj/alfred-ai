@@ -28,6 +28,8 @@ from .. import config
 # Replies are spoken aloud, so anything that only works on a page — markup,
 # bullets, spelled-out URLs — is actively harmful here.
 SPEECH_CONSTRAINT = (
+    "Always reply in English, and only in English. Never write in any other "
+    "script or language, and never write instructions to yourself.\n"
     "This reply will be read aloud by a speech synthesiser. Write it as spoken "
     "English: no markdown, no bullet points, no numbered lists, no emoji, no "
     "URLs, no code. Say numbers and dates the way a person would say them."
@@ -116,8 +118,13 @@ def time_context(now=None):
 
 def standing_directives(contact):
     """
-    The instructions that are identical on every turn, hoisted into the cached
-    prefix. Anything genuinely per-turn belongs in `reference_block` instead.
+    The instructions that are identical on every turn.
+
+    They belong in the cached prefix, never in the per-turn tail — re-reading
+    them each turn cost about 2.5 seconds. For a contact whose personality is
+    baked into an Ollama model that means pasting this into the Modelfile's
+    SYSTEM block, because a system message sent at runtime would replace that
+    personality rather than sit alongside it.
     """
     parts = [SPEECH_CONSTRAINT, LENGTH_GUIDANCE]
     if contact.can_search:
@@ -173,12 +180,26 @@ def compose_user_turn(prompt, vault_block, search_context="", awareness=()):
 
 
 def build_payload(contact, history, user_turn):
-    """Assemble the full message list for one generation."""
+    """
+    Assemble the full message list for one generation.
+
+    A system message here **replaces** the SYSTEM prompt baked into an Ollama
+    model — it does not add to it. Sending the standing directives as their own
+    system message therefore deleted Alfred's entire character, and he
+    introduced himself as an artificial intelligence assistant.
+
+    So: contacts carrying their personality in a built model get no system
+    message at all, and their directives belong in the Modelfile (see
+    `standing_directives`, which generates the text to paste there). Contacts
+    that declare `system` in their profile get it merged with the directives,
+    which is safe because there is no baked prompt to overwrite.
+    """
     messages = []
     if contact.system:
-        messages.append({"role": "system", "content": contact.system})
-    # Byte-identical every turn, so it costs nothing after the first.
-    messages.append({"role": "system", "content": standing_directives(contact)})
+        messages.append({
+            "role": "system",
+            "content": contact.system + "\n\n" + standing_directives(contact),
+        })
     messages.extend(contact.primer_messages())
     messages.extend(list(history))
     messages.append({"role": "user", "content": user_turn})

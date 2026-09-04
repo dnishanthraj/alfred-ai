@@ -29,6 +29,10 @@ batcomputer_history.json
 batcomputer_vault.txt
 *.migrated
 
+# Generated macOS app bundle — built by scripts/make_app.command, and rebuilt
+# whenever the project moves, so it has no business being committed.
+WayneTech Console.app/
+
 # Test / tooling caches
 .pytest_cache/
 .ruff_cache/

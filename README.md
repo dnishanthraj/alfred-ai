@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.8.1` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.9.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
@@ -118,8 +118,20 @@ their own memory on disk.
    python run.py --cli      # terminal console instead
    ```
 
-   Or double-click [`scripts/launch.command`](scripts/launch.command), which starts
-   Ollama if it isn't already running and opens the console in your browser.
+   Or build a proper macOS app once:
+
+   ```bash
+   ./scripts/make_app.command
+   ```
+
+   That produces **WayneTech Console.app** — its own Dock icon, a window with no
+   tabs or address bar, its own browser profile. It starts Ollama and the server
+   if they aren't running, and stops the server when you quit. Open it once,
+   then right-click the Dock icon → Options → Keep in Dock. Re-run the script if
+   you move the project.
+
+   [`scripts/launch.command`](scripts/launch.command) still works if you'd
+   rather have a browser tab.
 
 ## The console
 
@@ -155,12 +167,14 @@ Two microphone modes, switchable in the composer:
 
 - **Push** — hold the mic button, **Space**, or **Right Command**, speak,
   release. Reliable in a noisy room.
-- **Ambient** — the channel stays open. A voice-activity detector decides when
-  an utterance starts and ends, and **speaking over a reply cuts it off**, the
-  way interrupting a person does. The mic button becomes *send now*, so you
-  never have to sit through the pause.
+Ambient (always-listening) mode is built but **disabled in the interface**: the
+detector triggers on room noise and mis-hears often enough to derail a
+conversation. Push-to-talk is unambiguous, so it is the only mode until that is
+fixed.
 
-Also: type and press Enter, or press **Esc** to silence playback.
+Also: type and press Enter, or press **Esc** to silence playback. Interrupting
+works — a new message stops him mid-sentence, and the line on screen stops
+where his voice did.
 
 ### Presence
 
@@ -188,6 +202,11 @@ more accurate. The accuracy is instead in the hints — the console tells the
 decoder who is on the line and what was just said, which took word accuracy on
 hard audio from 83% to 100%. If a name is still coming out wrong, add it to
 `ALFRED_WHISPER_HINTS`.
+
+Whisper does not fail by going quiet — it fails by producing a confident
+sentence nobody said, which then steers the conversation somewhere it was never
+going. Its own uncertainty signals are passed to the contact, who asks rather
+than assumes when the audio was poor.
 
 ### Feedback
 

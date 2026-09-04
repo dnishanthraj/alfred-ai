@@ -3,6 +3,49 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.9.0] - 2026-09-04
+
+### Fixed
+
+- **Alfred had stopped being Alfred.** He introduced himself as "an artificial
+  intelligence assistant". The previous release moved standing instructions
+  into a system message for the latency win — and a system message sent at
+  runtime *replaces* an Ollama model's baked SYSTEM prompt rather than adding
+  to it, so the entire character was being deleted on every turn. The original
+  code carried a comment warning about exactly this. The directives now live in
+  the Modelfile itself; contacts that declare `system` in their profile get
+  them merged, which is safe because there is no baked prompt to overwrite.
+  **The latency win is kept: they are still in the cached prefix.**
+- **Check-ins piled up as "Still here. Still here."** Asides were concatenated
+  onto the previous turn, so a second one stacked onto the first — and once
+  that was in the context he produced more of it. An aside is now its own
+  field, and a newer one replaces the older, which is what actually happened.
+- **The model leaked Chinese** into replies. It is now told to answer only in
+  English, and never to write instructions to itself.
+- `"boy"` added to Alfred's forbidden forms of address.
+
+### Added
+
+- **A real macOS app.** `scripts/make_app.command` builds "WayneTech
+  Console.app" — its own Dock icon, a chromeless window with no tabs or address
+  bar, and its own browser profile so it doesn't disturb your session. It
+  starts Ollama and the server if they aren't running, and stops the server
+  when you quit. Generated rather than committed, and rebuilt if the project
+  moves.
+- **Transcription confidence.** Whisper does not fail by going quiet, it fails
+  by producing a confident sentence nobody said — which then steers the whole
+  conversation. Its own signals (log-probability, repetition, silence
+  likelihood) now reach the contact, who is told to ask rather than assume when
+  the audio was poor. Whisper's stutter loop — "the film was made in the early
+  90s, and the film was made in the early 90s" — is folded back to one clause.
+
+### Changed
+
+- **Ambient mode is disabled in the interface**, pending work on the detector:
+  it triggers on room noise and mis-hears often enough to derail a
+  conversation. Push-to-talk is unambiguous. The code path is intact; only the
+  control is withheld.
+
 ## [0.8.1] - 2026-09-04
 
 ### Fixed

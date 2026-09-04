@@ -120,9 +120,14 @@
         </button>
         <input class="compose__input" id="input" type="text" autocomplete="off"
                spellcheck="false" placeholder="Speak, or type here…">
+        <!-- Ambient mode is disabled pending work on the detector: it triggers
+             on room noise and mis-hears often enough to derail a conversation.
+             Push-to-talk is unambiguous and stays the only mode until that is
+             fixed. The code path is intact; only the control is withheld. -->
         <div class="modes" role="group" aria-label="Microphone mode">
           <button type="button" class="modes__btn is-on" id="mode-ptt">Push</button>
-          <button type="button" class="modes__btn" id="mode-ambient">Ambient</button>
+          <button type="button" class="modes__btn is-disabled" id="mode-ambient"
+                  title="Ambient listening — under development" disabled>Ambient</button>
         </div>
       </form>
 

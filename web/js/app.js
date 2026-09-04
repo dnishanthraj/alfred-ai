@@ -504,7 +504,8 @@
         if (!text) { setState('idle'); return; }
         // Flagged as spoken so the server can reject it if it is the contact's
         // own voice arriving back through the microphone.
-        send({ type: 'prompt', text: text, spoken: true });
+        send({ type: 'prompt', text: text, spoken: true,
+               confidence: typeof data.confidence === 'number' ? data.confidence : 1 });
       })
       .catch(function () { setState('idle'); });
   }
@@ -551,8 +552,10 @@
     });
 
     el['mode-ptt'].addEventListener('click', function () { setMode('ptt'); });
+    // Ambient is withheld from the UI until the detector is reliable; the
+    // handler stays so re-enabling it is a one-line change in the markup.
     el['mode-ambient'].addEventListener('click', function () {
-      if (state.connectedId) setMode('ambient');
+      if (!el['mode-ambient'].disabled && state.connectedId) setMode('ambient');
     });
 
     el['dossier-close'].addEventListener('click', function () { el.dossier.hidden = true; });

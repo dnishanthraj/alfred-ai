@@ -672,6 +672,13 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
 .modes__btn + .modes__btn { border-left: 1px solid var(--hairline-2); }
 .modes__btn:hover { color: var(--text-dim); }
 .modes__btn.is-on { color: var(--primary); background: rgba(79, 168, 224, 0.09); }
+.modes__btn.is-disabled,
+.modes__btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+.modes__btn:disabled:hover { color: var(--text-faint); }
 
 .compose__input {
   flex: 1;
