@@ -31,7 +31,7 @@ import ollama
 from .. import config, events
 from ..memory import History, Vault
 from . import guards, prompting
-from .search import format_search_results, google_search, needs_search
+from .search import format_search_results, google_search
 
 _PRE_SEARCH_PHRASES = [
     "One moment.",
@@ -43,7 +43,27 @@ _PRE_SEARCH_PHRASES = [
 
 # Stored in place of the operator's turn when a call connects, so history stays
 # a well-formed alternation. Never shown, and superseded on the next call.
-_LINK_MARKER = "[link established]"
+#
+# Deliberately plain rather than bracketed: a "[link established]" sitting in
+# the context taught the model that bracketed directives were part of the
+# conversation, and it duly emitted [SEARCH: link established] — then reported
+# back on an IT company of that name. Placeholders should look like something
+# a person would say.
+def _link_marker(contact):
+    return f"{contact.name}?"
+
+# Used only when two generations running have handed the operator his own words
+# back. Deliberately in character rather than neutral filler.
+_DEFLECTIONS = [
+    "I asked first.",
+    "That's rather the point of asking.",
+    "Don't be difficult.",
+    "Out with it.",
+    "I'd rather hear it from you.",
+    "You know I'll only ask twice.",
+    "Go on, then.",
+    "Something on your mind, or are we just making noises?",
+]
 
 _WIPE_COMMANDS = ["clear memory", "forget everything", "protocol zero", "wipe logs"]
 _MEMORIZE_PREFIXES = ("remember that", "remember to", "note that", "don't forget")
@@ -56,15 +76,46 @@ _BOUNDARY = ".!?"
 # How a contact asks for a lookup. Keyword matching decides only whether the
 # question *could* be one; whether to actually go and look is the character's
 # call, which is the difference between a search box and a person.
-_SEARCH_MARKER = re.compile(r"\[\s*SEARCH\s*:\s*(.+?)\s*\]", re.I | re.S)
+# Two forms, and the difference matters.
+#
+# While tokens are still arriving the marker must be *complete* — closed by a
+# bracket or a newline. Anchoring on end-of-buffer instead matched the half of
+# it that had arrived so far: "[SEARCH: Way" became a search for "Way", which
+# came back with a cycling route called King Alfred's Way.
+_SEARCH_MARKER_COMPLETE = re.compile(r"\[\s*SEARCH\s*:\s*([^\]\n]+?)\s*(?:\]|\n)", re.I)
 
+# Once generation has finished the buffer cannot grow, so a marker missing its
+# closing bracket — or its opening one — can be read safely.
+_SEARCH_MARKER = re.compile(r"\[?\s*SEARCH\s*:\s*([^\]\n]+?)\s*\]?\s*$", re.I | re.M)
+# Returned by the streaming pass instead of a reply, to say "he wants to look
+# something up first". Nothing has been spoken at that point.
+_SEARCH_REQUESTED = object()
+# The marker is short; if this much text arrives without one, he isn't asking.
+_MARKER_WATCH_CHARS = 90
+
+# Offered on *every* turn, not only when a keyword suggested a lookup. Gating
+# this behind phrases like "look up" meant that asking "what do we have on
+# Waylon Jones?" never even reached the decision — so instead of looking, or
+# admitting he had no idea, he invented an answer and stated it as fact.
 _SEARCH_OFFER = (
-    "\n\nIf answering this needs something you could not know — today's news, a "
-    "price, a result, the weather — and you are willing to go and find it, reply "
-    "with exactly [SEARCH: what to look up] and nothing else. You are under no "
-    "obligation: if the request is vague, ask what he actually wants first; if it "
-    "is something he should look up himself, say so. Only use the marker when you "
-    "have decided to go and look."
+    "\n\nYou can look things up. If answering needs something you could not "
+    "already know — a person, a company, a result, a price, the news, the weather "
+    "— reply with exactly [SEARCH: what to look up] and nothing else, and you "
+    "will be given what is found before you answer.\n"
+    "Use it only for facts you could not know: a person, a company, an event, a "
+    "result, a price, the news, the weather. Never for conversation, opinions, "
+    "feelings, plans, or anything about him or about yourself — you have those "
+    "already, and reaching for a search there is worse than useless.\n"
+    "You are under no obligation to use it: if the request is vague, ask what he "
+    "actually means; if it is something he should do himself, say so.\n"
+    "But you must never invent an answer. If you do not know something and are "
+    "not going to look, say plainly that you do not know. Never state a guess "
+    "about a person, company, or fact as though it were something you knew.\n"
+    "And if you say you will find something out, use the marker in that same "
+    "reply. Do not promise to look and then not look.\n"
+    "Never say you lack real-time data, cannot access the internet, or that he "
+    "should check the news himself. You are a person, not a service: you either "
+    "know, or you go and find out, or you say you have no idea."
 )
 
 
@@ -81,6 +132,7 @@ class ContactSession:
         # Phrases he has already been told he is repeating. Saying it twice is
         # observant; saying it every turn is a counter with a voice.
         self.remarked_on = set()
+        self._last_deflection = None
 
     # --- model calls ------------------------------------------------------
 
@@ -135,10 +187,15 @@ class ContactSession:
         spoken = []          # sentences actually emitted
         index = 0
         checked_opening = False
+        can_search = self.contact.can_search
+        self._pending_query = None
 
         def finalize(sentence):
             """Guard one sentence. Returns (emit, sentence) or (False, None)."""
             nonlocal index
+            # Last line of defence: a marker that slipped past detection must
+            # never be read aloud.
+            sentence = _SEARCH_MARKER.sub("", sentence).strip()
             text = guards.strip_forbidden_address(
                 sentence.strip(), self.contact.forbidden_address)
             if not text:
@@ -152,16 +209,33 @@ class ContactSession:
         for piece in self._stream(payload):
             buffer += piece
 
+            # Watched for the whole reply, not just its opening. He may write
+            # the marker straight away, or say "I'll see what I can find" and
+            # then ask — and the second is the more natural of the two, so it
+            # has to work. Anything already spoken becomes the holding line.
+            if can_search:
+                match = _SEARCH_MARKER_COMPLETE.search(buffer)
+                if match:
+                    self._pending_query = match.group(1).strip()
+                    self._spoke_before_search = bool(spoken)
+                    return _SEARCH_REQUESTED
+                # An opening bracket may be the start of one; wait for the rest
+                # rather than speaking half a marker.
+                if "[" in buffer and "]" not in buffer and len(buffer) < _MARKER_WATCH_CHARS:
+                    continue
+
             while True:
                 cut = self._sentence_end(buffer)
                 if cut is None:
                     break
                 sentence, buffer = buffer[:cut].strip(), buffer[cut:].lstrip()
 
-                # Before anything is spoken, one chance to catch a loop.
+                # Before anything is spoken, one chance to catch a loop — his
+                # own, or the operator's words handed straight back.
                 if not checked_opening:
                     checked_opening = True
-                    if guards.too_similar(sentence, recent):
+                    if (guards.too_similar(sentence, recent)
+                            or guards.parrots(sentence, prompt)):
                         return (yield from self._regenerate(payload, prompt, recent))
 
                 emit, text = finalize(sentence)
@@ -187,8 +261,29 @@ class ContactSession:
                 yield events.sentence(index, text)
                 index += 1
 
+        # Generation has finished, so an unclosed marker can now be read.
+        if can_search:
+            match = _SEARCH_MARKER.search(buffer)
+            if match:
+                self._pending_query = match.group(1).strip()
+                self._spoke_before_search = bool(spoken)
+                return _SEARCH_REQUESTED
+
         # Whatever is left in the buffer is the final sentence, unpunctuated.
+        #
+        # A short reply — "Hmm." — never reaches the sentence loop at all: the
+        # boundary detector needs punctuation *followed by whitespace*, and
+        # there is none at the end of a stream. So the loop and parrot checks
+        # have to run here too, or the shortest replies, which are exactly the
+        # ones most likely to be echoes, skip them entirely.
         tail = buffer.strip()
+        if tail and not checked_opening and not spoken:
+            checked_opening = True
+            probe = _SEARCH_MARKER.sub("", tail).strip()
+            if probe and (guards.too_similar(probe, recent)
+                          or guards.parrots(probe, prompt)):
+                return (yield from self._regenerate(payload, prompt, recent))
+
         if tail and not (not leaving and self._is_signoff(tail)):
             emit, text = finalize(tail)
             if emit and len(spoken) < max_sentences:
@@ -219,19 +314,27 @@ class ContactSession:
         return any(re.match(p, lowered) for p in guards.SIGNOFF_PATTERNS)
 
     def _regenerate(self, payload, prompt, recent):
-        """One non-streaming retry with a stronger nudge, before any audio."""
+        """
+        One retry with a stronger nudge, before any audio.
+
+        The retry is checked too. Asked not to parrot, a model will happily
+        parrot again — and an unchecked retry meant "You tell me." was answered
+        with "You tell me." even after the guard had caught it. If the second
+        attempt fails the same way, anything is better than the echo.
+        """
         retry_payload = list(payload)
         retry_payload.append({
             "role": "user",
-            "content": "[You just repeated yourself. Say something completely "
-                       "different — new words, new angle. Do not reuse your last phrasing.]",
+            "content": "[That was either a repeat of your own last line or an echo of "
+                       "his. Say something genuinely different — new words, new angle. "
+                       "Do not hand his own words back to him.]",
         })
         try:
             text = self._chat_once(retry_payload, temperature=0.95)
         except Exception:
             text = ""
-        if not text:
-            text = "Mm."
+        if not text or guards.parrots(text, prompt) or guards.too_similar(text, recent):
+            text = self._deflection()
         text = guards.apply(text, prompt, self.contact.max_reply_sentences,
                             self.already_greeted, self.contact.forbidden_address)
         for i, sentence in enumerate(guards.split_sentences(text)):
@@ -251,7 +354,8 @@ class ContactSession:
 
         returning = bool(self.history)
         # Read before pruning: this is the greeting about to be removed.
-        previous = self.history.last_greeting(_LINK_MARKER)
+        marker = _link_marker(self.contact)
+        previous = self.history.last_greeting(marker)
         payload = prompting.build_payload(
             self.contact, self.history.for_model(),
             prompting.boot_prompt(self.contact, returning,
@@ -267,10 +371,10 @@ class ContactSession:
             yield events.notice(f"Cold start failed — using fallback. ({exc})", "warn")
 
         # Only the most recent connection belongs in the context.
-        self.history.drop_prior_greetings(_LINK_MARKER)
+        self.history.drop_prior_greetings(marker)
 
         # The 'user' side is a neutral placeholder, never shown on screen.
-        self.history.append("user", _LINK_MARKER)
+        self.history.append("user", marker)
         self.history.append("assistant", greeting)
         self.history.save()
         self.already_greeted = True
@@ -338,6 +442,22 @@ class ContactSession:
                     f"He has now said this {repeats + 1} times. Say so once — plainly, "
                     "and without pretending you hadn't noticed the earlier ones."
                 )
+
+        if guards.in_distress(prompt):
+            notes.append(
+                "He has said something is genuinely wrong. Stop everything else and "
+                "answer that — directly, without brightness, without changing the "
+                "subject, and without looking anything up. Ask him what is going on, "
+                "or say the one true thing you would say to him in the room."
+            )
+
+        if guards.is_urgent(prompt):
+            notes.append(
+                "He has said this is urgent. Treat it as urgent: do the thing he "
+                "asked for in this reply — look it up if that is what it takes — "
+                "rather than counselling him about pace or asking what else is on. "
+                "If you genuinely cannot, say why in one line."
+            )
 
         if interrupted:
             self.interruptions += 1
@@ -422,27 +542,12 @@ class ContactSession:
         if handled:
             return
 
-        search_context = ""
-        might_search = (self.contact.can_search
-                        and needs_search(prompt, self.history.last_assistant()))
-
-        if might_search:
-            # Ask first, and let him decline. The reply that comes back is
-            # either a lookup request, a refusal, or a question — all three are
-            # legitimate answers, and only the first costs a search.
-            query = yield from self._consider_search(prompt)
-            if query:
-                yield events.state(events.SEARCHING)
-                holding = random.choice(_PRE_SEARCH_PHRASES)
-                yield events.sentence(0, holding)
-                yield events.reply_end(holding, interim=True)
-                search_context = yield from self._run_search(query)
-            else:
-                return   # he answered, asked, or refused — that was the turn
-
+        awareness = self._awareness(prompt, interrupted)
         vault_block = self.vault.as_block(prompt)
+
+        offer = _SEARCH_OFFER if self.contact.can_search else ""
         user_turn = prompting.compose_user_turn(
-            prompt, vault_block, search_context, self._awareness(prompt, interrupted))
+            prompt, vault_block, "", awareness) + offer
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn)
 
         yield events.state(events.THINKING)
@@ -454,6 +559,33 @@ class ContactSession:
             yield events.notice(f"Connection severed: {exc}", "error")
             yield events.state(events.IDLE)
             return
+
+        # He asked to go and look. Nothing has been spoken yet — the marker is
+        # caught before the first sentence is released — so the search happens
+        # and he answers properly, rather than promising and moving on.
+        if reply == _SEARCH_REQUESTED:
+            query = self._pending_query or prompt
+            yield events.state(events.SEARCHING)
+            if not getattr(self, "_spoke_before_search", False):
+                # He went straight to looking without saying anything, so give
+                # him a line rather than leaving dead air over the search.
+                holding = random.choice(_PRE_SEARCH_PHRASES)
+                yield events.sentence(0, holding)
+                yield events.reply_end(holding, interim=True)
+            search_context = yield from self._run_search(query)
+
+            user_turn = prompting.compose_user_turn(
+                prompt, vault_block, search_context, awareness)
+            payload = prompting.build_payload(
+                self.contact, self.history.for_model(), user_turn)
+            yield events.state(events.THINKING)
+            yield events.reply_start()
+            try:
+                reply = yield from self._emit_sentences(payload, prompt)
+            except Exception as exc:
+                yield events.notice(f"Connection severed: {exc}", "error")
+                yield events.state(events.IDLE)
+                return
 
         self.history.record_exchange(prompt, reply)
         yield events.reply_end(reply)
@@ -495,6 +627,17 @@ class ContactSession:
         yield events.reply_end(reply)
         yield events.state(events.IDLE)
         return None
+
+    def _deflection(self):
+        """
+        A last resort when two attempts have both come back an echo. Varied,
+        and never the one used last, so the fallback cannot itself become the
+        repetition it exists to prevent.
+        """
+        options = [o for o in _DEFLECTIONS if o != self._last_deflection]
+        choice = random.choice(options or _DEFLECTIONS)
+        self._last_deflection = choice
+        return choice
 
     def _run_search(self, prompt):
         # A terse follow-up ("and the price?") is meaningless as a standalone

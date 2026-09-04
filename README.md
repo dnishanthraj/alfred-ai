@@ -1,6 +1,6 @@
 # Alfred AI
 
-**Status:** `v0.7.1` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** `v0.8.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
@@ -30,9 +30,11 @@ their own memory on disk.
   `mlx-whisper` on Apple Silicon, `faster-whisper` on CPU elsewhere.
 - **Short- and long-term memory** — recent turns plus an explicit "remember that…"
   vault, per contact, with relevance retrieval once the vault grows.
-- **Optional live web search** — explicit lookups are folded into context.
-  DuckDuckGo by default (no key needed); set `BRAVE_API_KEY` for a real search
-  API with cleaner results and no rate-limiting.
+- **Search he decides to use** — not a keyword trigger. He looks things up when
+  a question needs something he could not know, asks what you mean when it is
+  vague, refuses when it is something you should do yourself, and says he has
+  no idea rather than inventing one. DuckDuckGo by default (no key needed); set
+  `BRAVE_API_KEY` for a real search API.
 - **Deterministic conversation guards** — anti-repetition, sign-off suppression, and
   length capping run in code rather than relying on the model to police itself.
 
@@ -169,8 +171,14 @@ than sitting on a dead line. Asking him for a minute buys you one; if *he* asks
 for a moment he takes it and comes back on his own.
 
 He also notices things a transcript would not: that you have said something
-three times now, or that you have talked over him again. Interrupting works —
-a new message stops the reply in flight rather than queueing behind it.
+three times now, that you have talked over him again, that you said it was
+urgent, or that something is actually wrong. Interrupting works — a new message
+stops the reply in flight rather than queueing behind it.
+
+A stack of guards runs on every reply before it is spoken, because the failures
+that break the illusion are specific and recurring: handing your own words back
+to you, greeting you twice, repeating himself, inventing a fact rather than
+looking it up, or promising to look and then not looking.
 
 ### Hearing you
 

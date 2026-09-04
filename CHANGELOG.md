@@ -3,6 +3,44 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [0.8.0] - 2026-09-04
+
+Everything here came out of reading one real transcript. It contained a
+contact who invented facts, promised to look things up and didn't, dismissed
+an explicit "it's urgent", and answered "You tell me." with "You tell me."
+
+### Fixed
+
+- **He invented answers instead of looking them up.** Asked "what do we have on
+  Waylon Jones?" he replied that they were a tech firm keeping their heads
+  down — entirely made up, stated as fact. Search had been gated behind
+  keywords like "look up", so that question never even reached the decision.
+  The gate is gone: a lookup is offered on every turn and he chooses, with an
+  explicit instruction never to state a guess as knowledge.
+- **He promised to search and then didn't.** "I'll see what I can find" would
+  be spoken and nothing would follow. The marker is now watched for across the
+  whole reply, so saying he will look and then looking is one turn.
+- **He ignored stated urgency**, answering "it's urgent, I need it now" with a
+  remark about keeping things in order. Urgency is detected and he is told to
+  do the thing rather than counsel about pace.
+- **He handed the operator's own words back.** "You tell me." → "You tell me."
+  A parrot check now runs before anything is spoken — including on replies too
+  short to contain a sentence boundary, which never reached the check at all
+  and are exactly the ones most likely to be echoes. The retry is checked too:
+  asked not to parrot, a model will happily parrot again.
+- **He missed distress**, answering "I'm feeling pretty low today" with a
+  remark about the morning. Now detected, and everything else stops.
+- **Search queries were truncated mid-stream.** The marker was matched against
+  the end of a *partial* buffer, so "[SEARCH: Way" searched for "Way" and came
+  back with a cycling route called King Alfred's Way. A marker must be complete
+  while tokens are still arriving.
+- **The history placeholder taught the model to emit directives.** A literal
+  "[link established]" sitting in the context produced "[SEARCH: link
+  established]", and a report on an IT company of that name. Placeholders now
+  look like something a person would say.
+- **Assistant voice.** "I don't have real-time updates, check the news" is not
+  a person talking. He now either knows, finds out, or says he has no idea.
+
 ## [0.7.1] - 2026-09-04
 
 ### Fixed

@@ -186,6 +186,57 @@ def echoes(text, recently_spoken, threshold=0.62):
     return False
 
 
+# Words that signal this is not a conversation to be managed — it is a thing
+# that needs doing, now. Ranked roughly by force.
+URGENCY_MARKERS = [
+    r"\burgent\b", r"\bright now\b", r"\bimmediately\b", r"\bemergency\b",
+    r"\bhurry\b", r"\bquickly\b", r"\bi need (it|this|that) now\b",
+    r"\bno time\b", r"\bcan'?t wait\b", r"\bnow\b[.!]*$",
+]
+
+
+def is_urgent(prompt):
+    lowered = (prompt or "").lower()
+    return any(re.search(marker, lowered) for marker in URGENCY_MARKERS)
+
+
+# Said plainly, these are the moments the whole character exists for. Missing
+# one — answering "I'm feeling pretty low" with a remark about the morning — is
+# worse than any amount of clumsy phrasing.
+DISTRESS_MARKERS = [
+    r"\bfeeling (low|awful|terrible|rough|rubbish|empty|numb)\b",
+    r"\b(i'?m|im) (low|struggling|not ok|not okay|not doing well|exhausted|scared|lost)\b",
+    r"\bcan'?t (cope|do this|take it)\b",
+    r"\bgiving up\b", r"\bwhat'?s the point\b", r"\bno point\b",
+    r"\bhate myself\b", r"\bfalling apart\b", r"\bspiral(l)?ing\b",
+    r"\bpretty low\b", r"\breally down\b", r"\bhonestly.{0,20}\bawful\b",
+]
+
+
+def in_distress(prompt):
+    lowered = (prompt or "").lower()
+    return any(re.search(marker, lowered) for marker in DISTRESS_MARKERS)
+
+
+def parrots(reply, prompt, threshold=0.8):
+    """
+    True if the reply is essentially the operator's own words handed back.
+
+    "You tell me." answered with "You tell me." is not terseness, it is the
+    model finding the cheapest continuation. It reads as a machine the instant
+    it happens, and no amount of persona survives it.
+    """
+    a = (reply or "").strip().lower().rstrip(".!?")
+    b = (prompt or "").strip().lower().rstrip(".!?")
+    if not a or not b:
+        return False
+    # No backchannel exemption here, unlike `too_similar`. That exemption
+    # protects him from being scolded for *his own* recurring "Mm." — it has no
+    # business excusing him for handing back the operator's. "Hmm." answered
+    # with "Hmm." is still nobody saying anything.
+    return difflib.SequenceMatcher(None, a, b).ratio() >= threshold
+
+
 def count_repeats(prompt, previous_prompts, threshold=0.78):
     """
     How many times the operator has already said essentially this.

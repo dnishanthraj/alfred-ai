@@ -285,3 +285,60 @@ class TestOpeningComparison:
     def test_a_sentence_against_the_matching_opening_catches_it(self):
         opening = guards.split_sentences(self.LONG)[0]
         assert guards.too_similar(self.NEXT, [opening])
+
+
+class TestParroting:
+    """
+    Handing the operator's own words back. "You tell me." answered with "You
+    tell me." reads as a machine instantly, whatever the persona says.
+    """
+
+    @pytest.mark.parametrize("reply,prompt", [
+        ("You tell me.", "You tell me."),
+        ("you tell me", "You tell me?"),
+        ("Nothing much.", "Nothing much"),
+    ])
+    def test_catches_an_echo(self, reply, prompt):
+        assert guards.parrots(reply, prompt)
+
+    @pytest.mark.parametrize("reply,prompt", [
+        ("Then say something worth hearing.", "You tell me."),
+        ("And what would you have me say?", "You tell me."),
+        ("Out with it.", "Hmm."),
+    ])
+    def test_leaves_real_replies_alone(self, reply, prompt):
+        assert not guards.parrots(reply, prompt)
+
+
+class TestUrgency:
+    @pytest.mark.parametrize("prompt", [
+        "It's urgent, Alfred. I need it now.",
+        "I need this right now",
+        "hurry",
+        "Find it. Now.",
+    ])
+    def test_detects_urgency(self, prompt):
+        assert guards.is_urgent(prompt)
+
+    @pytest.mark.parametrize("prompt", [
+        "How was your day?",
+        "I'll get to it eventually",
+        "Nothing much happening",
+    ])
+    def test_ordinary_conversation_is_not_urgent(self, prompt):
+        assert not guards.is_urgent(prompt)
+
+
+class TestBackchannelEchoes:
+    """
+    The backchannel exemption protects him from being scolded for his own
+    recurring "Mm." It should not excuse him for handing back the operator's.
+    """
+
+    @pytest.mark.parametrize("phrase", ["Hmm.", "So?", "Right.", "Mm."])
+    def test_echoing_the_operator_is_still_parroting(self, phrase):
+        assert guards.parrots(phrase, phrase)
+
+    @pytest.mark.parametrize("phrase", ["Mm.", "Go on.", "Quite."])
+    def test_but_his_own_recurrence_is_still_fine(self, phrase):
+        assert not guards.too_similar(phrase, [phrase])
