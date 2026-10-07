@@ -83,6 +83,11 @@ class Vault:
         scored.sort(key=lambda item: (-item[0], -item[1]))
         return scored
 
+    def mentions(self, prompt):
+        """True when some stored fact shares a meaningful word with the prompt."""
+        terms = _terms(prompt)
+        return any(terms & _terms(self._fact_only(e)) for e in self.entries())
+
     def relevant(self, prompt, limit=RETRIEVE_TOP_K):
         """The facts worth spending context on for this particular prompt."""
         entries = self.entries()

@@ -61,8 +61,9 @@ class Contact:
     # on, a contact appears to hang for ten or twenty seconds before the first
     # word. Profiles using such a model should set this false. It is only sent
     # when explicitly declared, because passing it to a model that has no
-    # thinking mode is an error.
-    think: bool | None = None
+    # thinking mode is an error. gpt-oss cannot switch it off at all and takes
+    # a level instead — "low", "medium" or "high" — so a string passes through.
+    think: bool | str | None = None
     # Forms of address this character would never use. Enforced in code
     # because a smaller model will ignore the instruction often enough to
     # matter, and one "lad" undoes a great deal of careful prompting.
@@ -120,6 +121,24 @@ def _read_system_file(name):
     return (match.group(1) if match else text).strip()
 
 
+def _system_prompt(raw):
+    """
+    The character, then the private file — both optional, either alone fine.
+
+    The character is who they are and belongs in the committed profile, where
+    it can be read, reviewed and improved. The file holds what is personal to
+    the operator — names, work, where they live — and stays gitignored. They
+    used to be one or the other, which put the whole character in a private
+    file nobody else could see. `system` may be a list of paragraphs, because a
+    character written as one JSON string is unreadable.
+    """
+    character = raw.get("system") or ""
+    if isinstance(character, list):
+        character = "\n\n".join(character)
+    private = _read_system_file(raw.get("system_file", ""))
+    return "\n\n".join(part for part in (character.strip(), private) if part)
+
+
 def _load_profile(path):
     with open(path) as f:
         raw = json.load(f)
@@ -144,7 +163,7 @@ def _load_profile(path):
         can_search=bool(raw.get("can_search", True)),
         options={"num_ctx": config.CONTEXT_WINDOW, **raw.get("options", {})},
         boot_prompts=raw.get("boot_prompts", {}),
-        system=raw.get("system") or _read_system_file(raw.get("system_file", "")),
+        system=_system_prompt(raw),
         think=raw.get("think"),
         forbidden_address=tuple(raw.get("forbidden_address", [])),
         bio=raw.get("bio", ""),

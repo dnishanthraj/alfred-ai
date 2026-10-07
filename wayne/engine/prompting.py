@@ -27,7 +27,8 @@ the tail carries only what genuinely differs turn to turn.
 import re
 import time
 
-from .. import config
+from .. import delivery
+from . import world
 
 # Replies are spoken aloud, so anything that only works on a page — markup,
 # bullets, spelled-out URLs — is actively harmful here.
@@ -35,6 +36,19 @@ SPEECH_CONSTRAINT = (
     "Reply only in English, never in another script, and never write "
     "instructions to yourself. This is read aloud: spoken English only — no "
     "markdown, lists, emoji, URLs or code. Say numbers as a person would."
+)
+
+# Range, for a voice that can perform it (see wayne.delivery). A flat read is
+# the second biggest tell after uniform length: a sigh before "of course you
+# did", a line said under the breath, a laugh that arrives before the words.
+# Sparing on purpose — a cue on every line is a man who sighs at everything.
+VOICE_DIRECTIVE = (
+    "Your voice is performed by an actor who follows stage cues in square "
+    "brackets: " + " ".join(f"[{cue}]" for cue in delivery.CUES) + ". Put one "
+    "just before the words it colours, only where you would truly make that "
+    "sound — most replies have none, and never more than two. CAPITALS for the "
+    "one word you would hit hard; an ellipsis for a real pause. No other "
+    "bracketed cues."
 )
 
 # The single biggest tell that something is a machine is that every reply is
@@ -143,6 +157,16 @@ _LEVITY = re.compile(
 # broader than the distress markers used elsewhere: this only changes his tone, so
 # a false positive costs a moment of unwarranted seriousness — which is a great
 # deal cheaper than the reverse.
+# Said and meant — thanks, an apology, affection. Left to itself the character
+# deflected every one of these with a quip ("don't make a habit of it"), which
+# is armour, not warmth; the Alfred of every telling lets it land.
+_SINCERE = re.compile(
+    r"\b(thank(s| you)\b.*\b(really|mean it|so much|for everything|always)|"
+    r"i mean it|means a lot|i appreciate|i'?m sorry\b|love you|"
+    r"couldn'?t have done it without you|don'?t (say|tell you) (it|that) enough)",
+    re.I,
+)
+
 _WEIGHT = re.compile(
     r"\b(died|death|funeral|cancer|diagnos\w+|divorce|fired|redundan\w+|"
     r"broke up|breakup|hospital|scared|terrified|panic|failed|failing|"
@@ -172,6 +196,9 @@ def register_hint(prompt):
     if _WEIGHT.search(text):
         tone = (" This one is serious. No jokes, no cleverness — answer it "
                 "straight and stay with him.")
+    elif _SINCERE.search(text):
+        tone = (" He means this sincerely. Let it land: be touched, briefly and "
+                "plainly, before any dryness. Don't deflect it with a joke.")
     elif _LEVITY.search(text):
         tone = " He is being light. Play along; do not turn it into a lecture."
     else:
@@ -215,19 +242,24 @@ def standing_directives(contact):
     """
     parts = [SPEECH_CONSTRAINT, PRESENCE_DIRECTIVE, GROUNDING_DIRECTIVE,
              CHARACTER_DIRECTIVE, REGISTER_DIRECTIVE, LENGTH_GUIDANCE]
+    if delivery.supported():
+        parts.insert(1, VOICE_DIRECTIVE)
     if contact.can_search:
         parts.append(SEARCH_DIRECTIVE)
     return "\n\n".join(parts)
 
 
 def reference_block(vault_block, prompt, search_context="", awareness=()):
+    # Short on purpose. A paragraph of caveats about the hour made the hour
+    # the most prominent thing in the block, and he remarked on it constantly —
+    # "a heavy question for ten o'clock on a Wednesday".
     parts = [
-        f"It is now {time_context()} — for both of you.\n"
-        f"(Anything you say must fit that hour: do not suggest sleep, bed or "
-        f"turning in unless it is genuinely late, and do not greet him for the "
-        f"wrong part of the day. But do not infer from it what "
-        f"{config.USER_NAME} has been doing or where he has been.)"
+        f"Now: {time_context()}, for both of you. Don't remark on the time or day "
+        f"unless it matters; never suggest bed unless it is genuinely late, and "
+        f"infer nothing from it about what he has been doing."
     ]
+
+    parts.extend(world.snapshot())
 
     if vault_block:
         parts.append(
@@ -238,11 +270,15 @@ def reference_block(vault_block, prompt, search_context="", awareness=()):
 
     if search_context:
         parts.append(
+            # No sample openers. Given "'Found it.', 'Right, I've got
+            # something.'" as examples, he opened every lookup with one of the
+            # two, verbatim, which is a script rather than a man reading a
+            # screen.
             "Live intel — retrieved via search just now, so it is current even if "
-            "it postdates what you know. Open with a brief natural acknowledgment "
-            "('Found it.', 'Right, I've got something.') then answer in your own "
-            "words. Never read the results out as a list, never quote a URL, and "
-            "if the results don't actually answer him, say so plainly:\n"
+            "it postdates what you know. Answer in your own words, the way you "
+            "would relay something you have just read; you need not announce that "
+            "you looked. Never read the results out as a list, never quote a URL, "
+            "and if the results don't actually answer him, say so plainly:\n"
             f"{search_context}"
         )
 
@@ -331,7 +367,9 @@ def _primer_script(contact):
         "=== HOW YOU SPEAK ===\n"
         "Invented samples, written to show your voice, timing and range. None of "
         "this happened. Nothing here is a fact about him, and you must never "
-        "recall, quote or refer to any of it as something he said or did.\n\n"
+        "recall, quote or refer to any of it as something he said or did. They "
+        "show the range, not the lines: say it your own way each time, never "
+        "with their words.\n\n"
         + "\n".join(lines)
         + "\n\n=== END SAMPLES — none of the above occurred ==="
     )
@@ -359,6 +397,8 @@ def boot_prompt(contact, returning, since_last="", previous_greeting=""):
     # which also removes the only evidence that he greeted at all — and a model
     # that cannot see its last greeting cheerfully writes the same one again.
     # It comes back here instead, as something to avoid rather than to copy.
+    ambient = "".join(f"{line}\n" for line in world.snapshot())
+
     avoid = (f"\nYou opened the last call with: \"{previous_greeting}\". "
              f"Do not reuse that phrasing or that time of day."
              if previous_greeting else "")
@@ -366,6 +406,7 @@ def boot_prompt(contact, returning, since_last="", previous_greeting=""):
     return (
         "[REFERENCE — context only]\n"
         f"Time: {time_context()}.{'' if returning else ' Fresh session.'}{gap}{avoid}\n"
+        f"{ambient}"
         # The opening line is the one turn with no conversation behind it, so
         # there is nothing to be grounded in and the model furnishes some: "glad
         # you're back from your walk", "you sound like you've had a day". It is

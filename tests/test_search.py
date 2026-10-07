@@ -72,3 +72,14 @@ class TestFactualLookup:
     def test_empty_input_is_not_a_lookup(self):
         assert is_factual_lookup("") is False
         assert is_factual_lookup(None) is False
+
+
+def test_results_reach_the_model_without_urls():
+    from wayne.engine.search import format_search_results
+    text = format_search_results([
+        {"title": "London weather", "url": "https://example.com/forecast",
+         "snippet": "Cloudy, 18C. " * 60},
+    ])
+    assert "https://" not in text
+    assert "London weather" in text
+    assert len(text) < 400

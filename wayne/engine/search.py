@@ -194,15 +194,30 @@ def needs_search(prompt, last_alfred_msg=""):
     return False
 
 
+# Per-result snippet length handed to the model. Every character here is read
+# on the turn that needs it most — the one where he has already said "one
+# moment" and is being waited on — so results are trimmed to what an answer
+# can be built from.
+_SNIPPET_CHARS = 240
+
+
 def format_search_results(results):
+    """
+    Results as the model reads them: title and snippet, no URLs.
+
+    The URLs went in for years and were never used — he is told never to read
+    one out, the console shows the sources itself, and a URL is twenty-odd
+    tokens of noise per result on the slowest turn there is.
+    """
     if not results:
         return ""
 
-    formatted = "\n[Search Results]:\n"
+    lines = ["[Search Results]:"]
     for i, result in enumerate(results, 1):
-        formatted += f"{i}. {result.get('title', 'No title')}\n"
-        if result.get('snippet'):
-            formatted += f"   {result['snippet']}\n"
-        formatted += f"   {result.get('url', '')}\n\n"
-
-    return formatted
+        lines.append(f"{i}. {result.get('title', 'No title')}")
+        snippet = " ".join((result.get("snippet") or "").split())
+        if len(snippet) > _SNIPPET_CHARS:
+            snippet = snippet[:_SNIPPET_CHARS].rsplit(" ", 1)[0] + "…"
+        if snippet:
+            lines.append(f"   {snippet}")
+    return "\n".join(lines) + "\n"

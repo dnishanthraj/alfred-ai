@@ -112,6 +112,39 @@ class TestHistory:
         h = self._conversation(pairs=1, words_each=500)
         assert len(h.for_model(word_budget=60)) >= 1
 
+    def _timed(self, h):
+        for i, m in enumerate(h.messages):
+            m["at"] = 1000.0 + i
+        return h
+
+    def _add(self, h, i, words_each=10):
+        stamp = h.messages[-1]["at"] + 1 if h.messages else 1000.0
+        h.messages.append({"role": "user", "content": f"u{i} " + "word " * words_each, "at": stamp})
+        h.messages.append({"role": "assistant", "content": f"a{i} " + "word " * words_each,
+                           "at": stamp + 0.5})
+
+    def test_the_window_holds_still_while_it_fits(self):
+        # The opening of the transcript is the start of what the model can
+        # reuse from its cache; moving it every turn throws the cache away.
+        h = self._timed(self._conversation(pairs=30))
+        first = h.for_model(word_budget=200)[0]["content"]
+        self._add(h, 30)
+        assert h.for_model(word_budget=200)[0]["content"] == first
+
+    def test_a_window_that_overflows_moves_with_headroom(self):
+        h = self._timed(self._conversation(pairs=30))
+        opening = [h.for_model(word_budget=200)[0]["content"]]
+        for i in range(30, 45):
+            self._add(h, i)
+            sent = h.for_model(word_budget=200)
+            assert sum(len(m["content"].split()) for m in sent) <= 200
+            assert sent[0]["role"] == "user"
+            assert sent[-1]["content"].startswith(f"a{i}")
+            opening.append(sent[0]["content"])
+        # Fifteen new exchanges, but the window moved only a few times.
+        moves = sum(1 for a, b in zip(opening, opening[1:], strict=False) if a != b)
+        assert 1 <= moves <= 5
+
     def test_corrupt_history_is_treated_as_empty_not_fatal(self, tmp_path, monkeypatch):
         path = tmp_path / "history.json"
         path.write_text("{ this is not json")
@@ -282,3 +315,10 @@ class TestGreetingPileUp:
         h.append("user", self.MARKER)
         h.drop_prior_greetings(self.MARKER)
         assert len(h.messages) == 1
+
+
+def test_an_empty_history_sends_nothing():
+    h = History.__new__(History)
+    h.contact_id = "test"
+    h.messages = []
+    assert h.for_model(word_budget=60) == []

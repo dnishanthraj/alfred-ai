@@ -34,6 +34,19 @@ MODEL_KEEP_ALIVE = os.getenv("ALFRED_MODEL_KEEP_ALIVE", "1h")
 # Raise it for longer histories at the cost of memory.
 CONTEXT_WINDOW = int(os.getenv("ALFRED_CONTEXT_WINDOW", "8192"))
 
+# Where the operator is, as a place name ("London"). Optional: when set, the
+# contact is handed a live weather reading for it (see wayne/engine/world.py)
+# instead of being left to imagine one. Personal, so it lives in .env.
+LOCATION = os.getenv("ALFRED_LOCATION", "").strip()
+
+# An RSS feed of headlines he has glanced at (e.g. a national news front page).
+# Optional; titles only, refreshed every half hour in the background.
+NEWS_FEED = os.getenv("ALFRED_NEWS_FEED", "").strip()
+
+# Read today's and tomorrow's events from macOS Calendar. Off unless set to 1;
+# the first read asks for Calendar permission.
+CALENDAR = os.getenv("ALFRED_CALENDAR", "").strip().lower() in ("1", "true", "yes")
+
 # --- Speech-to-text ---
 WHISPER_HINT_PROMPT = os.getenv("ALFRED_WHISPER_HINTS", USER_NAME)
 
@@ -45,7 +58,11 @@ WHISPER_MODEL = os.getenv("ALFRED_WHISPER_MODEL", "mlx-community/whisper-small.e
 
 # --- ElevenLabs ---
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-ELEVENLABS_MODEL = os.getenv("ALFRED_TTS_MODEL", "eleven_turbo_v2_5")
+# eleven_v4_turbo is the v4 voice built for conversation: first audio in about
+# 0.2s on the streaming endpoint. eleven_v4 is the more expressive flagship at
+# 0.6–0.9s to first audio and about a second per sentence; eleven_turbo_v2_5 is
+# the previous generation, a touch faster still.
+ELEVENLABS_MODEL = os.getenv("ALFRED_TTS_MODEL", "eleven_v4_turbo")
 
 # --- Push-to-talk (terminal frontend only; the console has its own controls) ---
 PTT_KEY_STR = os.getenv("ALFRED_PTT_KEY", "Key.cmd_r")

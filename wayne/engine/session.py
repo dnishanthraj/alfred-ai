@@ -29,9 +29,9 @@ from collections import deque
 
 import ollama
 
-from .. import config, events
+from .. import config, delivery, events
 from ..memory import History, Vault
-from . import guards, prompting
+from . import guards, prompting, world
 from .search import format_search_results, google_search, is_factual_lookup
 
 _PRE_SEARCH_PHRASES = [
@@ -69,6 +69,30 @@ _DEFLECTIONS = [
 _WIPE_COMMANDS = ["clear memory", "forget everything", "protocol zero", "wipe logs"]
 _MEMORIZE_PREFIXES = ("remember that", "remember to", "note that", "don't forget")
 _FORGET_PREFIXES = ("forget that", "forget about")
+
+# "Remember that night we got caught in the rain?" begins exactly like "remember
+# that I'm allergic to nuts", and was filed in the vault as a fact — answered
+# with "Noted. Stored to the vault." A question, or a reach for a shared moment,
+# is conversation, not an instruction.
+_REMINISCING = re.compile(
+    r"^(remember|don'?t forget) (that|when|the) "
+    r"(time|night|day|evening|morning|weekend|summer|winter|year|trip)\b")
+
+
+# A reach for a shared memory: "you remember…", "remember when…", "that time we…".
+_SHARED_PAST = re.compile(
+    r"\b(you remember|remember (when|that|the)|do you recall|that time (we|you|i)|"
+    r"the (night|day|time|weekend|trip) (we|you|i))\b", re.I)
+
+
+# Words that appear in a reach for the past without being what it is about.
+_COMMON = {"remember", "recall", "that", "when", "time", "night", "weekend", "with",
+           "what", "were", "right", "there", "they", "then", "this", "your", "have",
+           "trip", "back", "those", "about", "after", "before"}
+
+
+def _is_instruction(lowered):
+    return not lowered.rstrip().endswith("?") and not _REMINISCING.match(lowered)
 
 # Sentence-final punctuation followed by whitespace, which is enough of a
 # boundary for speech without waiting on a full parse.
@@ -135,6 +159,12 @@ class ContactSession:
             extra["think"] = self.contact.think
         return extra
 
+    def warm(self):
+        """Load the model and read the stable prefix, generating one token."""
+        payload = prompting.build_payload(self.contact, self.history.for_model(), ".")
+        ollama.chat(model=self.contact.model, messages=payload, stream=False,
+                    options=self._options(num_predict=1), **self._extra())
+
     def _chat_once(self, payload, **overrides):
         response = ollama.chat(
             model=self.contact.model, messages=payload,
@@ -180,12 +210,14 @@ class ContactSession:
 
         buffer = ""          # tokens not yet forming a complete sentence
         held = []            # complete sentences that look like farewells
-        spoken = []          # sentences actually emitted
+        spoken = self._spoken = []   # sentences actually emitted
+        capped = False       # the cap was reached; nothing further is wanted
         dropped_presence = 0  # sentences discarded for putting him in the room
         index = 0
         checked_opening = False
         can_search = self.contact.can_search
         self._pending_query = None
+        self._cue_spent = False
 
         def finalize(sentence):
             """Guard one sentence. Returns (emit, sentence) or (False, None)."""
@@ -195,7 +227,9 @@ class ContactSession:
             sentence = _SEARCH_MARKER.sub("", sentence).strip()
             text = guards.strip_forbidden_address(
                 sentence.strip(), self.contact.forbidden_address)
-            if not text:
+            # A cue with no words after it — "Of course. [sighs]" — has
+            # nothing to say on screen and nothing to attach to in the voice.
+            if not delivery.clean(text):
                 return False, None
             # He is on a voice link, not in the room. Checked here as well as in
             # `guards.apply`, because this is the streaming path — which is the
@@ -203,7 +237,13 @@ class ContactSession:
             # the address and greeting guards. Dropping the sentence beats
             # regenerating: the staging almost always arrives inside an
             # otherwise good answer, one clause of three.
-            if guards.presumes_presence(text):
+            # One cue a reply. Offered a voice that can sigh, he sighed at the
+            # start of nearly every sentence.
+            if delivery.voiced(text) != delivery.clean(text):
+                if self._cue_spent:
+                    text = delivery.clean(text)
+                self._cue_spent = True
+            if guards.presumes_presence(delivery.clean(text)):
                 nonlocal dropped_presence
                 dropped_presence += 1
                 return False, None
@@ -263,10 +303,19 @@ class ContactSession:
                 held = []
 
                 if len(spoken) >= max_sentences:
-                    continue
+                    capped = True
+                    break
                 spoken.append(text)
                 yield events.sentence(index, text)
                 index += 1
+            if capped:
+                # Stop reading, which closes the stream and stops the model.
+                # Reading on to the end of a reply that will be cut anyway cost
+                # the full generation time, during which the next turn waited.
+                break
+
+        if capped:
+            return " ".join(spoken)
 
         # Generation has finished, so an unclosed marker can now be read.
         if can_search:
@@ -498,6 +547,18 @@ class ContactSession:
                     "and without pretending you hadn't noticed the earlier ones."
                 )
 
+        if _SHARED_PAST.search(prompt) and not self._on_record(prompt):
+            # Asked "you remember that weekend in Cornwall?", he described the
+            # leaking roof in Polperro — a whole shared past, invented on the
+            # spot, which is the one thing that makes everything else he says
+            # untrustworthy. The standing rule was not enough; said about this
+            # turn specifically, it is.
+            notes.append(
+                "He is referring to something you supposedly shared. It is not in this "
+                "conversation or in the stored facts, so you do not remember it. Say so "
+                "plainly and ask him to tell you — do not supply a single detail."
+            )
+
         if guards.in_distress(prompt):
             notes.append(
                 "He has said something is genuinely wrong. Stop everything else and "
@@ -524,6 +585,17 @@ class ContactSession:
             else:
                 notes.append("He cut you off mid-sentence. Let it go and answer what he asked.")
         return notes
+
+    def _on_record(self, prompt):
+        """
+        Whether what he is reaching for is anywhere he could know it from: a
+        stored fact, or something said earlier in this conversation.
+        """
+        if self.vault.mentions(prompt):
+            return True
+        terms = {w for w in re.findall(r"[a-z']{4,}", prompt.lower())} - _COMMON
+        said = " ".join(m["content"] for m in self.history.messages).lower()
+        return any(re.search(rf"\b{re.escape(t)}\b", said) for t in terms)
 
     def sign_off(self):
         """
@@ -595,7 +667,22 @@ class ContactSession:
         yield events.state(events.IDLE)
 
     def ask(self, prompt, interrupted=False, confidence=1.0):
-        """Run one full turn."""
+        """
+        Run one full turn.
+
+        Closed early when he is talked over (see `Console.drive`). What he had
+        said by then is remembered — it was heard, or begun — and the rest of
+        the reply, which was never generated, is not.
+        """
+        self._spoken = []
+        try:
+            yield from self._ask(prompt, interrupted, confidence)
+        except GeneratorExit:
+            if self._spoken:
+                self.history.record_exchange((prompt or "").strip(), " ".join(self._spoken))
+            raise
+
+    def _ask(self, prompt, interrupted, confidence):
         prompt = (prompt or "").strip()
         if not prompt:
             return
@@ -613,7 +700,10 @@ class ContactSession:
         # so he answers from what was found rather than from what he can
         # imagine. He is still free to be unimpressed by the result.
         search_context = ""
-        if self.contact.can_search and is_factual_lookup(prompt):
+        # Unless an ambient feed already has it: that is the same answer
+        # without a second and a half of searching and a page of snippets.
+        covered = world.covered(prompt, (self.contact.name, self.contact.full_name))
+        if self.contact.can_search and is_factual_lookup(prompt) and not covered:
             yield events.state(events.SEARCHING)
             holding = random.choice(_PRE_SEARCH_PHRASES)
             yield events.sentence(0, holding)
@@ -722,7 +812,7 @@ class ContactSession:
             if recent:
                 query = " ".join(recent[-2:]) + " " + prompt
         try:
-            results = google_search(query, num_results=5)
+            results = google_search(query, num_results=4)
         except Exception as exc:
             yield events.notice(f"Search failed: {exc}", "warn")
             return ""
@@ -761,7 +851,7 @@ class ContactSession:
             yield events.state(events.IDLE)
             return True
 
-        if lowered.startswith(_MEMORIZE_PREFIXES):
+        if lowered.startswith(_MEMORIZE_PREFIXES) and _is_instruction(lowered):
             self.vault.memorize(prompt)
             reply = "Noted. Stored to the vault."
             self.history.record_exchange(prompt, reply)

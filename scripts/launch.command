@@ -19,10 +19,22 @@ if [ ! -x "venv/bin/python" ]; then
   exit 1
 fi
 
-if ! pgrep -f "ollama serve" > /dev/null 2>&1; then
+# Asked over HTTP rather than found by process name: the Ollama menu-bar app
+# runs its server under a different command line, so `pgrep "ollama serve"`
+# missed it and started a second one. Finder also hands a double-clicked script
+# a PATH without Homebrew's directories in it.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+if ! curl -sf -o /dev/null http://127.0.0.1:11434/api/version; then
   echo "Ollama isn't running — starting it."
-  ollama serve > /dev/null 2>&1 &
-  sleep 2
+  if [ -d "/Applications/Ollama.app" ]; then
+    open -ga Ollama
+  else
+    ollama serve > /dev/null 2>&1 &
+  fi
+  for _ in $(seq 1 40); do
+    curl -sf -o /dev/null http://127.0.0.1:11434/api/version && break
+    sleep 0.5
+  done
 fi
 
 echo "Starting the console…"

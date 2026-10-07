@@ -3,6 +3,76 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
+## [Unreleased]
+
+### Changed
+
+- **Alfred now runs on `gemma4:26b-a4b-it-qat`.** First sentence in 0.84s
+  median against 2.02s on `qwen3.5:9b`, and a markedly better character: he
+  answers what was said instead of inventing the operator's evening. Six models
+  were measured with the new `scripts/bench_model.py`; the table is in the
+  README. `gemma4:e4b` is the fallback for smaller machines.
+- **Speech defaults to ElevenLabs v4** (`eleven_v4_turbo`), through the
+  streaming endpoint on a pooled connection — 0.55s a sentence against about 1s
+  from the plain endpoint. `eleven_v4` is a setting away.
+
+### Added
+
+- **A canonical Alfred.** The character moved out of the gitignored Modelfile
+  into the committed profile and was rewritten as a person rather than a list of
+  prohibitions: the SAS and the stage, his tastes and opinions, feelings he will
+  own when asked, and wit that teases the pose rather than the person. The
+  Modelfile now holds only private facts about the operator. Judged with the new
+  `scripts/eval_persona.py` over twenty situations, before and after: the sneering
+  ("don't be thick"), the refusals to have a favourite film or tell a joke, and
+  the quip in reply to sincere thanks are gone; tenderness, backstory and taste
+  arrived.
+- **Range in the voice.** He can write stage cues — `[sighs]`, `[laughs]`,
+  `[whispers]`, `[shouting]` — which ElevenLabs v4 performs (measured: a sigh adds
+  most of a second of breath, a whisper is about 15% quieter, a shout about 15%
+  louder, and none are spoken as words). They reach only the synthesiser: the
+  transcript, memory and guards see clean text. One per reply, and none at all
+  for older voice models, which read them aloud.
+- **Per-turn signals for the judgments a standing rule kept losing:** sincere
+  thanks is flagged so it lands instead of being deflected, and a reach for a
+  shared memory that is nowhere on record is flagged so he says he doesn't
+  remember rather than inventing one.
+- **Ambient feeds** (`wayne/engine/world.py`): live weather, headlines and the
+  macOS calendar, refreshed on background threads and read from cache, so they
+  never sit on the critical path. Each is opt-in through `.env`. A local weather
+  question is answered from the feed rather than a web search.
+- **The greeting is written and voiced while the line rings**, and released when
+  he picks up, rather than generated after the ring.
+
+### Fixed
+
+- **"Remember that night we got caught in the rain?" was stored as a memory**,
+  because it starts with "remember that". Questions and reminiscences are now
+  conversation, not vault commands.
+- **He invented a shared past on request** — "you remember that weekend in
+  Cornwall?" got a leaking roof in Polperro. See the shared-memory signal above.
+- **Qwen 3.5 re-read its whole prompt every turn.** It is a hybrid architecture
+  whose recurrent layers cannot resume from Ollama's prefix cache — 1.6s of
+  prefill before every reply, which no amount of prompt trimming could fix.
+  Conventional transformers reuse it and read the same prompt in 0.2s.
+- **Interrupting him did not stop the model.** The abandoned turn kept reading
+  Ollama to the end of a reply nobody would hear, and the next turn queued
+  behind it. The generator is now closed, which closes the stream; a reply that
+  reaches the sentence cap stops the same way. A cut-off reply is remembered as
+  far as it got.
+- **The history window moved every turn**, so even a model that can cache
+  re-read the transcript from its new opening each time. It is now trimmed with
+  headroom and holds still for several turns.
+- **The console never answered when launched from Finder.** The app started
+  Ollama with a bare `ollama serve`, which isn't on the PATH Finder hands an app,
+  so it failed silently. It now asks Ollama over HTTP, starts Ollama.app if it is
+  down, and waits for it.
+- **A gap between every sentence**: the page only fetched a clip once the one
+  before had finished. Clips are now fetched and decoded as they are queued.
+- **Search results reached the model with their URLs**, which he is told never
+  to read out — noise on the slowest turn there is. Titles and trimmed snippets
+  only. The sample openers ("Found it.") were dropped too; he used them verbatim.
+
 ## [0.9.5] - 2026-09-04
 
 ### Fixed

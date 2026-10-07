@@ -31,7 +31,7 @@ from .. import config, events, paths
 from ..audio import stt
 from ..audio.tts import get_voice_engine
 from ..contacts import directory
-from ..engine import ContactSession, guards
+from ..engine import ContactSession, guards, world
 from ..memory import migrate_legacy
 from ..memory.store import atomic_write, read_text
 from ..paths import WEB_DIR
@@ -153,36 +153,54 @@ class Console:
         self.turn_epoch += 1
         return self.turn_epoch
 
-    async def drive(self, generator, contact, epoch=None):
+    async def drive(self, generator, contact, epoch=None, release_at=None):
         """
         Consume a blocking engine generator on a worker thread, forwarding its
         events to the socket and synthesizing each sentence as it appears.
 
-        The generator itself cannot be cancelled — it is blocked in a thread on
-        the model — but it can be abandoned. Once the turn is superseded,
-        nothing more is sent to the page and nothing more is synthesised, so a
-        contact talked over goes quiet immediately rather than finishing the
-        sentence he was on and then answering something you have moved past.
+        Once the turn is superseded, nothing more is sent to the page or
+        synthesised, so a contact talked over goes quiet immediately — and the
+        generator is *closed*, not merely abandoned. Abandoning it left the
+        worker thread reading the model to the end of a reply nobody would
+        hear, and Ollama serves one request at a time, so the next turn queued
+        behind every remaining token of the last. Closing it closes the HTTP
+        stream, which is what makes Ollama stop.
+
+        `release_at` holds everything back from the page until that moment on
+        the event loop's clock, while generation and synthesis carry on behind
+        it. That is how a call is answered: the greeting is written and voiced
+        while the line rings, and he speaks the instant he picks up instead of
+        picking up and then thinking about what to say.
         """
         loop = asyncio.get_running_loop()
+
+        async def hold():
+            if release_at is not None:
+                await asyncio.sleep(max(0.0, release_at - loop.time()))
         queue = asyncio.Queue()
         done = object()
+
+        def superseded():
+            return epoch is not None and epoch != self.turn_epoch
 
         def pump():
             try:
                 for event in generator:
+                    if superseded():
+                        break
                     loop.call_soon_threadsafe(queue.put_nowait, event)
             except Exception as exc:  # a worker crash must not kill the socket
                 loop.call_soon_threadsafe(
                     queue.put_nowait, events.notice(f"Engine error: {exc}", "error")
                 )
             finally:
+                generator.close()
                 loop.call_soon_threadsafe(queue.put_nowait, done)
 
         threading.Thread(target=pump, daemon=True).start()
 
         speech = asyncio.Queue()
-        worker = asyncio.create_task(self._speech_worker(speech))
+        worker = asyncio.create_task(self._speech_worker(speech, hold))
         self.voice_busy = True
 
         try:
@@ -190,13 +208,20 @@ class Console:
                 event = await queue.get()
                 if event is done:
                     break
-                if epoch is not None and epoch != self.turn_epoch:
-                    break          # superseded; drain nothing further
+                if superseded():
+                    # Wait for the worker to close the generator before letting
+                    # the next turn in: it is one token away from noticing, and
+                    # two turns writing history at once is worse than a beat.
+                    while await queue.get() is not done:
+                        pass
+                    break
                 if event.get("type") == "sentence" and self._can_speak(contact):
+                    spoken = event.get("voice") or event["text"]
                     task = asyncio.create_task(
-                        asyncio.to_thread(self.voice.synthesize, event["text"], contact.voice_id)
+                        asyncio.to_thread(self.voice.synthesize, spoken, contact.voice_id)
                     )
                     speech.put_nowait((event["index"], event["text"], task))
+                await hold()
                 await self.broadcast(event)
         finally:
             speech.put_nowait(None)
@@ -210,7 +235,7 @@ class Console:
     def _can_speak(self, contact):
         return self.voice.available and contact.has_voice
 
-    async def _speech_worker(self, speech):
+    async def _speech_worker(self, speech, hold):
         """
         Release clips in submission order. Synthesis runs concurrently, but a
         later sentence finishing first must never jump the queue — the page
@@ -238,6 +263,7 @@ class Console:
                         "Voice link degraded — switching to text.", "warn"))
                 continue
             if audio:
+                await hold()
                 self.recent_speech.append((time.monotonic(), text))
                 await self.broadcast(events.speak(self._store_clip(audio), text, index))
 
@@ -258,11 +284,10 @@ class Console:
                     contact.availability.away_message, "warn"))
                 return
 
-            # Nobody answers the instant it rings. The model is now fast enough
-            # to reply in a fraction of a second, which reads as a machine
-            # waiting for input rather than a person crossing a room — so the
-            # line rings for a varying moment first.
-            await asyncio.sleep(random.uniform(*PICKUP_DELAY))
+            # Nobody answers the instant it rings, so the line rings for a
+            # varying moment — but the greeting is generated and synthesised
+            # during it rather than after, so the ring is the whole wait.
+            pickup = asyncio.get_running_loop().time() + random.uniform(*PICKUP_DELAY)
 
             for problem in config.missing_requirements():
                 await self.broadcast(events.notice(problem, "warn"))
@@ -271,7 +296,7 @@ class Console:
                     f"Migrated existing {' and '.join(self.migrated)} into "
                     f"data/{config.DEFAULT_CONTACT}/.", "info"))
                 self.migrated = []
-            await self.drive(session.boot(), contact, self.interrupt())
+            await self.drive(session.boot(), contact, self.interrupt(), release_at=pickup)
 
     def _is_own_echo(self, text):
         """
@@ -348,18 +373,17 @@ def _warm_model():
     Ollama keys a resident model on its context size, so warming at the default
     4096 and then asking at 8192 unloads and reloads it — the first real turn
     paid fifteen seconds, and the warm-up was the reason.
+
+    It sends the real prefix — persona, directives, samples and the history
+    window — rather than a single character. Loading the weights is only half
+    the cold start; the other half is reading a couple of thousand tokens of
+    prompt, and on a model that caches its prefix this pays for that before
+    anyone has spoken instead of on the first reply.
     """
-    contact = console.directory.get(config.DEFAULT_CONTACT)
-    if contact is None:
+    if console.directory.get(config.DEFAULT_CONTACT) is None:
         return
     try:
-        import ollama
-        ollama.chat(
-            model=contact.model,
-            messages=[{"role": "user", "content": "."}],
-            options={**contact.options, "num_predict": 1},
-            keep_alive=config.MODEL_KEEP_ALIVE,
-        )
+        console.session_for(config.DEFAULT_CONTACT).warm()
     except Exception:
         pass
 
@@ -389,6 +413,7 @@ async def lifespan(_app):
     warm = [
         asyncio.create_task(asyncio.to_thread(_warm_model)),
         asyncio.create_task(asyncio.to_thread(_warm_speech)),
+        asyncio.create_task(asyncio.to_thread(world.prime)),
     ]
     yield
     for task in warm:

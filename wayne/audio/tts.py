@@ -19,6 +19,13 @@ from ..config import ELEVENLABS_API_KEY, ELEVENLABS_MODEL
 PLAYBACK_SPEED = 1.0
 _REQUEST_TIMEOUT = 30
 
+# One pooled connection for every sentence. A bare `requests.post` opened a new
+# TLS connection each time — a handshake to ElevenLabs on every line, paid
+# again for the first sentence of every reply, which is the one being waited
+# on. Sentences are synthesised several at once, so the pool is sized for that.
+_http = requests.Session()
+_http.mount("https://", requests.adapters.HTTPAdapter(pool_connections=1, pool_maxsize=8))
+
 
 class SynthesisError(RuntimeError):
     pass
@@ -53,8 +60,13 @@ class AlfredVoiceService:
         if not voice_id:
             raise SynthesisError("This contact has no voice ID configured")
 
-        response = requests.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+        # The /stream endpoint, read to the end. It returns the same mp3, but
+        # sooner: measured on the same sentence, eleven_v4 took 1.0–1.4s here
+        # against 1.6–1.8s from the plain endpoint, and v4 Turbo 0.55s
+        # against about 1s. Starting playback on the first chunk would save
+        # more again; that needs a streaming player in the page.
+        response = _http.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream",
             json={"text": text, "model_id": ELEVENLABS_MODEL},
             headers={
                 "Accept": "audio/mpeg",

@@ -10,7 +10,7 @@ import json
 import os
 import time
 
-from .. import paths
+from .. import delivery, paths
 from .store import atomic_write, read_text
 
 # Full exchanges kept on disk as short-term memory.
@@ -31,10 +31,27 @@ MAX_HISTORY_MESSAGES = MAX_HISTORY_PAIRS * 2
 # down. Measured on the same machine, the same turn cost 0.83s with no history
 # and 3.29s with 593 words of it.
 #
+# That turned out to be the model, not Ollama. qwen3.5 is a hybrid architecture
+# whose recurrent layers cannot resume from a cached prefix, so it re-reads
+# everything; conventional transformers (qwen3, gemma, gpt-oss) reuse it and
+# read a repeated 2,400-token prompt in a fifth of a second rather than 1.6s.
+# On those the budget costs little except on the turns the window moves.
+#
 # A word budget rather than a turn count, because turns are wildly uneven — one
 # long answer costs as much as ten short ones, and a cap on pairs lets that
 # through. Oldest whole exchanges are dropped first.
 HISTORY_WORD_BUDGET = int(os.getenv("ALFRED_HISTORY_WORDS", "260"))
+
+# When the window has to move, how far down to trim it, as a share of the
+# budget.
+#
+# Trimming to exactly the budget moved the start of the transcript on almost
+# every turn — one exchange in, one exchange out — and a prefix cache is only
+# as long as the part that has not changed. With the opening message different
+# each time, everything after the system prompt was re-read on every turn even
+# on a model that can cache. Cutting deeper when a cut is due holds the opening
+# still for the next several turns, so those turns only pay for what is new.
+TRIM_TO = 0.6
 
 
 def describe_gap(seconds):
@@ -60,6 +77,10 @@ def describe_gap(seconds):
 
 
 class History:
+    # Timestamp of the message the model's window currently opens on. Held
+    # across turns so the window only moves when it must (see `TRIM_TO`).
+    _window_start = None
+
     def __init__(self, contact_id):
         self.contact_id = contact_id
         self.path = paths.history_file(contact_id)
@@ -100,33 +121,53 @@ class History:
             }
             for m in self.messages
         ]
-        if budget is None or budget <= 0:
+        if budget is None or budget <= 0 or not messages:
             return messages
 
-        # Walk back in pairs, keeping whole exchanges until the budget runs out.
-        kept, used = [], 0
+        # Keep the window where it was if everything since still fits, so the
+        # prefix the model has already read stays byte-identical.
+        start = self._held_start(messages, budget)
+        if start is None:
+            # Cut deeper than the budget, so the next few turns fit behind it.
+            # A first window too: filled to the brim, it would have to move on
+            # the very first reply, which is the one that is judged.
+            start = self._trim_start(messages, int(budget * TRIM_TO))
+            if start >= len(messages):
+                # One exchange longer than the whole budget trims to nothing at
+                # all. Losing the last thing said is far worse than going over
+                # budget, so the most recent exchange is kept regardless.
+                start = next((i for i in range(len(messages) - 1, -1, -1)
+                              if messages[i]["role"] == "user"), len(messages) - 1)
+        self._window_start = self.messages[start].get("at") if start < len(messages) else None
+        return messages[start:]
+
+    def _held_start(self, messages, budget):
+        """The current window's opening index, if the window can stay put."""
+        if self._window_start is None:
+            return None
+        for index, message in enumerate(self.messages):
+            if message.get("at") == self._window_start:
+                if message["role"] != "user":
+                    return None
+                used = sum(len(m["content"].split()) for m in messages[index:])
+                return index if used <= budget else None
+        return None
+
+    @staticmethod
+    def _trim_start(messages, budget):
+        """Earliest index whose tail fits the budget, opening on a user turn."""
+        start, used = len(messages), 0
         for index in range(len(messages) - 1, -1, -1):
             cost = len(messages[index]["content"].split())
-            if used + cost > budget and kept:
+            if used + cost > budget and start < len(messages):
                 break
-            kept.append(messages[index])
+            start = index
             used += cost
-        kept.reverse()
         # Never open on an assistant turn: an answer with its question removed
         # reads as something he volunteered, and he will follow that example.
-        while kept and kept[0]["role"] == "assistant":
-            kept.pop(0)
-
-        # One exchange longer than the whole budget trims to nothing at all —
-        # the single reply that fits is an assistant turn, and stripping it
-        # leaves an empty list. Losing the last thing said is far worse than
-        # going over budget, so the most recent exchange is kept regardless.
-        if not kept:
-            for index in range(len(messages) - 1, -1, -1):
-                if messages[index]["role"] == "user":
-                    return messages[index:]
-            return messages[-1:]
-        return kept
+        while start < len(messages) and messages[start]["role"] == "assistant":
+            start += 1
+        return start
 
     def last_greeting(self, marker):
         """The greeting from the most recent connection, or '' if there is none."""
@@ -163,6 +204,11 @@ class History:
         self.messages = kept
 
     def append(self, role, content):
+        # Stage cues are for the voice, not the record. Kept in memory they
+        # would be imitated, and every reply would start to come with a sigh.
+        # Only his side carries cues; what the operator said is kept verbatim.
+        if role == "assistant":
+            content = delivery.clean(content)
         self.messages.append({"role": role, "content": content, "at": time.time()})
 
     def record_aside(self, text):
@@ -184,7 +230,7 @@ class History:
             # Still here." — and once that was in the context he produced more
             # of it. One turn has at most one trailing aside; a newer one
             # replaces the older, because that is what actually happened.
-            self.messages[-1]["aside"] = text.strip()
+            self.messages[-1]["aside"] = delivery.clean(text)
             self.messages[-1]["at"] = time.time()
         else:
             self.append("assistant", text)

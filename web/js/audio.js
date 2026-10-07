@@ -19,6 +19,9 @@
   var queue = [];
   var current = null;
   var playing = false;
+  // Bumped by stop(). A clip still loading when he was cut off belongs to the
+  // old generation and must never start once it lands.
+  var generation = 0;
 
   var handlers = {
     onSentenceStart: null,   // (text, index, durationMs)
@@ -42,8 +45,19 @@
     return c.state === 'suspended' ? c.resume() : Promise.resolve();
   }
 
+  /* Fetched and decoded the moment it is queued, not when its turn comes.
+     Waiting until the clip before it had ended put a network round trip and a
+     decode into the gap between every pair of sentences. */
+  function load(clipId) {
+    return fetch('/api/audio/' + clipId)
+      .then(function (r) { return r.arrayBuffer(); })
+      .then(function (buf) { return context().decodeAudioData(buf); });
+  }
+
   function enqueue(clipId, text, index) {
-    queue.push({ clipId: clipId, text: text, index: index });
+    var decoded = load(clipId);
+    decoded.catch(function () { /* handled when its turn comes */ });
+    queue.push({ decoded: decoded, text: text, index: index, generation: generation });
     if (!playing) next();
   }
 
@@ -59,10 +73,9 @@
 
     var item = queue.shift();
 
-    fetch('/api/audio/' + item.clipId)
-      .then(function (r) { return r.arrayBuffer(); })
-      .then(function (buf) { return context().decodeAudioData(buf); })
+    item.decoded
       .then(function (decoded) {
+        if (item.generation !== generation) return;   // stopped while loading
         var source = ctx.createBufferSource();
         source.buffer = decoded;
         source.connect(analyser);
@@ -77,11 +90,12 @@
       })
       .catch(function () {
         // A clip that won't decode shouldn't strand the rest of the reply.
-        next();
+        if (item.generation === generation) next();
       });
   }
 
   function stop() {
+    generation += 1;
     queue.length = 0;
     if (current) {
       var source = current;

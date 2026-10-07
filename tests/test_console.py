@@ -1,0 +1,86 @@
+"""The console's turn driver: events held back until he picks up."""
+import asyncio
+import time
+from collections import OrderedDict, deque
+from types import SimpleNamespace
+
+from wayne import events
+from wayne.frontends.web import Console
+
+
+class _Voice:
+    available = True
+
+    def __init__(self):
+        self.calls = []
+
+    def synthesize(self, text, voice_id):
+        self.calls.append(time.monotonic())
+        return b"x" * 200
+
+
+def _console():
+    console = Console.__new__(Console)
+    console.voice = _Voice()
+    console.clients = set()
+    console.audio_clips = OrderedDict()
+    console.transcripts = {}
+    console.current_id = None
+    console.recent_speech = deque(maxlen=12)
+    console.turn_epoch = 0
+    console.voice_busy = False
+    sent = []
+
+    async def broadcast(event):
+        sent.append((time.monotonic(), event))
+    console.broadcast = broadcast
+    return console, sent
+
+
+def test_the_greeting_is_ready_before_pickup_and_heard_only_at_it():
+    console, sent = _console()
+    contact = SimpleNamespace(has_voice=True, voice_id="v")
+
+    def greeting():
+        yield events.sentence(0, "Evening.")
+        yield events.reply_end("Evening.")
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        started = time.monotonic()
+        await console.drive(greeting(), contact, release_at=loop.time() + 0.3)
+        return started
+
+    started = asyncio.run(run())
+    # Synthesis ran during the ring...
+    assert console.voice.calls and console.voice.calls[0] - started < 0.2
+    # ...but nothing reached the page until he picked up.
+    assert sent and min(t for t, _ in sent) - started >= 0.29
+    assert any(e["type"] == "speak" for _, e in sent)
+
+
+def test_a_superseded_turn_closes_its_generator():
+    # Abandoning it left the worker reading the model to the end of a reply
+    # nobody would hear, with the next turn queued behind it.
+    console, sent = _console()
+    contact = SimpleNamespace(has_voice=False, voice_id="")
+    closed, produced = [], []
+
+    def reply():
+        try:
+            for i in range(200):
+                produced.append(i)
+                yield events.sentence(i, f"Sentence {i}.")
+                time.sleep(0.01)
+        finally:
+            closed.append(True)
+
+    async def run():
+        task = asyncio.create_task(console.drive(reply(), contact, epoch=console.turn_epoch))
+        await asyncio.sleep(0.1)
+        console.interrupt()
+        await task
+
+    asyncio.run(run())
+    assert closed
+    assert len(produced) < 50

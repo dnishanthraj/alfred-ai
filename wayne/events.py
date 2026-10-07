@@ -7,6 +7,8 @@ Web Audio. Adding a third frontend means consuming these same events, not
 forking the conversation logic.
 """
 
+from . import delivery
+
 # --- Engine states (the contact's current mode) ---
 IDLE = "idle"
 LISTENING = "listening"
@@ -38,8 +40,12 @@ def sentence(index, text):
     Emitted as soon as the sentence is finished rather than at the end of
     generation, so speech for the opening line starts while the rest is still
     being written.
+
+    `text` is what is shown; `voice` is what is synthesised — the same words
+    plus any stage cue the voice can perform (see wayne.delivery).
     """
-    return {"type": "sentence", "index": index, "text": text}
+    return {"type": "sentence", "index": index,
+            "text": delivery.clean(text), "voice": delivery.voiced(text)}
 
 
 def reply_end(text, interim=False):
@@ -50,7 +56,7 @@ def reply_end(text, interim=False):
     real answer in the same turn — frontends use it to avoid treating the turn
     as finished.
     """
-    return {"type": "reply_end", "text": text, "interim": interim}
+    return {"type": "reply_end", "text": delivery.clean(text), "interim": interim}
 
 
 def speak(audio_id, text, index=0):

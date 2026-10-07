@@ -148,7 +148,7 @@ class TerminalConsole:
                 else:
                     print(" ", end="", flush=True)
                 print(event["text"], end="", flush=True)
-                self.speech.say(event["text"], self.contact.voice_id)
+                self.speech.say(event.get("voice") or event["text"], self.contact.voice_id)
 
             elif kind == "sources":
                 if event["items"]:

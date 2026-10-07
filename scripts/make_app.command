@@ -42,6 +42,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>console</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>So your contacts know what is on your calendar today and tomorrow.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>So your contacts know what is on your calendar today and tomorrow.</string>
 </dict>
 </plist>
 PLIST
@@ -90,7 +94,23 @@ URL="http://127.0.0.1:\$PORT"
 cd "\$DIR"
 
 # Ollama first — the console is not much use without it.
-pgrep -f "ollama serve" >/dev/null 2>&1 || { ollama serve >/dev/null 2>&1 & sleep 2; }
+#
+# Checked by asking it, not by looking for a process: an app launched from
+# Finder gets a bare PATH without /usr/local/bin or /opt/homebrew/bin, so a
+# plain \`ollama serve\` failed silently and the console came up with nothing to
+# answer it. The symptom was Alfred simply never replying.
+export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
+if ! curl -sf -o /dev/null http://127.0.0.1:11434/api/version; then
+  if [ -d "/Applications/Ollama.app" ]; then
+    open -ga Ollama
+  else
+    ollama serve >/dev/null 2>&1 &
+  fi
+  for _ in \$(seq 1 40); do
+    curl -sf -o /dev/null http://127.0.0.1:11434/api/version && break
+    sleep 0.5
+  done
+fi
 
 # Only start the server if nothing is already answering on the port, so
 # launching twice doesn't fight itself.

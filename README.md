@@ -51,6 +51,10 @@ their own memory on disk.
   and brief in passing, and goes wholly serious the moment something is actually
   wrong. The tone is decided per turn from what you just said and attached to it,
   rather than set once and averaged into everything.
+- **He knows what is going on around you** — a live weather reading for where
+  you are, the headlines, and today's calendar, each fetched in the background
+  and handed to him with the time it was read. Opt-in, one line of `.env` each.
+  Anything else in the world is looked up when a question needs it.
 - **He knows what time it is, for both of you** — no suggesting bed at three in
   the afternoon, and no greeting you for the wrong half of the day.
 - **Deterministic conversation guards** — anti-repetition, sign-off suppression,
@@ -62,8 +66,8 @@ their own memory on disk.
 - macOS (uses `afplay` for playback and macOS Accessibility permissions for the global
   hotkey listener — this project is not cross-platform as written)
 - Python 3.11 or 3.12 (not 3.13+ — several dependencies are wheel-only)
-- [Ollama](https://ollama.com) installed and running, with the `qwen3.5:9b` base model
-  pulled (`ollama pull qwen3.5:9b`)
+- [Ollama](https://ollama.com) installed and running, with `gemma4:26b-a4b-it-qat`
+  pulled (15 GB; needs a 24 GB Mac) — or `gemma4:e4b` (6.6 GB) on a smaller one
 - An [ElevenLabs](https://elevenlabs.io) account and API key
 - A working microphone
 
@@ -85,32 +89,26 @@ their own memory on disk.
    > and the Rust build fails. A bare `python3` may well point at something
    > newer, so name the version explicitly.
 
-2. **Create your personality file**
+2. **Tell him who you are**
 
-   The system prompt (`Modelfile`) is gitignored because it's meant to hold *your* real
-   name and details — it's never committed.
+   Alfred's character is committed in
+   [`wayne/contacts/profiles/alfred.json`](wayne/contacts/profiles/alfred.json).
+   What he knows about *you* — name, work, where you live — goes in `Modelfile`,
+   which is gitignored so your details never leave your machine:
 
    ```bash
    cp Modelfile.example Modelfile
    ```
 
-   Edit `Modelfile` and fill in the `BASELINE DOSSIER` section with real, current facts
-   about yourself. Then pull the base model it runs on:
+   Fill in its `SYSTEM` block, then pull the model:
 
    ```bash
-   ollama pull qwen3.5:9b
+   ollama pull gemma4:26b-a4b-it-qat     # or gemma4:e4b on a 16 GB Mac
    ```
 
-   That's the whole step — there is no `ollama create`. Alfred's profile points
-   `system_file` at your `Modelfile`, and its `SYSTEM` block is read at startup and
-   sent to the base model. So editing the personality takes effect on the next
-   launch rather than requiring a rebuild, and your details stay in a gitignored
-   file while the profile that references it is committed.
-
-   > A derived model is still supported — set `ALFRED_OLLAMA_MODEL` to its tag —
-   > but it is no longer the default. `ollama create` against a qwen3.5 base
-   > produced a build that returned empty replies for every prompt, which
-   > surfaced as Alfred answering everything with "Mm."
+   There is no `ollama create`: the profile's character and your `Modelfile`
+   are read at startup and sent to the base model together, so an edit to
+   either takes effect on the next launch.
 
 3. **Configure secrets and identity**
 
@@ -125,13 +123,17 @@ their own memory on disk.
    | `ELEVENLABS_API_KEY` | Yes | Your ElevenLabs API key |
    | `ALFRED_VOICE_ID` | Yes | Voice ID from your ElevenLabs voice library |
    | `ALFRED_USER_NAME` | Yes | Your name — shown in the console and used as a Whisper hint |
-   | `ALFRED_OLLAMA_MODEL` | No | Ollama model tag for Alfred (default: `qwen3.5:9b`, from step 2) |
+   | `ALFRED_OLLAMA_MODEL` | No | Ollama model tag for Alfred (default: `gemma4:26b-a4b-it-qat`, from step 2) |
    | `WAYNE_PASSCODE` | No | Lock-screen passcode (default: `zorro`). Theatre, not security |
    | `ALFRED_WEB_PORT` | No | Console port (default: `8420`) |
    | `ALFRED_PTT_KEY` | No | [pynput](https://pynput.readthedocs.io) key for `--cli` push-to-talk (default: `Key.cmd_r`) |
    | `ALFRED_WHISPER_HINTS` | No | Comma-separated proper nouns to bias speech recognition |
    | `ALFRED_CONTEXT_WINDOW` | No | Model context in tokens (default: `8192`). See [Latency](#latency) |
    | `ALFRED_HISTORY_WORDS` | No | Conversation words sent to the model (default: `260`). The main latency dial |
+   | `ALFRED_TTS_MODEL` | No | ElevenLabs model (default: `eleven_v4_turbo`; `eleven_v4` is more expressive and ~0.5s slower to start) |
+   | `ALFRED_LOCATION` | No | Your town or city, for a live weather feed |
+   | `ALFRED_NEWS_FEED` | No | An RSS feed URL for headlines he has glanced at |
+   | `ALFRED_CALENDAR` | No | `1` to let him see today's and tomorrow's events in macOS Calendar |
 
    Display name, role, voice, and sampling parameters are per-contact and live in
    [`wayne/contacts/profiles/alfred.json`](wayne/contacts/profiles/alfred.json).
@@ -375,58 +377,51 @@ make a character sound like themselves.
 
 ## Latency
 
-Warm, on an M-series Mac with `qwen3.5:9b`: **~1.0–2.2s to the first spoken
-sentence on an unloaded machine**, and roughly twice that when the same machine
-is busy — this varies far more with what else is running than with anything in
-the code, so treat single numbers with suspicion and compare like with like.
-Speech-to-text is ~0.1s and speech synthesis ~0.3s; essentially all the rest is
-the model.
+Measured on an M4 Pro (24 GB) with `scripts/bench_model.py`, which runs the real
+engine — persona, primer, guards, search — over a scripted conversation without
+touching memory. The number is time to the first sentence, which is when speech
+synthesis starts:
 
-**Prompt evaluation is the entire budget, and it is paid again every turn.**
-Ollama here does not reuse its KV cache between requests — sending a byte-identical
-prompt twice reports the same `prompt_eval_count` both times, and the second is no
-faster — so there is no free prefix. Latency is, near enough, prompt size ÷ prefill
-rate, measured at 400–1100 tokens/second depending on machine load.
+| Model | First sentence (median) | Verdict |
+|---|---|---|
+| `gemma4:26b-a4b-it-qat` | **0.84s** | Default. Best character by a distance; 4B active parameters, so fast |
+| `gemma4:e4b` | 0.66s | Fallback for smaller Macs; flatter, a little harsh |
+| `gemma4:12b` (MLX) | 1.61s | Good voice, uneven latency |
+| `qwen3.5:9b` | 2.02s | Re-reads the whole prompt every turn (below); invents the most |
+| `gemma4:12b` | 2.62s | 13 tok/s on the llama.cpp path |
+| `gpt-oss:20b` | 0.95s | Fast, but leaks fragments ("Done.Got it.") and isn't a character |
 
-That has a consequence worth stating plainly: **sub-second replies are not
-reachable with a character this size.** A persona, a primer and a few turns of
-history come to ~1,400 words; there is no arrangement of them that evaluates in
-under a second, and cutting them to fit is just deleting the personality. A
-smaller model does not rescue it either — `qwen3.5:4b` measured *slower* to the
-first token than the 9B, because prefill dominates and generation speed is not
-the bottleneck. `qwen2.5:32b` was unusable at 0.3 tok/s; it swaps.
+Run it yourself after changing anything: `venv/bin/python scripts/bench_model.py <model>`.
 
-What is worth doing is making sure the prompt does not grow. Three things decide
-that, in order of how much they cost when wrong:
+**The architecture of the model matters more than its size.** `qwen3.5` is a
+hybrid with recurrent layers, which cannot resume from a cached prompt — so its
+~2,400-token prefix was read from scratch on every turn, 1.6s before a word. A
+conventional transformer reuses the cached prefix and reads the same prompt in a
+fifth of a second, which is why a 26B mixture-of-experts answers faster than a 9B
+hybrid. The prompt is laid out for that cache: everything stable comes first,
+and only the per-turn reference block (time, feeds, search results) changes.
 
-The prompt is ~1,500 words: your `Modelfile` persona (~530), the standing
-directives (~300), the primer of worked examples (~370), history (~260) and the
-per-turn reference block (~90). At the measured prefill rate that is most of the
-wait, and **your `Modelfile` is the largest single block** — if you want it
-faster than this, that is the honest place to cut, at the cost of character.
+The rest of the pipeline:
 
-- **`ALFRED_HISTORY_WORDS`** (default `260`). How much conversation is sent to
-  the model. Uncapped history is why a session got steadily slower the longer it
-  ran and never recovered: measured on one machine, a twenty-exchange
-  conversation cost **8.1s** to the first token untrimmed and **4.2s** trimmed,
-  and the untrimmed figure keeps climbing while the trimmed one does not. A word
-  budget rather than a turn count, because one long answer costs as much as ten
-  short ones.
-
-- **`ALFRED_CONTEXT_WINDOW`** (default `8192`). Ollama defaults to 4096 tokens,
-  and a persona plus a primer plus a few turns of history clears that easily.
-  Once the prompt outgrows the window Ollama shifts context, which costs more
-  again on top of the re-read. Raise it for longer histories at the cost of
-  memory.
-- **`ALFRED_MODEL_KEEP_ALIVE`** (default `1h`). Ollama evicts a model after five
-  minutes idle by default, and reloading a 14B costs around 25 seconds — which
-  is the entire difference between "instant" and "did it crash?" for a
-  conversation resumed after a coffee. The server also warms the default
-  contact's model at startup, while you are still reading the boot screen —
-  using that contact's own options, because Ollama keys a resident model on its
-  context size and warming at one size then asking at another reloads it.
-- **Sentence pipelining.** Speech starts on sentence one rather than after the
-  whole reply.
+- **Speech** — ElevenLabs over its streaming endpoint, one sentence at a time,
+  several in flight. Per sentence: `eleven_v4_turbo` ~0.55s, `eleven_v4` ~1.0–1.4s,
+  `eleven_turbo_v2_5` ~0.35s. The connection is pooled, so the TLS handshake is
+  paid once rather than per sentence. The page prefetches and decodes each clip
+  as it is queued, so sentences play back to back.
+- **The ring** — a call's greeting is generated and voiced while the line rings,
+  so he speaks the moment he picks up.
+- **Interruptions stop the model.** Talking over him closes the stream, which
+  stops Ollama; the next turn no longer waits behind a reply nobody will hear.
+  Replies that reach the sentence cap stop being read the same way.
+- **The history window moves in steps.** It is trimmed with headroom, so its
+  opening — the start of what the cache can reuse — holds still for several
+  turns rather than shifting every turn.
+- **Ambient feeds never block.** Weather, headlines and calendar refresh on
+  background threads; a turn reads whatever is cached.
+- **`ALFRED_HISTORY_WORDS`** (default `260`), **`ALFRED_CONTEXT_WINDOW`**
+  (default `8192`) and **`ALFRED_MODEL_KEEP_ALIVE`** (default `1h`) are the dials.
+  The server warms the model with the real prompt prefix at startup, so the
+  first reply is not the one that pays for loading.
 
 If you use a **reasoning model** (the qwen3 family, deepseek-r1, gpt-oss), set
 `"think": false` in that contact's profile. Left on, they spend their whole
