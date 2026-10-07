@@ -27,7 +27,8 @@ the tail carries only what genuinely differs turn to turn.
 import re
 import time
 
-from .. import delivery
+from .. import delivery, paths
+from ..memory.store import read_text
 from . import world
 
 # Replies are spoken aloud, so anything that only works on a page — markup,
@@ -194,8 +195,10 @@ def register_hint(prompt):
     words = len(text.split())
 
     if _WEIGHT.search(text):
-        tone = (" This one is serious. No jokes, no cleverness — answer it "
-                "straight and stay with him.")
+        # "No cleverness" alone produced melodrama instead — "a heavy thing to
+        # carry all by yourself in the dark". Plain is the instruction.
+        tone = (" This one is serious. Plain, warm, steady words — no jokes, and "
+                "no poetry or drama either. Stay with him.")
     elif _SINCERE.search(text):
         tone = (" He means this sincerely. Let it land: be touched, briefly and "
                 "plainly, before any dryness. Don't deflect it with a joke.")
@@ -204,6 +207,11 @@ def register_hint(prompt):
     else:
         tone = ""
 
+    if words <= 3 and "?" in text:
+        # "off with me?" is a question, not a grunt. Told to "answer in kind",
+        # he met a run of them with "Yes." "Good." "Perfect." and then word
+        # salad, when what was wanted was a plain answer.
+        return "A short question. Answer it — briefly, but properly." + tone
     if words <= 3:
         return "He said very little. Answer in kind — a word or a short line." + tone
     if words <= 25:
@@ -345,7 +353,11 @@ def build_payload(contact, history, user_turn):
     """
     messages = []
     if contact.system:
-        parts = [contact.system, standing_directives(contact)]
+        parts = [contact.system]
+        bio = relationship(contact)
+        if bio:
+            parts.append(bio)
+        parts.append(standing_directives(contact))
         script = _primer_script(contact)
         if script:
             parts.append(script)
@@ -353,6 +365,26 @@ def build_payload(contact, history, user_turn):
     messages.extend(list(history))
     messages.append({"role": "user", "content": user_turn})
     return messages
+
+
+def relationship(contact):
+    """
+    Who he is to the operator, in the operator's own words — the bio written
+    in the console's personnel file.
+
+    It was shown and edited there and never sent to the model, so the one
+    account of the relationship the operator actually wrote was the one thing
+    the character could not see: he answered "Batman or Spiderman?" with
+    Spiderman, to a man whose own description of him begins "before the cowl".
+    Read on every call, so an edit takes effect immediately; it changes rarely
+    enough that the cached prefix survives.
+    """
+    text = (read_text(paths.bio_file(contact.id)) or contact.bio or "").strip()
+    if not text:
+        return ""
+    return ("=== HOW HE DESCRIBES YOU ===\n"
+            "In his own words — the truth of what you are to each other. Live it; "
+            "don't quote it.\n\n" + text)
 
 
 def _primer_script(contact):

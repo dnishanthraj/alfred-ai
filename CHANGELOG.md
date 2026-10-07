@@ -5,6 +5,43 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ## [Unreleased]
 
+### Added
+
+- **A marking scheme, and a harness that applies it** (`eval/rubric.md`,
+  `eval/scenarios.json`, `scripts/evaluate.py`). Thirty-eight scenarios, several
+  lifted from a real conversation that went wrong, run through the real engine
+  and marked two ways: automatic checks (presence, copied example lines, curt
+  streaks, cue overuse, per-scenario rules) and a rubric — persona, human,
+  register, substance, grounded — marked by a judge model told to put each
+  scenario's definition of a good reply first. Latency sits beside the score.
+  `--compare` diffs against a saved run; `--rejudge` re-marks saved transcripts
+  with a better judge so comparisons stay like for like. Replaces
+  `eval_persona.py`. Measured on it: 78.6 → 81.2, grounded and checks at
+  100% / 99%, latency unchanged.
+
+### Fixed
+
+- **He never saw the bio.** The relationship the operator wrote in the
+  personnel file was shown and saved by the console and never sent to the model,
+  so "Batman or Spiderman?" got Spiderman from a man described as being there
+  "before the cowl". It now rides in the cached prompt.
+- **Short questions got grunts.** "off with me?" and "good?" were treated as
+  "he said very little — answer in kind", and got "Yes." "Good." "Perfect." and
+  then word salad. A short question now gets a real answer; his own words handed
+  back as a question are read as play; a run of clipped replies is noticed.
+- **"What do you think?" after the headlines got "about what?"** A bare request
+  for his view now points at the last subject.
+- **"Weather tomorrow?" went out as "You know who she is right? Weather
+  tomorrow?"** Earlier turns are grafted onto a short query only when it refers
+  back; a placeless weather question is looked up for where he knows you are, or
+  he asks.
+- **"I know. And I know."** in reply to "I love you". He now says it back, and
+  his warmth is composed rather than stammered; goodnights carry something of
+  him; explanations come in his own terms rather than a textbook's.
+- **A quip in reply to drink-driving**, half the time. Drink and a car is now
+  flagged, and he refuses first.
+- **Two stage cues on one line** ("[laughs] [sarcastic]"). One per piece of text.
+
 ### Changed
 
 - **Silences behave like a call.** A question he asked and you left hanging gets

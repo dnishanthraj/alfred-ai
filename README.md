@@ -427,6 +427,34 @@ If you use a **reasoning model** (the qwen3 family, deepseek-r1, gpt-oss), set
 `"think": false` in that contact's profile. Left on, they spend their whole
 budget on reasoning tokens, emit no speakable content, and appear to hang.
 
+## Evaluation
+
+Changes to the character, the prompt or the engine are measured, not eyeballed.
+[`eval/rubric.md`](eval/rubric.md) is the marking scheme;
+[`eval/scenarios.json`](eval/scenarios.json) holds the situations, several taken
+from real conversations that went wrong.
+
+```bash
+venv/bin/python scripts/evaluate.py --save before            # baseline
+venv/bin/python scripts/evaluate.py --samples 2 --compare before
+venv/bin/python scripts/evaluate.py --only warmth             # one area
+venv/bin/python scripts/evaluate.py --rejudge before          # re-mark with a better judge
+```
+
+Each scenario runs through the real engine from an empty history, nothing written
+to memory, and is marked two ways: automatic checks needing no judgement
+(presence, copied example lines, curt streaks, cue overuse, each scenario's own
+rules) and a rubric — persona, human, register, substance, each 1–5, plus a
+grounded pass/fail — marked by a judge model with a fixed prompt. Latency is
+reported beside the score rather than folded into it. Results go to
+`eval/results/` (gitignored: transcripts carry your name) as JSON and as a
+Markdown report sorted worst-first, so the replies behind any number are a
+scroll away.
+
+The judge is the same local model that plays him, and a single run moves by a
+few points on its own; use `--samples 2` for anything close, and read the
+transcripts behind a change before believing it.
+
 ## Project structure
 
 ```

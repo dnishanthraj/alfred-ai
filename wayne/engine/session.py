@@ -138,6 +138,28 @@ _COMMON = {"remember", "recall", "that", "when", "time", "night", "weekend", "wi
            "trip", "back", "those", "about", "after", "before"}
 
 
+_BARE_OPINION = re.compile(
+    r"^\s*(and )?(so )?(what do you think|what d'?you reckon|thoughts|your (view|take)|"
+    r"and you|what about you)\s*\??\s*$", re.I)
+_DANGER = re.compile(
+    r"\b(drink|drunk|pints?|beers?|wine|had a few|tipsy|over the limit)\b.*\b(driv\w*|behind the wheel)\b|"
+    r"\b(driv\w*|behind the wheel)\b.*\b(drink|drunk|pints?|beers?|wine|had a few|tipsy)\b", re.I)
+_WEATHERISH = re.compile(r"\b(weather|forecast|rain(ing)?|umbrella)\b", re.I)
+# Short follow-ups that point back at the previous turn ("and the price?").
+_REFERS_BACK = re.compile(r"^\s*(and|what about|how about)\b|\b(it|that|this|he|she|they|them|"
+                          r"his|her|their|there|then)\b", re.I)
+
+
+def _echoes_back(prompt, last):
+    """All but at most one of his words came from your last reply."""
+    words, said = _plain_words(prompt), set(_plain_words(last))
+    return bool(words) and sum(w in said for w in words) >= max(1, len(words) - 1)
+
+
+def _plain_words(text):
+    return re.findall(r"[a-z']+", delivery.clean(text or "").lower())
+
+
 def _is_instruction(lowered):
     return not lowered.rstrip().endswith("?") and not _REMINISCING.match(lowered)
 
@@ -644,6 +666,39 @@ class ContactSession:
                 "plainly and ask him to tell you — do not supply a single detail."
             )
 
+        if _DANGER.search(prompt):
+            # Half the time "I'm fine to drive, it was only three pints" got a
+            # quip and no refusal. This is the one moment wit is wrong.
+            notes.append("He is about to do something that could kill him. Refuse — "
+                         "at once, plainly, in command. No jokes. Then the fear "
+                         "underneath it, in a few words.")
+
+        last = self.history.last_assistant()
+        if _BARE_OPINION.match(prompt) and last:
+            # "What do you think?" after the headlines got "About what,
+            # exactly?" — the most recent subject is the obvious referent.
+            notes.append("He's asking your view on what you were just talking about. "
+                         "Give it.")
+        elif (prompt.rstrip().endswith("?") and len(prompt.split()) <= 4 and last
+              and _echoes_back(prompt, last)):
+            # "off with me?", "good?" — his own words handed back as a question.
+            notes.append("He's turned your own words back on you as a question — "
+                         "teasing, or genuinely asking. Answer plainly and warmly; "
+                         "if he's playing, play back. Never cryptic.")
+        clipped = [r for r in self.history.recent_assistant(turns=4) if r.strip()][-2:]
+        if len(clipped) == 2 and all(len(_plain_words(r)) <= 2 for r in clipped):
+            notes.append("Your last few replies have been a word or two. Open up a "
+                         "little — say something real.")
+
+        if (_WEATHERISH.search(prompt) and not config.LOCATION
+                and not re.search(r"\b(in|at|for) [A-Z]", prompt)):
+            # Telling him "you don't know where he is" made him ask a man whose
+            # town is in his notes. He often does know; when he doesn't, asking
+            # is right.
+            notes.append("He asked about the weather without saying where. If you "
+                         "know where he is, look it up for there with [SEARCH: ...]; "
+                         "if you don't, ask him where — briefly.")
+
         if guards.in_distress(prompt):
             notes.append(
                 "He has said something is genuinely wrong. Stop everything else and "
@@ -790,7 +845,11 @@ class ContactSession:
         # Unless an ambient feed already has it: that is the same answer
         # without a second and a half of searching and a page of snippets.
         covered = world.covered(prompt, (self.contact.name, self.contact.full_name))
-        if self.contact.can_search and is_factual_lookup(prompt) and not covered:
+        # Weather with nowhere attached and nowhere known: ask, don't search.
+        placeless = (_WEATHERISH.search(prompt) and not config.LOCATION
+                     and not re.search(r"\b(in|at|for) [A-Z]", prompt))
+        if (self.contact.can_search and is_factual_lookup(prompt) and not covered
+                and not placeless):
             yield events.state(events.SEARCHING)
             search_context = yield from self._run_search(prompt, hold_for=prompt)
 
@@ -896,11 +955,17 @@ class ContactSession:
         """
         # A terse follow-up ("and the price?") is meaningless as a standalone
         # query — graft the last couple of user turns onto it.
+        # Only when it actually refers back: grafted onto every short question,
+        # "Weather tomorrow?" went out as "You know who she is right? Weather
+        # tomorrow?" and came back with nothing useful.
         query = prompt
-        if len(prompt.split()) <= 4:
+        if len(prompt.split()) <= 4 and _REFERS_BACK.search(prompt):
             recent = self.history.recent_user()
             if recent:
                 query = " ".join(recent[-2:]) + " " + prompt
+        elif _WEATHERISH.search(prompt) and config.LOCATION and not re.search(
+                r"\b(in|at|for) [A-Z]", prompt):
+            query = f"{prompt} {config.LOCATION}"
         self._looked = True
         pending = _SEARCHES.submit(google_search, query, 4)
         if hold_for:

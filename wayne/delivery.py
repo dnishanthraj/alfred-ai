@@ -54,7 +54,15 @@ def voiced(text, model=None):
     if not supported(model):
         return clean(text)
 
+    kept = []
+
     def keep(match):
-        return f"[{match.group(1).lower()}]" if match.group(1).lower() in CUES else " "
+        # One cue per piece of text: "[laughs] [sarcastic] Delusions..." asked
+        # the voice for two deliveries of the same words at once.
+        cue = match.group(1).lower()
+        if cue in CUES and not kept:
+            kept.append(cue)
+            return f"[{cue}]"
+        return " "
 
     return _tidy(_ANY_CUE.sub(keep, text or ""))

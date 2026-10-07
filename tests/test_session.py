@@ -104,3 +104,35 @@ def test_after_a_search_he_does_not_promise_to_look(session, monkeypatch):
     assert "Checking." in said
     assert "Nothing on the score." in said
     assert "I'll have to look it up for you." not in said
+
+
+def _said(session, *pairs):
+    session.history.messages = [{"role": role, "content": text} for role, text in pairs]
+
+
+def test_a_bare_what_do_you_think_points_at_the_last_subject(session):
+    _said(session, ("user", "News?"), ("assistant", "Planning reform, mostly."))
+    assert any("view on what you were just" in n for n in session._awareness("What do you think?", False))
+
+
+def test_his_own_words_handed_back_are_read_as_play(session):
+    _said(session, ("user", "Fine"), ("assistant", "Perfect. Now, off with you."))
+    assert any("turned your own words" in n for n in session._awareness("off with me?", False))
+
+
+def test_a_run_of_clipped_replies_is_noticed(session):
+    _said(session, ("user", "Right"), ("assistant", "Yes."), ("user", "Fine"), ("assistant", "Good."))
+    assert any("Open up" in n for n in session._awareness("ok then", False))
+
+
+def test_placeless_weather_means_asking_where(session, monkeypatch):
+    import wayne.engine.session as module
+    monkeypatch.setattr(module.config, "LOCATION", "")
+    assert any("ask him where" in n for n in session._awareness("Weather tomorrow?", False))
+    assert not any("ask him where" in n for n in session._awareness("Weather in Paris?", False))
+
+
+def test_drink_and_a_car_is_flagged_as_danger(session):
+    notes = session._awareness("Honestly I'm fine to drive. It was only three pints.", False)
+    assert any("could kill him" in n for n in notes)
+    assert not any("could kill him" in n for n in session._awareness("Fancy a drink?", False))

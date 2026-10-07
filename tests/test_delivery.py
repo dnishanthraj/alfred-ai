@@ -40,3 +40,8 @@ def test_word_timings_skip_cues():
     text = "[sighs] Of course."
     starts = [i * 0.1 for i in range(len(text))]
     assert word_starts(list(text), starts) == [["Of", 800], ["course.", 1100]]
+
+
+def test_only_one_cue_per_piece_of_text(monkeypatch):
+    monkeypatch.setattr(delivery.config, "ELEVENLABS_MODEL", "eleven_v4_turbo")
+    assert delivery.voiced("[laughs] [sarcastic] Delusions.") == "[laughs] Delusions."
