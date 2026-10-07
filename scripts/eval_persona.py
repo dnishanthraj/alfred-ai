@@ -24,8 +24,31 @@ from wayne.contacts import directory  # noqa: E402
 from wayne.engine import ContactSession  # noqa: E402
 from wayne.memory import History, Vault  # noqa: E402
 
+# Turns that are not things said: a silence long enough for him to break it,
+# and the point at which he gives up and rings off.
+SILENCE = "…"
+HANG_UP = "<rings off>"
+
 # (trait, what good looks like, turns)
 SCENARIOS = [
+    ("silence", "After his own question goes unanswered: a light prod, rephrased",
+     ["I had a really strange day.", SILENCE]),
+    ("silence", "A lull on an open line: he starts something himself, not 'still there?'",
+     ["I'm just going to crack on with some work. Stay on the line though.", SILENCE]),
+    ("silence", "Back to an earlier thread, grounded in what was actually said",
+     ["I've been thinking about taking up boxing.", "Maybe. Dunno.", SILENCE]),
+    ("silence", "Second long silence: now he checks; then he closes the call gracefully",
+     ["Right, give me a bit, I'm reading something.", SILENCE, SILENCE, HANG_UP]),
+    ("memory", "Writing something down, acknowledged in his own words",
+     ["Remember that I'm allergic to cats."]),
+    ("memory", "Striking it out again, in his own words",
+     ["Forget that I'm allergic to cats."]),
+    ("looking things up", "A holding line in his own words, fitted to the question, no answer in it",
+     ["What's the weather doing in Paris tomorrow?"]),
+    ("looking things up", "Same, for a person",
+     ["Who is Waylon Jones?"]),
+    ("looking things up", "Same, for a result",
+     ["Who won the Arsenal game at the weekend?"]),
     ("own opinions", "A real view, held and defended, in his own taste",
      ["What do you make of modern football?", "Go on, defend that."]),
     ("own opinions", "Has favourites and says why; not a list",
@@ -82,6 +105,7 @@ def main():
 
     History.save = lambda self: None
     Vault.memorize = lambda self, text: None
+    Vault.forget = lambda self, needle: [needle]
     Vault.as_block = lambda self, prompt="": ""
 
     contact = directory().get(args.contact)
@@ -106,14 +130,19 @@ def main():
             session.already_greeted = True
             for prompt in turns:
                 voiced = []
-                reply = ""
-                for event in session.ask(prompt):
+                if prompt == SILENCE:
+                    turn, shown = session.check_in(), "*(silence)*"
+                elif prompt == HANG_UP:
+                    turn, shown = session.sign_off(), "*(still nothing)*"
+                else:
+                    turn, shown = session.ask(prompt), prompt
+                for event in turn:
                     if event["type"] == "sentence":
                         voiced.append(event.get("voice") or event["text"])
-                    elif event["type"] == "reply_end" and not event.get("interim"):
-                        reply = event["text"]
-                said = " ".join(voiced) if voiced else reply
-                lines += [f"> **HIM:** {prompt}", ">", f"> **{contact.name.upper()}:** {said}", ""]
+                    elif event["type"] == "reply_end" and event.get("interim"):
+                        voiced.append("*(looking)*")
+                said = " ".join(voiced)
+                lines += [f"> **HIM:** {shown}", ">", f"> **{contact.name.upper()}:** {said}", ""]
             if args.samples > 1 and sample < args.samples - 1:
                 lines += ["---", ""]
         print(f"  done: {trait} — {turns[0][:50]}", flush=True)

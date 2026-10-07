@@ -23,6 +23,7 @@ only way that actually works mid-stream:
                    anything is spoken, and catches the loop signature that
                    matters; the whole-text check is skipped when streaming.
 """
+import concurrent.futures
 import random
 import re
 from collections import deque
@@ -34,6 +35,10 @@ from ..memory import History, Vault
 from . import guards, prompting, world
 from .search import format_search_results, google_search, is_factual_lookup
 
+# Searches run on a worker so the holding line can be written meanwhile.
+_SEARCHES = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+# Only when a generated holding line fails its checks (see `_holding_line`).
 _PRE_SEARCH_PHRASES = [
     "One moment.",
     "Just a moment.",
@@ -65,6 +70,48 @@ _DEFLECTIONS = [
     "Go on, then.",
     "Something on your mind, or are we just making noises?",
 ]
+
+# The floor handed to him without a question mark.
+_INVITATION = re.compile(
+    r"\b(go on|do tell|tell me|out with it|i'?m (all ears|listening)|let'?s hear it|"
+    r"spit it out|what happened|talk to me|i'?m here)\b", re.I)
+
+# A promise to go and look. After a search has already run this turn it is
+# untrue — "I'll have to look it up for you", said over the results — and the
+# console reads "give me a moment" as him stepping away, so it also arms a
+# timer for him to come back to a search that already happened. Instructed not
+# to, he still did it; so it is caught here.
+_PROMISE_TO_LOOK = re.compile(
+    r"\b(i'?ll|let me|i will|i shall|i'?ll have to|i need to|give me a (moment|second|minute))"
+    r"\b[^.?!]*\b(look|check|find|search|dig|moment|second|minute)\b", re.I)
+
+# Corners of his own life for an unprompted remark to come from. Chosen in code,
+# so that a silence on Tuesday is not the boiler again; the words are still his.
+_OWN_CORNERS = [
+    "the garden", "the kitchen and what you're cooking", "a book you're reading",
+    "something on the radio", "the post or a letter", "the cricket",
+    "a memory from your army years", "a memory from the stage",
+    "something you've been mulling over about him, from this conversation only",
+    "the weather outside your own window", "the house and its noises",
+]
+
+# What he does with a silence, by kind (see `ContactSession.check_in`).
+_SILENCE_MOVES = {
+    "prod": ("You left the floor to him and he hasn't taken it. Nudge him back to "
+             "it — refer to what you asked or what he was about to tell you, lightly "
+             "and in different words. Not 'still there?'"),
+    "own": ("Say something from your own end, unprompted — a thought you've just "
+            "had, what you're doing, something you're reading or listening to, an "
+            "opinion you've been chewing on. Small and natural, the way someone on "
+            "an open line mentions what's in front of them. One or two sentences."),
+    "thread": ("Go back to something from earlier in this conversation that deserves "
+               "another word — something he said, or left unfinished. Only what is "
+               "actually in the transcript; invent nothing about him."),
+    "world": ("Mention the item from your terminal above, in your own words and with "
+              "your view on it — something you've just noticed. Only what it says."),
+    "check": ("It has been a good while. Ask, lightly and in your own way, whether "
+              "he's still there — without assuming he has gone."),
+}
 
 _WIPE_COMMANDS = ["clear memory", "forget everything", "protocol zero", "wipe logs"]
 _MEMORIZE_PREFIXES = ("remember that", "remember to", "note that", "don't forget")
@@ -144,6 +191,10 @@ class ContactSession:
         # cheerfully writes a third in the same shape. "Still drawing breath?"
         # followed by "Still breathing yet?" is a machine with two phrasings.
         self._recent_asides = deque(maxlen=6)
+        self._looked = False   # a search has run this turn
+        # Silences broken since he last spoke, and the last way one was broken.
+        self._silences = 0
+        self._last_silence_move = None
 
     # --- model calls ------------------------------------------------------
 
@@ -221,7 +272,7 @@ class ContactSession:
 
         def finalize(sentence):
             """Guard one sentence. Returns (emit, sentence) or (False, None)."""
-            nonlocal index
+            nonlocal index, dropped_presence
             # Last line of defence: a marker that slipped past detection must
             # never be read aloud.
             sentence = _SEARCH_MARKER.sub("", sentence).strip()
@@ -243,8 +294,10 @@ class ContactSession:
                 if self._cue_spent:
                     text = delivery.clean(text)
                 self._cue_spent = True
+            if self._looked and _PROMISE_TO_LOOK.search(delivery.clean(text)):
+                dropped_presence += 1
+                return False, None
             if guards.presumes_presence(delivery.clean(text)):
-                nonlocal dropped_presence
                 dropped_presence += 1
                 return False, None
             if index == 0 and not spoken and self.already_greeted:
@@ -469,37 +522,69 @@ class ContactSession:
         """
         A turn generated by silence rather than by something being said.
 
-        Deliberately not a canned "are you still there?" — that is the same
-        every time, and the second time you hear it the illusion is finished.
-        It goes through the model like any other turn, with the length of the
-        silence as context, so what comes back varies and sometimes isn't a
-        question at all.
+        What a person does with a silence depends on what came before it, so
+        this does not always do the same thing:
 
-        Not written to history: an unanswered check-in shouldn't become part
-        of what he remembers, or the next reply is answering a ghost.
+          * He asked something and got nothing — a question left hanging is
+            the one silence people do not leave alone. Prod once, differently.
+          * The first lull on an open line — nobody is obliged to talk, and
+            "are you still there?" every time is a machine polling. He starts
+            something instead: a thought from his own end, a return to
+            something said earlier, or something from the feeds worth a remark.
+          * A long second silence — now it is reasonable to ask.
+
+        The client decides *when* (see IDLE_WINDOWS in app.js); this decides
+        what. The shape is picked here, in code, not left to the model: told
+        "say something", it asks if you are there, every time.
         """
         yield events.state(events.THINKING)
         yield events.reply_start()
 
+        self._silences += 1
+        kind = self._silence_kind()
         gap = self.history.time_since_last() or "a little while"
+        context = [f"He has said nothing for {gap}. The link is still open.",
+                   # He has no way of knowing whether the operator stepped out,
+                   # is thinking, or simply did not hear. Left to itself the
+                   # model decides — "you've gone quiet on me" — and states a
+                   # conclusion it cannot have reached.
+                   "You cannot see him and have no idea whether he is busy, "
+                   "thinking or away. Do not conclude which."]
+        move = _SILENCE_MOVES[kind]
+        if kind == "world":
+            # One item, picked here. Given the whole feed he raised the top
+            # headline every time.
+            items = [item.strip() for line in world.snapshot()
+                     for item in line.split(": ", 1)[-1].split(" | ") if item.strip()]
+            context.append("From your terminal: " + random.choice(items))
+        elif kind == "own":
+            move += f" Let it come from {random.choice(_OWN_CORNERS)}."
+        context.append(prompting.SPEECH_CONSTRAINT)
         instruction = (
-            "[REFERENCE — context only]\n"
-            f"He has said nothing for {gap}. The link is still open.\n"
-            # He has no way of knowing whether the operator stepped out, is
-            # thinking, or simply did not hear. Left to itself the model decides
-            # — "you've gone quiet on me", "I'll leave you to it" — and states a
-            # conclusion it cannot have reached, which is the same invention
-            # problem as any other, only about the silence.
-            "You cannot see him and have no idea whether he is still there, "
-            "busy, or thinking. Do not conclude which.\n"
-            f"{prompting.SPEECH_CONSTRAINT}\n"
-            "[END REFERENCE]\n\n"
-            "Break the silence yourself, briefly — a few words at most. Ask "
-            "whether he is still on the line, or simply say something small to "
-            "show you are. Do not ask what he needs, do not offer help, do not "
-            "start a new subject, and do not assume he has gone."
+            "[REFERENCE — context only]\n" + "\n".join(context) + "\n[END REFERENCE]\n\n"
+            + move + " Don't ask what he needs and don't offer help."
         )
-        yield from self._speak_aside(instruction, temperature=0.9, cap=2)
+        yield from self._speak_aside(instruction, temperature=0.9, cap=3)
+
+    def _silence_kind(self):
+        """Which way to break this silence. See `check_in`."""
+        last = self.history.last_assistant()
+        # "Do go on... I'm all ears" leaves the floor to him as surely as a
+        # question does, and was met with a change of subject.
+        asked = last.rstrip().endswith("?") or bool(_INVITATION.search(last))
+        if self._silences > 1:
+            return "check"
+        if asked:
+            return "prod"
+        moves = ["own", "own"]
+        if len(self.history.recent_user(turns=12)) >= 2:
+            moves.append("thread")
+        if world.snapshot():
+            moves.append("world")
+        # Never the same move twice running, across calls of the same session.
+        choices = [m for m in moves if m != self._last_silence_move] or moves
+        self._last_silence_move = random.choice(choices)
+        return self._last_silence_move
 
     def _awareness(self, prompt, interrupted, confidence=1.0):
         """
@@ -606,7 +691,7 @@ class ContactSession:
         yield events.reply_start()
         instruction = (
             "[REFERENCE — context only]\n"
-            f"He has not answered for some time and you have already checked twice.\n"
+            f"He has not answered for some time, and you have tried to draw him out.\n"
             f"{prompting.SPEECH_CONSTRAINT}\n"
             "[END REFERENCE]\n\n"
             "Close the call yourself, in one short line. Not wounded, not fussing — "
@@ -683,6 +768,8 @@ class ContactSession:
             raise
 
     def _ask(self, prompt, interrupted, confidence):
+        self._silences = 0
+        self._looked = False
         prompt = (prompt or "").strip()
         if not prompt:
             return
@@ -705,10 +792,7 @@ class ContactSession:
         covered = world.covered(prompt, (self.contact.name, self.contact.full_name))
         if self.contact.can_search and is_factual_lookup(prompt) and not covered:
             yield events.state(events.SEARCHING)
-            holding = random.choice(_PRE_SEARCH_PHRASES)
-            yield events.sentence(0, holding)
-            yield events.reply_end(holding, interim=True)
-            search_context = yield from self._run_search(prompt)
+            search_context = yield from self._run_search(prompt, hold_for=prompt)
 
         user_turn = prompting.compose_user_turn(
             prompt, vault_block, search_context, awareness)
@@ -730,13 +814,11 @@ class ContactSession:
         if reply == _SEARCH_REQUESTED:
             query = self._pending_query or prompt
             yield events.state(events.SEARCHING)
-            if not getattr(self, "_spoke_before_search", False):
-                # He went straight to looking without saying anything, so give
-                # him a line rather than leaving dead air over the search.
-                holding = random.choice(_PRE_SEARCH_PHRASES)
-                yield events.sentence(0, holding)
-                yield events.reply_end(holding, interim=True)
-            search_context = yield from self._run_search(query)
+            # If he went straight to looking without saying anything, give him
+            # a line rather than leaving dead air over the search.
+            spoke = getattr(self, "_spoke_before_search", False)
+            search_context = yield from self._run_search(
+                query, hold_for=None if spoke else prompt)
 
             user_turn = prompting.compose_user_turn(
                 prompt, vault_block, search_context, awareness)
@@ -803,7 +885,15 @@ class ContactSession:
         self._last_deflection = choice
         return choice
 
-    def _run_search(self, prompt):
+    def _run_search(self, prompt, hold_for=None):
+        """
+        Look something up, saying a holding line meanwhile when `hold_for` is
+        the question being looked up for.
+
+        The search is started first and the line written while it runs: the
+        search is network, the line is the model, so they overlap and the line
+        costs nothing the search was not already costing.
+        """
         # A terse follow-up ("and the price?") is meaningless as a standalone
         # query — graft the last couple of user turns onto it.
         query = prompt
@@ -811,29 +901,73 @@ class ContactSession:
             recent = self.history.recent_user()
             if recent:
                 query = " ".join(recent[-2:]) + " " + prompt
+        self._looked = True
+        pending = _SEARCHES.submit(google_search, query, 4)
+        if hold_for:
+            holding = self._holding_line(hold_for)
+            yield events.sentence(0, holding)
+            yield events.reply_end(holding, interim=True)
         try:
-            results = google_search(query, num_results=4)
+            results = pending.result()
         except Exception as exc:
             yield events.notice(f"Search failed: {exc}", "warn")
-            return ""
+            return None    # looked, and came back empty-handed
         if not results:
-            return ""
+            return None
         yield events.sources([
             {"title": r.get("title", ""), "url": r.get("url", "")} for r in results
         ])
         return format_search_results(results)
 
+    def _holding_line(self, prompt):
+        """
+        What he says while he looks — his own words, fitted to the question.
+
+        A fixed pool ("One moment.", "Stand by.") was the most scripted thing he
+        said: the same five lines, whatever was asked. Generated, it can be "Hold
+        on, I'll see if it's going to pour" or "Waylon Jones… give me a second".
+        It must not answer — the answer is what is being fetched — so anything
+        that looks like content (a number, more than a short line) is discarded
+        for a stock line rather than risk a guess said aloud.
+        """
+        instruction = (
+            "[REFERENCE — context only]\n"
+            "You are looking this up on your terminal right now; the results are "
+            "not back yet.\n"
+            f"{prompting.SPEECH_CONSTRAINT}\n"
+            "[END REFERENCE]\n\n"
+            f"He asked: \"{prompt}\"\n"
+            "Say a few words to let him know you're looking — your own way, naming "
+            "what you're looking for. One short sentence. Do not answer it, guess, "
+            "or state any fact."
+        )
+        payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
+        try:
+            line = self._chat_once(payload, temperature=0.9, num_predict=24)
+        except Exception:
+            line = ""
+        line = guards.strip_forbidden_address(
+            guards.split_sentences(delivery.clean(line))[0], self.contact.forbidden_address)
+        if (not line or len(line.split()) > 12 or re.search(r"\d", line)
+                or guards.presumes_presence(line) or "SEARCH" in line.upper()):
+            line = random.choice(_PRE_SEARCH_PHRASES)
+        return line
+
     def _handle_command(self, prompt):
-        """Memory commands, handled in code rather than left to the model."""
+        """
+        Memory commands. The action is done in code — the vault is not left
+        to the model — but the reply is his: "Noted. Stored to the vault."
+        every single time was a filing system talking, not a man writing
+        something down.
+        """
         lowered = prompt.lower()
 
         if lowered in _WIPE_COMMANDS:
             self.history.clear()
             self.vault.clear()
-            reply = "Memory purged. We start fresh."
-            yield events.sentence(0, reply)
-            yield events.reply_end(reply)
-            yield events.state(events.IDLE)
+            yield from self._acknowledge(
+                prompt, "You have just wiped everything you remembered of him and "
+                        "your conversations, as he asked. You start fresh.", record=False)
             return True
 
         if lowered.startswith(_FORGET_PREFIXES):
@@ -843,21 +977,45 @@ class ContactSession:
                     needle = prompt[len(prefix):].strip(" .")
                     break
             removed = self.vault.forget(needle) if needle else []
-            reply = ("Forgotten." if removed
-                     else "Nothing in the vault matches that.")
-            self.history.record_exchange(prompt, reply)
-            yield events.sentence(0, reply)
-            yield events.reply_end(reply)
-            yield events.state(events.IDLE)
+            yield from self._acknowledge(
+                prompt, f"He asked you to forget: \"{needle}\". " + (
+                    "You have struck it from your notes." if removed else
+                    "You had nothing written down that matches it."))
             return True
 
         if lowered.startswith(_MEMORIZE_PREFIXES) and _is_instruction(lowered):
             self.vault.memorize(prompt)
-            reply = "Noted. Stored to the vault."
-            self.history.record_exchange(prompt, reply)
-            yield events.sentence(0, reply)
-            yield events.reply_end(reply)
-            yield events.state(events.IDLE)
+            yield from self._acknowledge(
+                prompt, "You have just written this down so you will remember it: "
+                        f"\"{prompt}\".")
             return True
 
         return False
+
+    def _acknowledge(self, prompt, what_happened, record=True):
+        """A short reply, in character, to something just done on his behalf."""
+        instruction = (
+            "[REFERENCE — context only]\n"
+            f"{what_happened}\n"
+            f"{prompting.SPEECH_CONSTRAINT}\n"
+            "[END REFERENCE]\n\n"
+            f"He said: \"{prompt}\"\n"
+            "Acknowledge it in your own words — a line, perhaps with a remark of "
+            "your own. Don't repeat it back word for word."
+        )
+        payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
+        try:
+            reply = self._chat_once(payload, temperature=0.8, num_predict=60)
+        except Exception:
+            reply = ""
+        reply = guards.apply(reply, prompt, 2, self.already_greeted,
+                             self.contact.forbidden_address) if reply else ""
+        if not reply or reply == "Mm.":
+            reply = "Done."
+        if record:
+            self.history.record_exchange(prompt, reply)
+        for i, sentence in enumerate(guards.split_sentences(reply)):
+            if sentence.strip():
+                yield events.sentence(i, sentence.strip())
+        yield events.reply_end(reply)
+        yield events.state(events.IDLE)

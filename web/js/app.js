@@ -30,8 +30,8 @@
     currentId: null,     // who the console is showing
     connectedId: null,   // who is actually on the line
     ringingId: null,     // who is being reached, not yet answered
-    pending: {},         // sentences awaiting audio, by index
-    rendered: {},        // sentence indices already shown
+    pending: {},         // sentences awaiting audio, by key
+    rendered: {},        // sentence keys already shown
     fresh: true,         // next sentence starts a new utterance
     socket: null,
     viz: null,
@@ -45,7 +45,8 @@
     nudges: 0,        // consecutive unanswered check-ins
     closing: false,   // he is signing off; hang up once he has finished
     hangUpWhenQuiet: false,  // sign-off written; waiting on the voice to stop
-    quietUntil: 0     // he was asked for time; don't chase until then
+    quietUntil: 0,    // he was asked for time; don't chase until then
+    askedLast: false  // his last reply ended on a question
   };
 
   // Held keys that count as push-to-talk. Space is the obvious one; Right
@@ -53,16 +54,27 @@
   // spoken for by the browser.
   var PTT_CODES = { Space: true, MetaRight: true };
 
-  // How long a silence runs before he checks you are still there. Randomised
-  // so it never reads as a timer, and it *shortens* each time — someone who
-  // has asked once and heard nothing does not wait as long to ask again. After
-  // the second he stops asking and closes the call, because nobody sits on a
-  // dead line forever.
+  // How long a silence runs before he breaks it: [minimum, random spread] ms.
+  //
+  // Modelled on how silence works on a real call. A question left unanswered is
+  // the one silence people do not sit through — replies normally land within a
+  // fraction of a second, so after ten seconds or so with nothing, anyone
+  // would prod. Otherwise this is an open line, and on an open line nobody is
+  // obliged to talk: a lull of half a minute or a minute is ordinary, and what
+  // ends it is usually one of them mentioning something, not "are you still
+  // there?". That question comes only after a long second silence, and some
+  // minutes after that he rings off himself, because nobody sits on a dead
+  // line forever. What he says each time is decided on the server.
+  //
+  // The old windows (26–48s, then 17–29s, then hang up) closed the call after
+  // about a minute and a half of quiet, and every nudge was the same question.
   var IDLE_WINDOWS = [
-    [26000, 22000],   // first: half a minute or so
-    [17000, 12000]    // second: sooner, and it sounds like it
+    [30000, 30000],   // first lull: he says something of his own
+    [75000, 60000],   // a long second silence: now he asks if you're there
+    [100000, 80000]   // and then he closes the call
   ];
-  var MAX_NUDGES = IDLE_WINDOWS.length;
+  var AFTER_QUESTION = [9000, 6000];   // he asked and you went quiet
+  var MAX_NUDGES = IDLE_WINDOWS.length - 1;
 
   // When he says he needs a moment, he takes one — and comes back on his own.
   var HE_ASKED_FOR_TIME = /\b(give me|just|hold on|hang on|one|bear with)\s*(a\s*)?(moment|minute|second|sec|mo)\b|\blet me (think|check|see)\b/i;
@@ -138,14 +150,22 @@
   }
 
   /**
-   * Release a sentence's words across the duration of its audio. Word length
-   * is a decent proxy for how long it takes to say, which keeps the text from
-   * drifting ahead of or behind the voice over a long sentence.
+   * Release a sentence's words in time with its audio.
+   *
+   * `words` is when each word actually starts, from the synthesiser's own
+   * alignment, and is used whenever it matches the text. Without it the words
+   * are spread across the clip weighted by length — a fair guess for a plain
+   * read, and a poor one once the voice can sigh first: the breath comes before
+   * the first word, and the guess put the words out ahead of it.
+   *
+   * Keyed by a per-call sentence key from the server, never by position in a
+   * reply. Positions restart at 0 for every reply, so the first sentence of an
+   * answer that followed "One moment." looked already shown and never was.
    */
-  function revealSentence(text, index, durationMs) {
-    if (state.rendered[index]) return;
-    state.rendered[index] = true;
-    delete state.pending[index];
+  function revealSentence(text, key, durationMs, timings) {
+    if (state.rendered[key]) return;
+    state.rendered[key] = true;
+    delete state.pending[key];
 
     // The first sentence of a reply replaces whatever was said before it.
     if (state.fresh) {
@@ -160,6 +180,15 @@
 
     var words = text.split(/\s+/).filter(Boolean);
     if (!words.length) return;
+
+    if (timings && timings.length === words.length) {
+      words.forEach(function (word, i) {
+        state.wordTimers.push(setTimeout(function () {
+          span.textContent += (i === 0 ? '' : ' ') + word;
+        }, Math.max(0, timings[i][1])));
+      });
+      return;
+    }
 
     var weights = words.map(function (w) { return w.length + 1; });
     var total = weights.reduce(function (a, b) { return a + b; }, 0);
@@ -200,7 +229,7 @@
     Object.keys(state.pending)
       .map(Number)
       .sort(function (a, b) { return a - b; })
-      .forEach(function (index) { revealSentence(state.pending[index], index, 0); });
+      .forEach(function (key) { revealSentence(state.pending[key], key, 0); });
   }
 
   /* --- presence -------------------------------------------------------------
@@ -214,7 +243,8 @@
     if (!state.connectedId) return;
 
     // Past the last window he stops asking and hangs up instead.
-    var window_ = IDLE_WINDOWS[Math.min(state.nudges, MAX_NUDGES - 1)];
+    var window_ = (state.nudges === 0 && state.askedLast)
+      ? AFTER_QUESTION : IDLE_WINDOWS[Math.min(state.nudges, IDLE_WINDOWS.length - 1)];
     var closing = state.nudges >= MAX_NUDGES;
     var wait = window_[0] + Math.random() * window_[1];
     var quietFor = state.quietUntil - Date.now();
@@ -449,18 +479,19 @@
         // Held, not shown: it appears when its audio starts.
         cancelFlush();
         state.generationDone = false;
-        state.pending[event.index] = event.text;
+        state.pending[event.key] = event.text;
         answered();
         break;
 
       case 'speak':
-        ConsoleAudio.enqueue(event.audio_id, event.text, event.index);
+        ConsoleAudio.enqueue(event.audio_id, event.text, event.index, event.words);
         break;
 
       case 'reply_end':
         // If he asked for a moment, he means it: nothing is expected of you
         // until he comes back of his own accord.
         clearTimeout(state.resumeTimer);
+        if (!event.interim) state.askedLast = /\?\s*$/.test(event.text || '');
         if (!event.interim && HE_ASKED_FOR_TIME.test(event.text || '')) {
           clearTimeout(state.idleTimer);
           state.resumeTimer = setTimeout(function () {
@@ -625,9 +656,9 @@
   }
 
   function wireAudio() {
-    ConsoleAudio.on('onSentenceStart', function (text, index, durationMs) {
+    ConsoleAudio.on('onSentenceStart', function (text, key, durationMs, words) {
       setState('speaking');
-      revealSentence(text, index, durationMs);
+      revealSentence(text, key, durationMs, words);
     });
     ConsoleAudio.on('onIdle', function () {
       if (document.documentElement.dataset.state === 'speaking') setState('idle');

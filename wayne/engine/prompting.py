@@ -268,7 +268,14 @@ def reference_block(vault_block, prompt, search_context="", awareness=()):
             f"{vault_block}"
         )
 
-    if search_context:
+    if search_context is None:
+        # Looked, and nothing came back. Unsaid, he did not know he had
+        # already looked, and promised to — "I'll have to look that up, give
+        # me a moment" — after the search had run.
+        parts.append(
+            "You looked this up just now and found nothing that answers it. Say so "
+            "plainly; don't guess, and don't offer to look again.")
+    elif search_context:
         parts.append(
             # No sample openers. Given "'Found it.', 'Right, I've got
             # something.'" as examples, he opened every lookup with one of the
@@ -277,8 +284,9 @@ def reference_block(vault_block, prompt, search_context="", awareness=()):
             "Live intel — retrieved via search just now, so it is current even if "
             "it postdates what you know. Answer in your own words, the way you "
             "would relay something you have just read; you need not announce that "
-            "you looked. Never read the results out as a list, never quote a URL, "
-            "and if the results don't actually answer him, say so plainly:\n"
+            "you looked. Never read the results out as a list, never quote a URL. "
+            "If they don't actually answer him, say you looked and couldn't find it "
+            "— never that you haven't looked:\n"
             f"{search_context}"
         )
 

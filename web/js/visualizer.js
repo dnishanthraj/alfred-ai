@@ -15,8 +15,15 @@
   'use strict';
 
   var BARS = 128;
-  var SMOOTHING = 0.28;   // per-frame approach rate toward the target
-  var DECAY = 0.055;      // fall-back rate toward idle
+  // Approach rates per 60 Hz frame, scaled by the real frame time so a 120 Hz
+  // display does not animate twice as fast.
+  var SMOOTHING = 0.28;   // toward a louder target
+  var DECAY = 0.055;      // back down
+  // The band a voice actually occupies. Bins were sampled up to ~13 kHz on a
+  // near-linear scale, so four-fifths of the ring showed sibilance and hiss
+  // and barely moved; on a log scale over this band every bar carries speech.
+  var LOW_HZ = 80;
+  var HIGH_HZ = 8000;
 
   function hexToRgb(hex, fallback) {
     var match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec((hex || '').trim());
@@ -34,6 +41,8 @@
     this.mode = 'idle';
     this.level = 0;
     this.phase = 0;
+    this.lastFrame = 0;
+    this.bands = null;
     this.dpr = 1;
     this.accent = [79, 168, 224];
     this.alert = [224, 87, 79];
@@ -66,6 +75,7 @@
     if (audio && audio.analyser) {
       this.analyser = audio.analyser;
       this.freq = new Uint8Array(this.analyser.frequencyBinCount);
+      this.bands = this._bands(this.analyser.context.sampleRate, this.freq.length);
     }
   };
 
@@ -78,9 +88,25 @@
     this.accent = hexToRgb(value, this.accent);
   };
 
-  /* Map the FFT onto the ring. Only the lower ~60% of bins is sampled — the
-     top of the spectrum is near-empty for speech — on a mild curve that gives
-     the voiced low-mids more of the ring than the hiss above them.
+  /* Bin ranges for one quadrant of bars, log-spaced across the voice band.
+     Each bar takes the loudest bin in its range rather than a single sample,
+     so narrow harmonics are not skipped between frames — that skipping was
+     the flicker in the old ring. */
+  Visualizer.prototype._bands = function (sampleRate, binCount) {
+    var quarter = BARS / 4;
+    var hzPerBin = sampleRate / 2 / binCount;
+    var bands = [];
+    for (var i = 0; i < quarter; i++) {
+      var lo = LOW_HZ * Math.pow(HIGH_HZ / LOW_HZ, i / quarter);
+      var hi = LOW_HZ * Math.pow(HIGH_HZ / LOW_HZ, (i + 1) / quarter);
+      var a = Math.max(1, Math.floor(lo / hzPerBin));
+      var b = Math.max(a + 1, Math.ceil(hi / hzPerBin));
+      bands.push([a, Math.min(b, binCount)]);
+    }
+    return bands;
+  };
+
+  /* Map the FFT onto the ring.
 
      The spectrum is drawn into one quadrant and mirrored across both axes.
      Mirroring on the vertical axis alone left every loud vowel bunched into
@@ -88,13 +114,15 @@
      voice is doing, which is what makes it read as an instrument. */
   Visualizer.prototype._readSpectrum = function () {
     this.analyser.getByteFrequencyData(this.freq);
-    var usable = Math.floor(this.freq.length * 0.6);
     var quarter = BARS / 4;
     var half = BARS / 2;
 
     for (var i = 0; i < quarter; i++) {
-      var t = i / quarter;
-      var value = this.freq[Math.floor(Math.pow(t, 1.35) * usable)] / 255;
+      var band = this.bands[i];
+      var peak = 0;
+      for (var j = band[0]; j < band[1]; j++) if (this.freq[j] > peak) peak = this.freq[j];
+      // Speech is louder low than high; lift the top end so the ring is even.
+      var value = Math.min(1, (peak / 255) * (0.85 + 0.35 * i / quarter));
       this.targets[i] = value;
       this.targets[BARS - 1 - i] = value;
       this.targets[half - 1 - i] = value;
@@ -113,6 +141,19 @@
     }
   };
 
+  /* Thinking or looking something up: a slow bright arc travelling the ring.
+     Not a spinner — it moves at the pace of someone considering — but it
+     tells you the line is alive while he works out what to say. */
+  Visualizer.prototype._readThinking = function () {
+    var head = (this.phase * 0.35) % 1;
+    for (var i = 0; i < BARS; i++) {
+      var d = Math.abs(i / BARS - head);
+      d = Math.min(d, 1 - d);
+      var arc = Math.exp(-(d * d) / 0.006);
+      this.targets[i] = 0.06 + arc * 0.16;
+    }
+  };
+
   Visualizer.prototype._readLevel = function () {
     for (var i = 0; i < BARS; i++) {
       var wave = Math.sin((i / BARS) * Math.PI * 6 + this.phase * 2.2) * 0.5 + 0.5;
@@ -123,22 +164,31 @@
   Visualizer.prototype._frame = function () {
     requestAnimationFrame(this._frame);
 
+    var now = performance.now();
+    // Frames since the last one at 60 Hz; capped so a backgrounded tab does
+    // not jump the ring when it comes back.
+    var frames = this.lastFrame ? Math.min((now - this.lastFrame) / (1000 / 60), 4) : 1;
+    this.lastFrame = now;
+
     this._ensureAnalyser();
     this._refreshAccent();
-    this.phase += 0.017;
+    this.phase += 0.017 * frames;
 
     if (this.mode === 'speaking' && this.analyser) {
       this._readSpectrum();
     } else if (this.mode === 'listening') {
       this._readLevel();
+    } else if (this.mode === 'thinking' || this.mode === 'searching') {
+      this._readThinking();
     } else {
       this._readIdle();
     }
 
+    var rise = 1 - Math.pow(1 - SMOOTHING, frames);
+    var fall = 1 - Math.pow(1 - DECAY, frames);
     for (var i = 0; i < BARS; i++) {
       var target = this.targets[i];
-      var rate = target > this.values[i] ? SMOOTHING : DECAY;
-      this.values[i] += (target - this.values[i]) * rate;
+      this.values[i] += (target - this.values[i]) * (target > this.values[i] ? rise : fall);
     }
 
     this._draw();

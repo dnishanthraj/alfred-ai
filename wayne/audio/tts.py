@@ -6,6 +6,8 @@ the web console fetches the raw bytes and plays them through Web Audio so the
 visualizer can read real FFT data, while the terminal frontend hands the same
 bytes to `afplay`. Nothing here prints — callers decide how to report errors.
 """
+import base64
+import json
 import os
 import subprocess
 import tempfile
@@ -82,6 +84,48 @@ class AlfredVoiceService:
         if len(audio) < 100:
             raise SynthesisError("ElevenLabs returned empty audio — check API key or quota")
         return audio
+
+    def synthesize_timed(self, text, voice_id):
+        """
+        mp3 bytes plus when each word starts, as [[word, ms], ...].
+
+        The page used to spread a sentence's words evenly across its clip,
+        weighted by length — close enough until the voice could sigh. A sigh
+        puts most of a second of breath before the first word, and the words
+        ran ahead of the voice by exactly that much. ElevenLabs reports the
+        start of every character on the same streaming call, at no measurable
+        cost (0.59s against 0.55s), so the subtitles can follow the voice
+        rather than an estimate of it.
+        """
+        if not text or not text.strip():
+            return b"", []
+        if not ELEVENLABS_API_KEY:
+            raise SynthesisError("ELEVENLABS_API_KEY is not set")
+        if not voice_id:
+            raise SynthesisError("This contact has no voice ID configured")
+
+        response = _http.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream/with-timestamps",
+            json={"text": text, "model_id": ELEVENLABS_MODEL},
+            headers={"Content-Type": "application/json", "xi-api-key": ELEVENLABS_API_KEY},
+            timeout=_REQUEST_TIMEOUT, stream=True,
+        )
+        if response.status_code != 200:
+            raise SynthesisError(f"ElevenLabs returned {response.status_code}: {response.text[:200]}")
+
+        audio, chars, starts = bytearray(), [], []
+        for line in response.iter_lines():
+            if not line:
+                continue
+            chunk = json.loads(line)
+            if chunk.get("audio_base64"):
+                audio += base64.b64decode(chunk["audio_base64"])
+            alignment = chunk.get("alignment") or {}
+            chars += alignment.get("characters") or []
+            starts += alignment.get("character_start_times_seconds") or []
+        if len(audio) < 100:
+            raise SynthesisError("ElevenLabs returned empty audio — check API key or quota")
+        return bytes(audio), word_starts(chars, starts)
 
     # --- local playback (terminal frontend) -------------------------------
 
@@ -160,6 +204,32 @@ class AlfredVoiceService:
 
 _service = None
 _service_lock = threading.Lock()
+
+
+def word_starts(chars, starts):
+    """
+    Group a character alignment into words with their start times in ms,
+    skipping stage cues — they are performed, not shown, so they have no word
+    on screen to time.
+    """
+    words, current, began, in_cue = [], "", None, False
+    for char, start in zip(chars, starts, strict=False):
+        if char == "[":
+            in_cue = True
+        if in_cue:
+            in_cue = char != "]"
+            continue
+        if char.isspace():
+            if current:
+                words.append([current, round(began * 1000)])
+            current, began = "", None
+            continue
+        if not current:
+            began = start
+        current += char
+    if current:
+        words.append([current, round(began * 1000)])
+    return words
 
 
 def get_voice_engine():

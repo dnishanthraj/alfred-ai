@@ -56,6 +56,14 @@ class Console:
     contact you have spoken to, and the fan-out to connected browser tabs.
     """
 
+    # Every sentence sent to the page gets a key that is never reused. The
+    # engine numbers sentences from 0 within each reply, and the page used
+    # those numbers to remember what it had already shown — so after "One
+    # moment." took slot 0, the real answer's first sentence (also 0) was
+    # treated as already shown and never appeared, and a check-in after an
+    # unanswered reply could vanish the same way.
+    _said = 0
+
     def __init__(self):
         self.directory = directory()
         self.voice = get_voice_engine()
@@ -215,12 +223,15 @@ class Console:
                     while await queue.get() is not done:
                         pass
                     break
+                if event.get("type") == "sentence":
+                    self._said += 1
+                    event = {**event, "key": self._said}
                 if event.get("type") == "sentence" and self._can_speak(contact):
                     spoken = event.get("voice") or event["text"]
                     task = asyncio.create_task(
-                        asyncio.to_thread(self.voice.synthesize, spoken, contact.voice_id)
+                        asyncio.to_thread(self.voice.synthesize_timed, spoken, contact.voice_id)
                     )
-                    speech.put_nowait((event["index"], event["text"], task))
+                    speech.put_nowait((event["key"], event["text"], task))
                 await hold()
                 await self.broadcast(event)
         finally:
@@ -253,9 +264,9 @@ class Console:
             item = await speech.get()
             if item is None:
                 return
-            index, text, task = item
+            key, text, task = item
             try:
-                audio = await task
+                audio, words = await task
             except Exception:
                 if not reported:
                     reported = True
@@ -265,7 +276,7 @@ class Console:
             if audio:
                 await hold()
                 self.recent_speech.append((time.monotonic(), text))
-                await self.broadcast(events.speak(self._store_clip(audio), text, index))
+                await self.broadcast(events.speak(self._store_clip(audio), text, key, words))
 
     # --- turns ------------------------------------------------------------
 

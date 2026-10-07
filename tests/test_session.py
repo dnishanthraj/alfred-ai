@@ -69,3 +69,38 @@ def test_reminiscing_is_not_a_memory_command(session):
     _model(session, [])
     events = list(session.ask("Remember that night we got caught in the rain?"))
     assert not any(e.get("text") == "Noted. Stored to the vault." for e in events)
+
+
+def test_an_empty_search_is_reported_as_one():
+    from wayne.engine import prompting
+    block = prompting.reference_block("", "Who won?", search_context=None)
+    assert "found nothing" in block
+    assert "found nothing" not in prompting.reference_block("", "Hello.")
+
+
+def test_an_open_invitation_counts_as_handing_him_the_floor(session):
+    session.history.messages = [{"role": "user", "content": "Strange day."},
+                                {"role": "assistant", "content": "Do go on... I'm all ears."}]
+    session._silences = 1
+    assert session._silence_kind() == "prod"
+
+
+def test_a_second_silence_is_when_he_checks(session):
+    session.history.messages = [{"role": "assistant", "content": "Right."}]
+    session._silences = 2
+    assert session._silence_kind() == "check"
+
+
+def test_after_a_search_he_does_not_promise_to_look(session, monkeypatch):
+    import dataclasses
+
+    import wayne.engine.session as module
+    session.contact = dataclasses.replace(session.contact, can_search=True)
+    monkeypatch.setattr(module, "google_search", lambda query, n: [])
+    monkeypatch.setattr(session, "_holding_line", lambda prompt: "Checking.")
+    monkeypatch.setattr(session, "_stream", lambda payload, **_: iter(
+        ["Nothing on the score. ", "I'll have to look it up for you. ", "Annoying."]))
+    said = [e["text"] for e in session.ask("Who won the match?") if e["type"] == "sentence"]
+    assert "Checking." in said
+    assert "Nothing on the score." in said
+    assert "I'll have to look it up for you." not in said

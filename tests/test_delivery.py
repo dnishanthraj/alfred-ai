@@ -33,3 +33,10 @@ def test_memory_keeps_his_words_without_cues_and_yours_verbatim():
 
 def test_the_finished_reply_is_shown_clean():
     assert events.reply_end("[sighs] Fine. Have it your way.")["text"] == "Fine. Have it your way."
+
+
+def test_word_timings_skip_cues():
+    from wayne.audio.tts import word_starts
+    text = "[sighs] Of course."
+    starts = [i * 0.1 for i in range(len(text))]
+    assert word_starts(list(text), starts) == [["Of", 800], ["course.", 1100]]

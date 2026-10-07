@@ -7,6 +7,37 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Changed
 
+- **Silences behave like a call.** A question he asked and you left hanging gets
+  a prod after 9–15s, in different words. Otherwise the line is open and nobody is
+  obliged to talk: after 30–60s he brings something up himself — from his own
+  end, from earlier in the conversation, or from the feeds — and only a long
+  second silence gets "still there?", before he rings off a few minutes later.
+  It used to ask the same question twice and hang up after ninety seconds.
+- **Less scripted dialogue.** The line before a search is now his own, written
+  while the search runs so it costs nothing ("I am checking the forecast for the
+  City of Light"); memory commands are done in code and acknowledged in his
+  words. Fixed lines remain only as fallbacks when generation fails.
+
+### Fixed
+
+- **Subtitles dropped whole sentences.** The page keyed what it had shown by
+  position in a reply, which restarts at 0 — so the first sentence of an answer
+  after "One moment.", or a check-in after an interrupted reply, never appeared.
+  Sentences now carry a key unique across the call.
+- **Subtitles ran ahead of the voice.** Words were spread across each clip by
+  length, which a leading sigh threw out by most of a second. ElevenLabs'
+  character alignment, from the same streaming call, now times every word.
+- **The visualiser showed mostly hiss.** Four-fifths of the ring sampled
+  3–13 kHz; it now spans 80 Hz–8 kHz on a log scale, takes each band's peak
+  rather than one bin, runs at the same speed on any refresh rate, and shows a
+  slow travelling arc while he thinks or searches.
+- **After a search came back empty he promised to look it up.** He is now told
+  he looked, and a promise to look is dropped once a search has run.
+
+## [0.10.0] - 2026-10-07
+
+### Changed
+
 - **Alfred now runs on `gemma4:26b-a4b-it-qat`.** First sentence in 0.84s
   median against 2.02s on `qwen3.5:9b`, and a markedly better character: he
   answers what was said instead of inventing the operator's evening. Six models

@@ -59,9 +59,12 @@ def reply_end(text, interim=False):
     return {"type": "reply_end", "text": delivery.clean(text), "interim": interim}
 
 
-def speak(audio_id, text, index=0):
-    """Audio for one sentence is ready at /api/audio/<audio_id>."""
-    return {"type": "speak", "audio_id": audio_id, "text": text, "index": index}
+def speak(audio_id, text, index=0, words=None):
+    """
+    Audio for one sentence is ready at /api/audio/<audio_id>. `words` is when
+    each word starts in it, [[word, ms], ...], when the synthesiser said.
+    """
+    return {"type": "speak", "words": words or [], "audio_id": audio_id, "text": text, "index": index}
 
 
 def turn_complete():

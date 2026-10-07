@@ -14,9 +14,9 @@ class _Voice:
     def __init__(self):
         self.calls = []
 
-    def synthesize(self, text, voice_id):
+    def synthesize_timed(self, text, voice_id):
         self.calls.append(time.monotonic())
-        return b"x" * 200
+        return b"x" * 200, [[w, i * 100] for i, w in enumerate(text.split())]
 
 
 def _console():
@@ -84,3 +84,22 @@ def test_a_superseded_turn_closes_its_generator():
     asyncio.run(run())
     assert closed
     assert len(produced) < 50
+
+
+def test_sentence_keys_never_repeat_across_replies():
+    # The holding line and the answer's first sentence are both index 0.
+    console, sent = _console()
+    contact = SimpleNamespace(has_voice=True, voice_id="v")
+
+    def turn():
+        yield events.sentence(0, "One moment.")
+        yield events.reply_end("One moment.", interim=True)
+        yield events.reply_start()
+        yield events.sentence(0, "It's raining.")
+
+    asyncio.run(console.drive(turn(), contact))
+    keys = [e["key"] for _, e in sent if e["type"] == "sentence"]
+    assert len(keys) == len(set(keys)) == 2
+    spoken = {e["index"]: e for _, e in sent if e["type"] == "speak"}
+    assert set(spoken) == set(keys)
+    assert spoken[keys[1]]["words"][0] == ["It's", 0]
