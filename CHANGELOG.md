@@ -7,6 +7,16 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Added
 
+- **Two worlds.** Usually he talks to you in your own life. Step into Gotham —
+  the cave, the cowl, patrol, "I'm Batman", "Master Bruce", or Gotham's people
+  asked after as though they were real — and he goes with you completely:
+  Killer Croc is a threat from his records rather than "a character from the
+  comic books", Jason Todd is a boy he helped raise, and a silence in the cave
+  is broken from inside the cave. He stays there until you step out ("out of
+  character", "seriously though") or hang up; each call starts in real life.
+  Naming Batman in passing ("Batman or Spiderman?", "the new Joker film") does
+  not count. Five Gotham scenarios added to the evaluation.
+
 - **A marking scheme, and a harness that applies it** (`eval/rubric.md`,
   `eval/scenarios.json`, `scripts/evaluate.py`). Thirty-eight scenarios, several
   lifted from a real conversation that went wrong, run through the real engine
@@ -21,6 +31,14 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Fixed
 
+- **The model sat in memory all evening.** A 15 GB model on a 24 GB Mac held
+  for an hour after every use pushed the rest of the machine into swap and kept
+  it hot. It is now released five minutes after hang-up (unless you ring back),
+  and at most ten minutes after its last use otherwise; a call reloads it while
+  the line rings.
+- **"Goodnight my friend" got a bare "Goodnight." and nothing else.** A
+  goodnight is now flagged on the turn; four of four sends-off came back with
+  something of him in them.
 - **He never saw the bio.** The relationship the operator wrote in the
   personnel file was shown and saved by the console and never sent to the model,
   so "Batman or Spiderman?" got Spiderman from a man described as being there

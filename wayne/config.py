@@ -20,7 +20,16 @@ USER_NAME = os.getenv("ALFRED_USER_NAME") or os.getenv("WAYNE_USER_NAME") or "Op
 # minutes means a conversation resumed after a coffee pays a full model load —
 # around 25 seconds for a 14B — before the first word. Holding it resident
 # trades RAM for the difference between "instant" and "did it crash?".
-MODEL_KEEP_ALIVE = os.getenv("ALFRED_MODEL_KEEP_ALIVE", "1h")
+#
+# Shortened from an hour once the default model became a 15 GB 26B: on a 24 GB
+# machine, holding it all evening put the rest of the Mac into swap and kept it
+# hot. The console now loads the model as a call rings and releases it after
+# hang-up (see HANG_UP_RELEASE); this is only the backstop for anything else.
+MODEL_KEEP_ALIVE = os.getenv("ALFRED_MODEL_KEEP_ALIVE", "10m")
+
+# How long after hanging up the model is released, unless another call comes
+# in first. Long enough to ring straight back without a reload.
+HANG_UP_RELEASE = int(os.getenv("ALFRED_HANG_UP_RELEASE", "300"))
 
 # Ollama's default context is 4096 tokens. A persona, a primer and a few turns
 # of history clear that easily, and once the prompt outgrows the window Ollama

@@ -51,6 +51,8 @@ their own memory on disk.
   and brief in passing, and goes wholly serious the moment something is actually
   wrong. The tone is decided per turn from what you just said and attached to it,
   rather than set once and averaged into everything.
+- **Two worlds** — he talks to you in your own life, and when you step into
+  Gotham as Bruce Wayne he goes with you entirely, until you step back out.
 - **He knows what is going on around you** — a live weather reading for where
   you are, the headlines, and today's calendar, each fetched in the background
   and handed to him with the time it was read. Opt-in, one line of `.env` each.

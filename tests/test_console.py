@@ -103,3 +103,27 @@ def test_sentence_keys_never_repeat_across_replies():
     spoken = {e["index"]: e for _, e in sent if e["type"] == "speak"}
     assert set(spoken) == set(keys)
     assert spoken[keys[1]]["words"][0] == ["It's", 0]
+
+
+def test_the_model_is_released_after_hang_up_unless_he_rings_back(monkeypatch):
+    import wayne.frontends.web as web
+    released = []
+    monkeypatch.setattr(web, "_release_model", lambda model: released.append(model))
+    monkeypatch.setattr(web.config, "HANG_UP_RELEASE", 0.05)
+
+    async def run(ring_back):
+        console, _ = _console()
+        console.turn_lock = asyncio.Lock()
+        console.current_id = "alfred"
+        console._release = None
+        console.directory = SimpleNamespace(get=lambda _id: SimpleNamespace(model="m"))
+        await console.disconnect()
+        if ring_back:
+            console._release.cancel()
+        await asyncio.sleep(0.15)
+
+    asyncio.run(run(ring_back=False))
+    assert released == ["m"]
+    released.clear()
+    asyncio.run(run(ring_back=True))
+    assert released == []

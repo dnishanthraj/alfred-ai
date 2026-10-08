@@ -85,6 +85,7 @@ class Console:
         # cut him off or merely followed him.
         self.voice_busy = False
         self.boot_task = None
+        self._release = None   # pending model release after a hang-up
         self.migrated = migrate_legacy(config.DEFAULT_CONTACT)
 
     # --- contacts ---------------------------------------------------------
@@ -285,6 +286,9 @@ class Console:
         contact = self.directory.get(contact_id)
         if contact is None:
             return
+        if self._release:
+            self._release.cancel()
+            self._release = None
         async with self.turn_lock:
             self.current_id = contact_id
             session = self.session_for(contact_id)
@@ -327,8 +331,25 @@ class Console:
         """
         self.interrupt()
         async with self.turn_lock:
+            contact = self.contact
             self.current_id = None
             self.recent_speech.clear()
+        if contact:
+            self._release = asyncio.create_task(self._release_after(contact))
+
+    async def _release_after(self, contact):
+        """
+        Free the model a while after the call ends. A 26B is 15 GB; resident
+        all evening it pushed a 24 GB Mac into swap. A call loads it while the
+        line rings (the boot reads the prefix anyway), so releasing between
+        calls costs the next greeting a few seconds and nothing else.
+        """
+        try:
+            await asyncio.sleep(config.HANG_UP_RELEASE)
+        except asyncio.CancelledError:
+            return
+        if self.current_id is None:
+            await asyncio.to_thread(_release_model, contact.model)
 
     async def nudge(self, kind="check_in"):
         """
@@ -371,6 +392,14 @@ class Console:
 
 
 console = Console()
+
+
+def _release_model(model):
+    try:
+        import ollama
+        ollama.generate(model=model, prompt="", keep_alive=0)
+    except Exception:
+        pass
 
 
 def _warm_model():
