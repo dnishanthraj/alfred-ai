@@ -7,16 +7,19 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Added
 
-- **Two worlds.** Usually he talks to you in your own life. Step into Gotham —
-  the cave, the cowl, patrol, "I'm Batman", "Master Bruce", or Gotham's people
-  asked after as though they were real — and he goes with you completely:
-  Killer Croc is a threat from his records rather than "a character from the
-  comic books", Jason Todd is a boy he helped raise, and a silence in the cave
-  is broken from inside the cave. He stays there until you step out ("out of
-  character", "seriously though") or hang up; each call starts in real life.
-  Naming Batman in passing ("Batman or Spiderman?", "the new Joker film") does
-  not count. Five Gotham scenarios added to the evaluation.
-
+- **He'll play Bruce Wayne with you, knowing it's you.** Start the game —
+  the cave, the cowl, a patrol — and he plays the Alfred of the manor
+  wholeheartedly, without stopping to call it a game; Killer Croc becomes a
+  threat from his records rather than "a character from the comic books". He
+  never loses track of who you are ("a man with your technical training…"),
+  something real ("mum just called, she's not well") drops the game at once, and
+  "out of character" brings him straight back. This is understanding written into
+  the character, not a keyword-triggered mode — a mode was built first and
+  removed: it decided the world from phrases, where he can decide it from the
+  conversation. 89.0 on the five role-play scenarios against 82.5 for the mode.
+- **"I love you" gets it said back, and then something dry** — "now, don't go
+  making me sentimental before I've even had my tea" — rather than a bare
+  "I know." Persona 2 → 4, register 2 → 5 across four samples.
 - **A marking scheme, and a harness that applies it** (`eval/rubric.md`,
   `eval/scenarios.json`, `scripts/evaluate.py`). Thirty-eight scenarios, several
   lifted from a real conversation that went wrong, run through the real engine

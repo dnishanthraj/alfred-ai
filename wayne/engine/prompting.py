@@ -382,8 +382,11 @@ def relationship(contact):
     text = (read_text(paths.bio_file(contact.id)) or contact.bio or "").strip()
     if not text:
         return ""
+    # Written, as it happens, half in the voice of the Bruce Wayne he likes to
+    # play. The feeling is his; the cowl is the game.
     return ("=== HOW HE DESCRIBES YOU ===\n"
-            "In his own words — the truth of what you are to each other. Live it; "
+            "In his own words — the truth of what you are to each other, even where "
+            "he has written it in the voice of the game he plays with you. Live it; "
             "don't quote it.\n\n" + text)
 
 

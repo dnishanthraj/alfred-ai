@@ -76,14 +76,6 @@ _INVITATION = re.compile(
     r"\b(go on|do tell|tell me|out with it|i'?m (all ears|listening)|let'?s hear it|"
     r"spit it out|what happened|talk to me|i'?m here)\b", re.I)
 
-# The same, when the call is in Gotham.
-_GOTHAM_CORNERS = [
-    "the cave and the state of the equipment", "the manor and its noises",
-    "the damage to the car from last time", "Gotham tonight, from the window",
-    "a memory of Master Bruce as a boy", "the family — the ones who are gone",
-    "the stitches you put in last week", "the kitchen and what you're cooking",
-]
-
 # A promise to go and look. After a search has already run this turn it is
 # untrue — "I'll have to look it up for you", said over the results — and the
 # console reads "give me a moment" as him stepping away, so it also arms a
@@ -145,40 +137,6 @@ _COMMON = {"remember", "recall", "that", "when", "time", "night", "weekend", "wi
            "what", "were", "right", "there", "they", "then", "this", "your", "have",
            "trip", "back", "those", "about", "after", "before"}
 
-
-# Stepping into Gotham. Strong signals only: "Batman or Spiderman?" is a
-# question about films, not a man asking for his cowl.
-_ENTER_GOTHAM = re.compile(
-    r"\b(gotham|bat ?cave|the cave|batmobile|the cowl|on patrol|patrol tonight|"
-    r"i'?m batman|i am batman|as batman|master bruce|call me bruce|wayne manor|the manor|"
-    r"gcpd|commissioner gordon|arkham|bat ?signal|suit up)\b", re.I)
-# Gotham's people asked about as if they were real and alive: "how is he",
-# "where is", "spotted", "tonight" — not just named.
-_GOTHAM_PERSON = re.compile(
-    r"\b(joker|penguin|riddler|two-face|killer croc|waylon jones|bane|scarecrow|poison ivy|"
-    r"catwoman|selina|harley|robin|nightwing|jason( todd)?|dick( grayson)?|tim drake|"
-    r"damian|barbara|oracle|lucius|gordon)\b.*\b(how is|how'?s|where is|where'?s|is he|is she|"
-    r"has he|has she|spotted|tonight|escaped|loose|back)\b|"
-    r"\b(how is|how'?s|where is|where'?s|any word on)\b.*\b(joker|penguin|riddler|two-face|"
-    r"killer croc|bane|scarecrow|poison ivy|catwoman|selina|harley|robin|nightwing|"
-    r"jason( todd)?|dick( grayson)?|tim drake|damian|barbara|oracle|lucius)\b", re.I)
-_IN_GOTHAM = (
-    "You are in Gotham with him now: he is Bruce Wayne — Batman — and you are his "
-    "Alfred, of the manor and the cave. Gotham, its people, its villains and the "
-    "family's history are all real; never call any of it fiction or comics, and "
-    "treat anything you look up as your own records. 'Master Bruce' or 'sir'. Leave "
-    "his other life out of it unless he brings it in.")
-
-# Talking about the stories rather than living in one.
-_ABOUT_THE_STORIES = re.compile(
-    r"\b(film|movie|cinema|comic|show|series|episode|game|actor|played by|trailer|"
-    r"cartoon|book)s?\b", re.I)
-
-# Stepping back out.
-_LEAVE_GOTHAM = re.compile(
-    r"\b(out of character|ooc|break(ing)? character|back to (real life|reality|the real world)|"
-    r"in real life|irl|for real though|seriously though|real talk|enough roleplay|"
-    r"stop (the )?roleplay(ing)?)\b", re.I)
 
 _BARE_OPINION = re.compile(
     r"^\s*(and )?(so )?(what do you think|what d'?you reckon|thoughts|your (view|take)|"
@@ -256,9 +214,6 @@ class ContactSession:
         # followed by "Still breathing yet?" is a machine with two phrasings.
         self._recent_asides = deque(maxlen=6)
         self._looked = False   # a search has run this turn
-        # In Gotham with him (see `_update_world`); reset by each new call.
-        self._gotham = False
-        self._left_gotham = False
         # Silences broken since he last spoke, and the last way one was broken.
         self._silences = 0
         self._last_silence_move = None
@@ -532,10 +487,7 @@ class ContactSession:
         Generate the opening line. Stored as a proper user/assistant pair: a
         history starting with an orphaned assistant message leaves the model
         unsure who spoke last, and it hallucinates on the next exchange.
-
-        Every call opens in his own life; Gotham is entered, not assumed.
         """
-        self._gotham = False
         yield events.state(events.THINKING)
 
         returning = bool(self.history)
@@ -620,10 +572,6 @@ class ContactSession:
                    # conclusion it cannot have reached.
                    "You cannot see him and have no idea whether he is busy, "
                    "thinking or away. Do not conclude which."]
-        if self._gotham:
-            # A silence in the cave broken with the rain back home is two
-            # worlds colliding; it has to come from inside the one he is in.
-            context.append(_IN_GOTHAM)
         move = _SILENCE_MOVES[kind]
         if kind == "world":
             # One item, picked here. Given the whole feed he raised the top
@@ -632,8 +580,7 @@ class ContactSession:
                      for item in line.split(": ", 1)[-1].split(" | ") if item.strip()]
             context.append("From your terminal: " + random.choice(items))
         elif kind == "own":
-            corners = _GOTHAM_CORNERS if self._gotham else _OWN_CORNERS
-            move += f" Let it come from {random.choice(corners)}."
+            move += f" Let it come from {random.choice(_OWN_CORNERS)}."
         context.append(prompting.SPEECH_CONSTRAINT)
         instruction = (
             "[REFERENCE — context only]\n" + "\n".join(context) + "\n[END REFERENCE]\n\n"
@@ -654,26 +601,12 @@ class ContactSession:
         moves = ["own", "own"]
         if len(self.history.recent_user(turns=12)) >= 2:
             moves.append("thread")
-        if world.snapshot() and not self._gotham:
+        if world.snapshot():
             moves.append("world")
         # Never the same move twice running, across calls of the same session.
         choices = [m for m in moves if m != self._last_silence_move] or moves
         self._last_silence_move = random.choice(choices)
         return self._last_silence_move
-
-    def _update_world(self, prompt):
-        """
-        Which world this conversation is in. Usually his own life; sometimes he
-        steps into Gotham as Bruce Wayne, and then Alfred goes with him — and
-        stays there until he steps out, rather than drifting back to calling
-        Killer Croc "a character from the comic books" two turns later.
-        """
-        if _LEAVE_GOTHAM.search(prompt):
-            self._gotham = False
-            self._left_gotham = True
-        elif _ENTER_GOTHAM.search(prompt) or (
-                _GOTHAM_PERSON.search(prompt) and not _ABOUT_THE_STORIES.search(prompt)):
-            self._gotham = True
 
     def _awareness(self, prompt, interrupted, confidence=1.0):
         """
@@ -682,12 +615,6 @@ class ContactSession:
         """
         notes = []
 
-        if self._gotham:
-            notes.append(_IN_GOTHAM)
-        elif self._left_gotham:
-            self._left_gotham = False
-            notes.append("He has stepped back out of Gotham into his own life. Follow him "
-                         "without comment.")
         if confidence < 0.6:
             # Speech-to-text does not fail by going quiet — it fails by
             # producing a confident sentence nobody said, and answering that
@@ -914,7 +841,6 @@ class ContactSession:
         if handled:
             return
 
-        self._update_world(prompt)
         awareness = self._awareness(prompt, interrupted, confidence)
         vault_block = self.vault.as_block(prompt)
 
