@@ -604,6 +604,8 @@
       text.appendChild(name);
       text.appendChild(role);
       text.addEventListener('click', function () {
+        // With the map open, a name in the directory is a person on it.
+        if (window.GothamMap && GothamMap.isOpen()) return GothamMap.focus(id);
         el.dossier.dataset.contact = id;
         openDossier(id);
       });
@@ -1084,7 +1086,6 @@
       .filter(Boolean);
     where.textContent = p.where ? p.where + (company.length ? ' · with ' + company.join(', ') : '') : '';
     where.hidden = !p.where;
-    drawMap($('hovercard-map'), id, p);
     var r = anchor.getBoundingClientRect();
     card.hidden = false;
     var w = card.offsetWidth;
@@ -1103,56 +1104,7 @@
 
   function hideHovercard() { $('hovercard').hidden = true; }
 
-  /* Gotham, small: the three islands, the outer ones, Blüdhaven up the coast —
-     and a dot where they are, with anyone they're with. Drawn in the card's
-     own palette; nothing here is a picture, so it scales and themes. */
-  var SVG_NS = 'http://www.w3.org/2000/svg';
 
-  function svgEl(name, attrs) {
-    var node = document.createElementNS(SVG_NS, name);
-    Object.keys(attrs).forEach(function (k) { node.setAttribute(k, attrs[k]); });
-    return node;
-  }
-
-  function drawMap(svg, id, p) {
-    var map = state.map;
-    svg.innerHTML = '';
-    // An <svg> has no .hidden of its own: the attribute is what CSS sees.
-    if (!map || !p.spot) { svg.setAttribute('hidden', ''); return; }
-    var Y = 0.7;   // the map is drawn 100 × 70
-    svg.appendChild(svgEl('rect', { x: 0, y: 0, width: 100, height: 70, class: 'map__water' }));
-    // The mainland west of the Gotham River, and Gotham County to the north-west.
-    svg.appendChild(svgEl('path', { d: 'M0 0 H24 V' + (26 * Y) + ' H19 V70 H0 Z', class: 'map__land' }));
-    svg.appendChild(svgEl('rect', { x: 86, y: 50 * Y, width: 14, height: 18 * Y, class: 'map__land' }));
-    (map.islands || []).forEach(function (isle) {
-      svg.appendChild(svgEl('rect', { x: isle.x, y: isle.y * Y, width: isle.w, height: isle.h * Y,
-                                      rx: 2.5, class: 'map__island' }));
-      var label = svgEl('text', { x: isle.x + 1.8, y: isle.y * Y + 3.6, class: 'map__label' });
-      label.textContent = isle.name.toUpperCase();
-      svg.appendChild(label);
-    });
-    ['Arkham Asylum', 'The Narrows', 'Tricorner', 'Blackgate'].forEach(function (name) {
-      var place = (map.places || []).filter(function (q) { return q.name === name; })[0];
-      if (place) svg.appendChild(svgEl('circle', { cx: place.x, cy: place.y * Y, r: 2.6, class: 'map__island' }));
-    });
-    (map.regions || []).forEach(function (region) {
-      svg.appendChild(svgEl('rect', { x: region.x - 16, y: 0.5, width: 27, height: 11, rx: 2, class: 'map__island' }));
-      var label = svgEl('text', { x: region.x - 14.5, y: 8.8, class: 'map__label' });
-      label.textContent = region.name.toUpperCase();
-      svg.appendChild(label);
-    });
-    // Whoever's with them, then them.
-    (p['with'] || []).forEach(function (cid) {
-      var other = state.contacts[cid];
-      var spot = other && (other.presence || {}).spot;
-      if (spot) svg.appendChild(svgEl('circle', { cx: spot.x, cy: spot.y * Y, r: 1.6, class: 'map__friend',
-                                                  style: 'fill:' + other.accent }));
-    });
-    var accent = state.contacts[id].accent;
-    svg.appendChild(svgEl('circle', { cx: p.spot.x, cy: p.spot.y * Y, r: 4, class: 'map__ping', style: 'stroke:' + accent }));
-    svg.appendChild(svgEl('circle', { cx: p.spot.x, cy: p.spot.y * Y, r: 1.9, style: 'fill:' + accent }));
-    svg.removeAttribute('hidden');
-  }
 
   function sendMessage(e) {
     e.preventDefault();
@@ -1228,6 +1180,7 @@
     if (!contact) return;
     contact.presence = event.presence;
     renderDirectory();
+    if (window.GothamMap) GothamMap.update();
     if (state.messagesWith === event.speaker) {
       el['messages-role'].textContent = presenceLabel(contact);
       el['messages-role'].dataset.presence = event.presence.status;
@@ -2410,7 +2363,11 @@
 
     window.addEventListener('keydown', function (e) {
       if (document.documentElement.dataset.phase !== 'live') return;
-      if (e.key === 'Escape') { interruptHim(); return; }
+      if (e.key === 'Escape') {
+        if (window.GothamMap && GothamMap.isOpen()) { GothamMap.close(); return; }
+        interruptHim();
+        return;
+      }
       if (!PTT_CODES[e.code] || state.spaceDown) return;
       // Never while typing — the composer, a text, the personnel file — or
       // Space in a message opened the mic and cut the contact off.
@@ -2547,6 +2504,26 @@
 
   /* --- session ------------------------------------------------------------ */
 
+  /* The map of Gotham (gothammap.js), in the console's hands: its people are
+     our contacts, its portraits ours, its Message and Call ours. */
+  function wireMap() {
+    if (!window.GothamMap || !state.map) return;
+    GothamMap.init({
+      root: $('map-view'),
+      data: state.map,
+      contacts: function () { return state.contacts; },
+      order: function () { return state.order; },
+      portrait: function (node, c) { portraitStyle(node, c, 'center 22%'); },
+      label: presenceLabel,
+      message: function (id) { GothamMap.close(); openMessages(id); },
+      call: function (id) { GothamMap.close(); placeCall(id); },
+      toggled: function (open) { $('map-open').classList.toggle('is-on', open); }
+    });
+    $('map-open').addEventListener('click', function () {
+      if (GothamMap.isOpen()) GothamMap.close(); else GothamMap.open();
+    });
+  }
+
   function loadSession() {
     return fetch('/api/session').then(function (r) { return r.json(); }).then(function (info) {
       state.map = info.map || null;
@@ -2562,6 +2539,7 @@
       updateInbox();
       renderDirectory();
       loadGroups();
+      wireMap();
       return info;
     });
   }

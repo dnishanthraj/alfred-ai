@@ -1817,6 +1817,54 @@ async def session_info():
     })
 
 
+def _pins_path():
+    return paths.DATA_DIR / "_pins.json"
+
+
+def _load_pins():
+    try:
+        return json.loads(read_text(_pins_path()) or "[]")
+    except ValueError:
+        return []
+
+
+@app.get("/api/map/pins")
+async def map_pins():
+    """His own pins on the map."""
+    return JSONResponse({"pins": _load_pins()})
+
+
+@app.post("/api/map/pins")
+async def save_pin(request: Request):
+    """Drop a pin, or rename or move one he dropped."""
+    body = await request.json()
+    pins = _load_pins()
+    try:
+        x, y = float(body.get("x")), float(body.get("y"))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "where?"}, status_code=400)
+    pin = {"id": str(body.get("id") or uuid.uuid4().hex[:10]), "label": str(body.get("label") or "Pin")[:40],
+           "x": max(-20.0, min(120.0, x)), "y": max(-20.0, min(120.0, y)), "at": time.time()}
+    pins = [p for p in pins if p["id"] != pin["id"]] + [pin]
+    atomic_write(_pins_path(), json.dumps(pins[-200:]))
+    return JSONResponse({"pin": pin})
+
+
+@app.delete("/api/map/pins/{pin_id}")
+async def delete_pin(pin_id: str):
+    atomic_write(_pins_path(), json.dumps([p for p in _load_pins() if p["id"] != pin_id]))
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/map/trail/{contact_id}")
+async def map_trail(contact_id: str, hours: float = 2.0):
+    """Where someone has been lately, for the map — nothing for those who don't share."""
+    contact = console.directory.get(contact_id)
+    if contact is None or not contact.shares_location:
+        return JSONResponse({"trail": []})
+    return JSONResponse({"trail": presence.of(contact).trail(hours=max(0.25, min(hours, 12)))})
+
+
 @app.post("/api/unlock")
 async def unlock(request: Request):
     """

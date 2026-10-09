@@ -266,7 +266,7 @@ class Presence:
         """
         t = t or time.time()
         activity = self._state.get("activity")
-        if activity and activity.get("until", 0) > t:
+        if activity and activity.get("since", 0) <= t < activity.get("until", 0):
             if places.is_patrol(activity.get("doing")) and places.on_beat(self.contact, t):
                 return places.on_beat(self.contact, t), []
             if activity.get("where"):
@@ -283,6 +283,20 @@ class Presence:
         if block.get("where"):
             return block["where"], company
         return getattr(self.contact, "home", "") or "", company
+
+    def trail(self, hours=2.0, step=300, t=None):
+        """
+        Where they've been over the last few hours, oldest first: one point per
+        place, with when they got there — the path the map draws behind them.
+        """
+        t = t or time.time()
+        points = []
+        for at in range(int(t - hours * 3600), int(t) + 1, step):
+            where, _ = self.whereabouts(at)
+            spot = places.resolve(where)
+            if spot and (not points or points[-1]["where"] != where):
+                points.append({"at": at, "where": where, **spot})
+        return points
 
     def spot(self, t=None):
         """Their dot on the map, or None if where they are isn't on it."""

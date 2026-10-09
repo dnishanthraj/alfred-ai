@@ -286,8 +286,11 @@ none in your quiet hours, none from someone already waiting on you — so it rea
 as people rather than notifications.
 
 Hover a portrait for their status line, what they're doing and — for those who
-share it — where they are, who with, and their dot on a small map of Gotham
-(`wayne/engine/gotham.json`, `places.py`): their plan's place, a spot on their
+share it — where they are and who with. The map button opens Gotham itself
+(`web/js/gothammap.js`, from `wayne/engine/gotham.json`): canon geography,
+fifty-odd districts and landmarks, everyone's portrait moving live, their recent
+trail, search, layers and pins of your own. Where someone is comes from what
+they're doing (`wayne/engine/places.py`): their plan's place, a spot on their
 beat while they patrol, or home. Jason, Selina and Randy don't share.
 
 ### Lives of their own

@@ -101,14 +101,24 @@ A full review of the code turned up, among others:
   asked something factual gets the answer found quietly, handed to them as
   what they might know — used only if someone like them would, never as "let
   me check". Alfred and Lucius at a computer still say they're looking.
-- **Live whereabouts on a map of Gotham.** Hover a portrait: where they are,
-  who they're with, and a small map of canon Gotham — the three islands, the
-  outer ones, the Manor in Gotham County, Blüdhaven up the coast — with their
-  dot on it. It comes from what they're actually doing: their plan's place, a
-  spot on their beat that moves every quarter hour while they patrol, wherever
-  a conversation sent them, or home. Plans are written knowing what the rest of
-  the family planned, so a dinner is on both sides. Jason, Selina and Randy
-  don't share.
+- **The map of Gotham, live.** The map button in the top bar opens the whole
+  city over the stage: canon Gotham after Eliot R. Brown's map — three islands
+  split by the Sprang and Finger rivers, the mainland and Gotham County, Arkham,
+  the Narrows, Tricorner, Blackgate, Burnside, and Blüdhaven up the coast with
+  its own neighbourhoods — drawn as vector coastlines, parks, avenues, bridges
+  and a street grid in the console's palette, with fifty-odd districts and
+  landmarks (the Monarch Theatre, GCPD Central, the Clocktower, the Iceberg
+  Lounge...). Scroll or pinch to zoom, drag to pan; hover anything for its name.
+  Everyone who shares where they are is their portrait in their own colour,
+  moving as they go: their plan's place, a spot on their beat that changes
+  every quarter hour on patrol, wherever a conversation sent them, or home.
+  Click someone for where they are and who's with them, the trail of where
+  they've been, and Message, Call or Follow; search flies to a place or a
+  person; layers toggle; right-click (or the pin tool) drops a pin of your own,
+  named, movable, kept. A name clicked in the directory while it's open finds
+  them on it. Plans are written knowing what the rest of the family planned, so
+  a dinner is on both sides. Jason, Selina and Randy don't share. (Leaflet,
+  vendored, does the panning.) The hover card keeps just the place line.
 - **Tapbacks in DMs too** — double-click their message; and they react to yours,
   with a text or instead of one.
 - **Left on read, as people would.** A question you never answered is chased

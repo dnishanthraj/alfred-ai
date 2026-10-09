@@ -1394,14 +1394,157 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .hovercard__where::before { content: ""; width: 8px; height: 8px; flex: none; border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg); border: 1.5px solid var(--contact-accent, var(--primary)); margin: 0 2px 2px 1px; }
 
-/* The little map of Gotham on a status card. */
-.hovercard__map { width: 216px; height: 151px; margin-top: 6px; display: block; border: 1px solid var(--hairline); }
-.hovercard__map[hidden] { display: none; }
-.map__water { fill: var(--bg, #07090c); }
-.map__land { fill: var(--surface-2); opacity: 0.55; }
-.map__island { fill: var(--surface-2); stroke: var(--hairline-2); stroke-width: 0.3; }
-.map__label { font-family: var(--mono); font-size: 2.8px; letter-spacing: 0.3px; fill: var(--text-faint); }
-.map__friend { opacity: 0.9; }
-.map__ping { fill: none; stroke-width: 0.5; transform-box: fill-box; transform-origin: center;
-  animation: map-ping 2.2s ease-out infinite; }
-@keyframes map-ping { from { transform: scale(0.5); opacity: 0.9; } to { transform: scale(1.6); opacity: 0; } }
+
+/* ==========================================================================
+   The map of Gotham — over the stage, in the console's own palette.
+   ========================================================================== */
+.gm { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;
+  background: var(--void); animation: toast-in 0.18s var(--ease) both; }
+.gm[hidden] { display: none; }
+.gm__head { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  border-bottom: 1px solid var(--hairline); background: var(--surface); flex-wrap: wrap; }
+.gm__title { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px;
+  letter-spacing: 0.28em; text-transform: uppercase; color: var(--primary); }
+.gm__live { width: 6px; height: 6px; border-radius: 50%; background: var(--good);
+  box-shadow: 0 0 0 0 rgba(88, 192, 138, 0.6); animation: gm-live 2s ease-out infinite; }
+@keyframes gm-live { to { box-shadow: 0 0 0 7px rgba(88, 192, 138, 0); } }
+.gm-search { position: relative; flex: 1 1 220px; max-width: 340px; }
+.gm-search__input { width: 100%; background: var(--surface-2); border: 1px solid var(--hairline-2);
+  border-radius: 16px; color: var(--text); font: inherit; font-size: 13px; padding: 6px 12px; outline: none; }
+.gm-search__input:focus { border-color: var(--primary-dim); }
+.gm-search__list { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 1000; margin: 0;
+  padding: 4px; list-style: none; background: var(--raised); border: 1px solid var(--hairline-2);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5); }
+.gm-search__list[hidden] { display: none; }
+.gm-search__item { display: flex; justify-content: space-between; gap: 12px; padding: 7px 9px; cursor: pointer;
+  border-left: 2px solid transparent; font-size: 13px; color: var(--text-dim); }
+.gm-search__item small { font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--text-faint); align-self: center; text-align: right; }
+.gm-search__item.is-on, .gm-search__item:hover { background: var(--hairline); color: var(--text);
+  border-left-color: var(--primary); }
+.gm__chips { display: flex; gap: 4px; }
+.gm-chip { background: transparent; border: 1px solid var(--hairline-2); color: var(--text-faint);
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+  padding: 5px 9px; cursor: pointer; transition: color 0.2s var(--ease), border-color 0.2s var(--ease); }
+.gm-chip.is-on { color: var(--primary); border-color: var(--primary-dim); background: rgba(79, 168, 224, 0.07); }
+.gm__tools { display: flex; gap: 4px; margin-left: auto; }
+.gm-tool { width: 30px; height: 30px; padding: 7px; background: transparent; border: 1px solid var(--hairline-2);
+  color: var(--text-dim); cursor: pointer; transition: color 0.2s var(--ease), border-color 0.2s var(--ease); }
+.gm-tool svg { width: 100%; height: 100%; display: block; }
+.gm-tool:hover, .gm-tool.is-on { color: var(--primary); border-color: var(--primary-dim); }
+.gm__body { position: relative; flex: 1; min-height: 0; display: flex; }
+.gm-canvas { flex: 1; min-width: 0; background: var(--void); }
+.gm.is-dropping .gm-canvas { cursor: crosshair; }
+
+/* The city itself. */
+.gm .leaflet-container { background: #04070b; font-family: var(--sans); outline: none; }
+.gm-land { fill: #111c2a; fill-opacity: 1; stroke: rgba(120, 170, 220, 0.34); stroke-width: 1.1; }
+.gm-land--main { fill: #0d1621; }
+.gm-land:hover { fill: #142133; }
+.gm-park { fill: rgba(88, 192, 138, 0.10); fill-opacity: 1; stroke: rgba(88, 192, 138, 0.28); stroke-width: 0.8; }
+.gm-streets { pointer-events: none; }
+.gm-street { fill: none; stroke: rgba(140, 180, 220, 0.075); stroke-width: 0.6; vector-effect: non-scaling-stroke; }
+.gm[data-zoom="far"] .gm-street { stroke: rgba(140, 180, 220, 0.035); }
+.gm-avenue { stroke: rgba(140, 180, 220, 0.22); fill: none; }
+.gm-avenue:hover { stroke: var(--primary); }
+.gm-bridge { stroke: rgba(185, 199, 212, 0.45); fill: none; stroke-linecap: round; }
+.gm-bridge:hover { stroke: var(--primary-lit); }
+.gm-rail { stroke: rgba(185, 199, 212, 0.28); stroke-dasharray: 6 5; fill: none; }
+
+.gm-label { pointer-events: none; white-space: nowrap; }
+.gm-in { position: absolute; left: 0; top: 0; white-space: nowrap; }
+.gm-label .gm-in { transform: translate(-50%, -50%); }
+.gm-label--area { font-family: var(--mono); font-size: 11px; letter-spacing: 0.34em; text-transform: uppercase;
+  color: rgba(194, 204, 214, 0.42); }
+.gm-label--water span { display: inline-block; font-family: Georgia, serif; font-style: italic; font-size: 12px;
+  letter-spacing: 0.18em; color: rgba(79, 168, 224, 0.38); }
+.gm-place { white-space: nowrap; }
+.gm-place b { font-weight: 400; font-size: 11px; color: var(--text-dim); text-shadow: 0 0 6px #060a10, 0 0 2px #060a10; }
+.gm-place--landmark .gm-in { display: flex; align-items: center; gap: 5px; transform: translate(-4px, -50%); }
+.gm-place--landmark i { width: 7px; height: 7px; flex: none; transform: rotate(45deg); background: #060a10;
+  border: 1.2px solid rgba(143, 211, 255, 0.55); }
+.gm-place--landmark:hover i { background: var(--primary); }
+.gm-place--landmark:hover b { color: var(--text); }
+.gm-place--district .gm-in { transform: translate(-50%, -50%); }
+.gm-place--district b { font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--text-faint); }
+.gm[data-zoom="far"] .gm-place b, .gm[data-zoom="far"] .gm-place--district { display: none; }
+.gm[data-zoom="mid"] .gm-place--landmark b { display: none; }
+.gm[data-zoom="mid"] .gm-place--landmark:hover b { display: inline; }
+
+/* People, in their own colour. */
+.gm-person { position: relative; }
+.gm-person.is-moving { transition: transform 1.2s var(--ease); }
+.gm-person__face { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--accent);
+  background-color: var(--surface-2); background-size: cover; background-repeat: no-repeat;
+  box-shadow: 0 0 0 3px #060a10, 0 4px 14px rgba(0, 0, 0, 0.6); cursor: pointer; }
+.gm-person__ring { position: absolute; inset: -6px; border-radius: 50%; border: 1.5px solid var(--accent);
+  opacity: 0; animation: gm-ping 2.6s ease-out infinite; }
+.gm-person[data-status="offline"] .gm-person__ring, .gm-person[data-status="idle"] .gm-person__ring { animation: none; }
+.gm-person[data-status="offline"] .gm-person__face { filter: grayscale(0.7) brightness(0.7); }
+@keyframes gm-ping { from { transform: scale(0.8); opacity: 0.8; } to { transform: scale(1.7); opacity: 0; } }
+.gm-person__name { position: absolute; top: calc(100% + 5px); left: 50%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--accent); white-space: nowrap; text-shadow: 0 0 6px #060a10, 0 0 3px #060a10; }
+.gm-person.is-selected .gm-person__face { box-shadow: 0 0 0 3px #060a10, 0 0 0 5px var(--accent), 0 4px 18px rgba(0, 0, 0, 0.7); }
+.gm-trail { fill: none; opacity: 0.75; }
+.gm-trail__stop { fill: #060a10; fill-opacity: 1; }
+.gm-flash { fill: none; stroke: var(--primary-lit); animation: gm-flash 1.8s ease-out both; }
+@keyframes gm-flash { from { stroke-opacity: 1; } to { stroke-opacity: 0; } }
+
+/* His pins. */
+.gm-pin .gm-in { display: flex; align-items: center; gap: 5px; transform: translate(-6px, -100%); }
+.gm-pin i { width: 12px; height: 12px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  background: var(--operator); border: 2px solid #060a10; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); }
+.gm-pin b { font-weight: 500; font-size: 11px; color: var(--operator); text-shadow: 0 0 6px #060a10, 0 0 3px #060a10; }
+.gm-popup .leaflet-popup-content-wrapper { background: var(--raised); color: var(--text); border-radius: 0;
+  border: 1px solid var(--hairline-2); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55); }
+.gm-popup .leaflet-popup-content { margin: 10px; }
+.gm-popup .leaflet-popup-tip { background: var(--raised); border: 1px solid var(--hairline-2); }
+.gm-pinform__input { width: 180px; background: var(--surface-2); border: 1px solid var(--hairline-2);
+  color: var(--text); font: inherit; font-size: 13px; padding: 6px 8px; outline: none; }
+.gm-pinform__input:focus { border-color: var(--primary-dim); }
+.gm-pinform__actions { display: flex; justify-content: space-between; gap: 6px; margin-top: 8px; }
+.gm-btn { background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim);
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+  padding: 6px 10px; cursor: pointer; transition: color 0.2s var(--ease), border-color 0.2s var(--ease); }
+.gm-btn:hover { color: var(--text); border-color: var(--text-faint); }
+.gm-btn--go, .gm-btn.is-on { color: var(--accent, var(--primary)); border-color: var(--accent, var(--primary-dim)); }
+
+/* Who's where, at the side; the one you picked, in a card. */
+.gm-side { width: 210px; flex: none; border-left: 1px solid var(--hairline); background: var(--surface);
+  overflow-y: auto; padding: 12px 0; }
+.gm-side__label { margin: 0 14px 8px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--text-faint); }
+.gm-roster { list-style: none; margin: 0; padding: 0; }
+.gm-roster__item { display: flex; align-items: center; gap: 10px; padding: 7px 14px; cursor: pointer;
+  border-left: 2px solid transparent; }
+.gm-roster__item:hover, .gm-roster__item.is-on { background: var(--hairline); border-left-color: var(--accent); }
+.gm-roster__item.is-hidden { cursor: default; opacity: 0.45; }
+.gm-roster__item.is-hidden:hover { background: none; border-left-color: transparent; }
+.gm-roster__face { width: 26px; height: 26px; flex: none; border-radius: 50%; border: 1px solid var(--accent);
+  background-color: var(--surface-2); background-size: cover; background-repeat: no-repeat; }
+.gm-roster__text { display: flex; flex-direction: column; min-width: 0; }
+.gm-roster__text b { font-weight: 400; font-size: 13px; color: var(--text); }
+.gm-roster__text small { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gm-card { position: absolute; left: 14px; bottom: 14px; z-index: 900; width: 290px; padding: 12px 14px;
+  background: var(--raised); border: 1px solid var(--hairline-2); border-left: 2px solid var(--accent);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); animation: toast-in 0.16s var(--ease) both; }
+.gm-card[hidden] { display: none; }
+.gm-card__x { position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; padding: 3px; background: none;
+  border: 0; color: var(--text-faint); cursor: pointer; }
+.gm-card__x svg { width: 100%; height: 100%; display: block; }
+.gm-card__x:hover { color: var(--text); }
+.gm-card__top { display: flex; gap: 10px; align-items: center; }
+.gm-card__face { width: 38px; height: 38px; flex: none; border-radius: 50%; border: 1.5px solid var(--accent);
+  background-color: var(--surface-2); background-size: cover; background-repeat: no-repeat; }
+.gm-card__name { margin: 0; font-size: 14px; color: var(--text); }
+.gm-card__status { margin: 2px 0 0; font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--text-dim); }
+.gm-card__where { margin: 10px 0 0; font-size: 12px; color: var(--text-dim); display: flex; gap: 6px; align-items: center; }
+.gm-card__where::before { content: ""; width: 8px; height: 8px; flex: none; border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg); border: 1.5px solid var(--accent); }
+.gm-card__actions { display: flex; gap: 6px; margin-top: 12px; }
+@media (max-width: 820px) { .gm-side { display: none; } .gm__chips { order: 5; } }
+
+#map-open.is-on { color: var(--primary); }

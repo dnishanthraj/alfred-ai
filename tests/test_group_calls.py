@@ -303,3 +303,17 @@ def test_a_tapback_in_a_dm_lands_on_the_message_and_can_be_taken_back(private_da
     assert log.react(mine["id"], "them", "👍")["reactions"] == {"them": "👍"}
     log.react(mine["id"], "them", None)
     assert log.page()[-1]["reactions"] == {}
+
+
+def test_the_map_traces_where_a_patrol_has_been(private_data):
+    from wayne.engine import places
+    tim = SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake", shares_status=True,
+                          shares_location=True, home="Wayne Manor", texting_pace={},
+                          beat=("Diamond District", "Gotham Docks", "Old Gotham"),
+                          routine=({"from": 0, "to": 24, "doing": "on patrol", "status": "online"},))
+    trail = presence.of(tim).trail(hours=3)
+    assert len(trail) >= 2
+    assert all(p["name"] in tim.beat for p in trail)
+    assert all(a["where"] != b["where"] for a, b in zip(trail, trail[1:], strict=False))
+    assert places.resolve("Waterloo Docks, Blüdhaven")["area"] == "Blüdhaven"
+    assert places.resolve("the docks")["name"] == "Gotham Docks"     # Gotham's, without Blüdhaven named

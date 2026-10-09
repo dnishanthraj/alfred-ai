@@ -30,6 +30,20 @@ def _jitter(seed, spread):
     return (digest[0] / 255 - 0.5) * 2 * spread, (digest[1] / 255 - 0.5) * 2 * spread
 
 
+def _match(places, lowered, by_name_only=False):
+    best, length = None, 0
+    for place in places:
+        names = [place["name"].lower()] + ([] if by_name_only else place.get("match", []))
+        for name in names:
+            if re.search(rf"(?<!\w){re.escape(name.strip())}(?!\w)", lowered) and len(name) > length:
+                best, length = place, len(name)
+    return best
+
+
+def _spot(place):
+    return {"name": place["name"], "area": place["area"], "x": place["x"], "y": place["y"]}
+
+
 def resolve(text):
     """
     A spot for a place as people write it — "Little Italy, Blüdhaven", "the
@@ -39,25 +53,26 @@ def resolve(text):
     if not lowered.strip():
         return None
     data = gazetteer()
+    regions = {r["name"] for r in data.get("regions", [])}
     # A city of its own first: Blüdhaven's waterfront is not Gotham's docks.
     for region in data.get("regions", []):
         if any(m in lowered for m in region["match"]):
+            inside = _match([p for p in data["places"] if p["area"] == region["name"]], lowered)
+            if inside:
+                return _spot(inside)
             dx, dy = _jitter(lowered, region.get("spread", 4))
             return {"name": region["name"], "area": region["name"],
                     "x": round(region["x"] + dx, 1), "y": round(region["y"] + dy, 1)}
-    best, length = None, 0
-    for place in data["places"]:
-        for name in [place["name"].lower(), *place.get("match", [])]:
-            if re.search(rf"(?<!\w){re.escape(name)}(?!\w)", lowered) and len(name) > length:
-                best, length = place, len(name)
+    best = (_match([p for p in data["places"] if p["area"] not in regions], lowered)
+            or _match([p for p in data["places"] if p["area"] in regions], lowered, by_name_only=True))
     if best:
-        return {"name": best["name"], "area": best["area"], "x": best["x"], "y": best["y"]}
-    for island in data.get("islands", []):
-        if re.search(rf"\b{island['name'].lower()}\b", lowered):
-            dx, dy = _jitter(lowered, 3)
-            return {"name": island["name"], "area": island["name"],
-                    "x": round(island["x"] + island["w"] / 2 + dx, 1),
-                    "y": round(island["y"] + island["h"] / 2 + dy, 1)}
+        return _spot(best)
+    for land in data.get("land", []):
+        if re.search(rf"\b{re.escape(land['name'].lower())}\b", lowered):
+            xs, ys = zip(*land["coast"], strict=False)
+            dx, dy = _jitter(lowered, 2.5)
+            return {"name": land["name"], "area": land["name"],
+                    "x": round(sum(xs) / len(xs) + dx, 1), "y": round(sum(ys) / len(ys) + dy, 1)}
     return None
 
 
