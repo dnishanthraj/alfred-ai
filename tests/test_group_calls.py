@@ -359,3 +359,48 @@ def test_the_scanner_never_calls_from_inside_blackgate():
     reports = [r for t in range(0, 48 * 3600, 3 * 3600) for r in incidents.at(_time.time() - t)]
     assert reports
     assert not any(r["place"] in ("Blackgate Penitentiary", "Arkham Asylum", "Statue of Justice") for r in reports)
+
+
+# --- cases ------------------------------------------------------------------------------
+
+
+REPORT = {"id": "r1", "kind": "Armed robbery", "severity": 3, "place": "GCPD Central", "area": "Diamond District",
+          "x": 54.4, "y": 102.4, "dispatch": "Two masked men, shots fired."}
+
+
+def test_a_case_is_assigned_reaches_the_scene_and_closes_with_its_ending(private_data, monkeypatch):
+    from wayne.engine import cases
+    case = cases.assign(REPORT, "robin", by="him")
+    assert cases.active("robin")["id"] == "r1" and case["status"] == "assigned"
+    assert "armed robbery at GCPD Central" in cases.brief("robin") and "He put you on it" in cases.brief("robin")
+    real = time.time
+    monkeypatch.setattr(cases.time, "time", lambda: real() + 10 * 60)
+    cases.advance()
+    assert cases.active("robin")["status"] == "on scene"
+    monkeypatch.setattr(cases.time, "time", lambda: real() + 3 * 3600)
+    assert [c["id"] for c in cases.advance()] == ["r1"]          # run its course
+    cases.close("r1", "Both in custody; one needed a hospital.")
+    assert cases.active("robin") is None
+    assert "Both in custody" in cases.brief("robin")             # still on their mind tonight
+    assert "Tim" in cases.board_note({"robin": "Tim"})
+
+
+def test_saying_its_handled_closes_the_case(private_data):
+    from wayne.engine import cases, initiative
+    cases.assign(REPORT, "robin", by="self")
+    tim = SimpleNamespace(id="robin", name="Tim", initiative={}, texting_pace={}, routine=(),
+                          shares_status=True, home="")
+    initiative.apply(SimpleNamespace(contact=tim), {"case_closed": "caught them at the docks"})
+    assert cases.active("robin") is None
+    assert cases.recent("robin")["outcome"] == "caught them at the docks"
+
+
+def test_only_the_field_takes_cases():
+    from wayne.engine import cases
+    assert "alfred" not in cases.FIELD and "lucius" not in cases.FIELD and "catwoman" not in cases.FIELD
+    assert {"nightwing", "robin", "batgirl", "orphan"} <= set(cases.FIELD)
+
+
+def test_taking_a_report_is_heard_in_what_they_say():
+    from wayne.engine import session
+    assert session._TAKE.search("On it. [take: Diamond District]").group(1) == "Diamond District"

@@ -139,7 +139,7 @@ their own memory on disk.
    | `WAYNE_LOCATION` | No | Your town or city, for a live weather feed |
    | `WAYNE_NEWS_FEED` | No | An RSS feed URL for headlines he has glanced at |
    | `WAYNE_CALENDAR` | No | `1` to let him see today's and tomorrow's events in macOS Calendar |
-   | `WAYNE_INITIATIVE_PER_DAY` | No | Most unprompted texts a day, across everyone (default: `6`; `0` turns them off — promises are still kept) |
+   | `WAYNE_INITIATIVE_PER_DAY` | No | Most unprompted texts a day, across everyone (default: `12`; `0` turns them off — promises are still kept) |
    | `WAYNE_QUIET_HOURS` | No | Hours when nobody texts out of the blue (default: `1-8`) |
    | `WAYNE_DATA_DIR` | No | Where memory lives (default: `data/`) — point it at a sandbox to experiment |
 

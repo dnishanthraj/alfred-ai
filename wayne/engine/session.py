@@ -215,6 +215,8 @@ _GROUP_TASK = re.compile(r"\[\s*group\s*:\s*([^|\]]+)\|([^\]]+)\]", re.I)
 
 # A text they've chosen not to answer yet, or at all.
 _REPLY_CHOICE = re.compile(r"\[\s*(later|no reply)\s*\]", re.I)
+# Taking a report off the scanner: "[take: Diamond District]".
+_TAKE = re.compile(r"\[\s*take\s*:\s*([^\]]+)\]", re.I)
 # A tapback on his text, with or instead of a reply.
 _TEXT_REACT = re.compile(r"\[\s*react\s*:\s*([^\]]{1,8})\]", re.I)
 
@@ -417,6 +419,12 @@ class ContactSession:
                 buffer = _GROUP_TASK.sub("", buffer)
             elif "[group" in buffer.lower() and "]" not in buffer[buffer.lower().rfind("[group"):]:
                 continue        # half a marker so far; wait for the rest
+            taking = _TAKE.search(buffer)
+            if taking:
+                self._take_case = taking.group(1).strip()
+                buffer = _TAKE.sub("", buffer)
+            elif "[take" in buffer.lower() and "]" not in buffer[buffer.lower().rfind("[take"):]:
+                continue        # half a marker so far
             tapback = _TEXT_REACT.search(buffer)
             if tapback:
                 self._text_react = tapback.group(1).strip()
@@ -961,6 +969,20 @@ class ContactSession:
         text = _SEARCH_MARKER.sub("", text)
         return _HANG_UP.sub("", text).strip()
 
+    def case_outcome(self, case):
+        """How a case ended, in a line of their own — for the board, and for him."""
+        instruction = (
+            f"You've just finished working a case: {case['kind'].lower()} at {case['place']}"
+            + (f" (dispatch: \"{case['dispatch']}\")" if case.get("dispatch") else "")
+            + ". In one short line, the way you'd put it in your own notes, how it ended — who, what you "
+            "found, what you did. Plausible for Gotham and for you. Reply with only the line.")
+        payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
+        try:
+            text = self._chat_once(payload, temperature=0.85, num_predict=70)
+        except Exception:
+            return ""
+        return self._plain(text).strip().strip('"')
+
     def draft(self, instruction):
         """
         What they'd say to this, written but not said — for two people opening
@@ -1174,6 +1196,15 @@ class ContactSession:
         elif why in ("declined", "missed"):
             ask = (f"You just rang him and he {'declined the call' if why == 'declined' else 'did not pick up'}. "
                    f"You were calling about: {about}. Text him instead, the way you would.")
+        elif why == "case_assigned":
+            ask = (f"He's just put you on a case: {about}. Text him back the way you would — taking it, "
+                   "asking something, a word. No briefing, no numbered points, no lists.")
+        elif why == "case_taken":
+            ask = (f"You've just taken a case yourself: {about}. Tell him, briefly, your way — or if you "
+                   "wouldn't bother him with it, reply with exactly SKIP.")
+        elif why == "case_closed":
+            ask = (f"You've just wrapped up a case: {about}. Let him know how it went, your way — a line or "
+                   "two, not a report. If you wouldn't bother, reply with exactly SKIP.")
         elif why == "worry":
             ask = (f"Since you last spoke, something's stayed with you: {about}. Check in on him — "
                    "the way you would, which might be a word, a joke, or something that never says "
@@ -1211,7 +1242,7 @@ class ContactSession:
         # A text, not a letter: told "a line or two", a model writes a paragraph.
         lines = [guards.cap_length(line, 3) for line in text.splitlines() if line.strip()][:4]
         text = "\n".join(lines)
-        if why in ("second_thought", "chase", "worry") and re.match(r"\W*skip\b", text, re.I):
+        if why in ("second_thought", "chase", "worry", "case_taken", "case_closed") and re.match(r"\W*skip\b", text, re.I):
             return ""
         if text:
             self.history.record_exchange(REACH_MARKER, text, via="text")
@@ -1301,6 +1332,7 @@ class ContactSession:
         texting = via == "text"
         self._reply_choice, self._deferred, self._group_task = None, None, None
         self._text_react = None
+        self._take_case = None
         length, self._turn_cap = None, None
         if via is None:
             # A call: this turn's length, from their own spread (see
@@ -1385,6 +1417,9 @@ class ContactSession:
         tracker = self._tracker(prompt)
         if tracker:
             awareness.append(tracker)
+        work = self._casework(prompt)
+        if work:
+            awareness.append(work)
         known = ""
         if (self._can_look() and is_factual_lookup(prompt) and not covered
                 and not placeless and not follow_up):
@@ -1503,12 +1538,42 @@ class ContactSession:
             with_ = [book.get(c).name for c in company if book.get(c)]
             lines.append(f"{other.name}: {state['status']}" + (f", {state['doing']}" if state["doing"] else "")
                          + (f" — {where}" if where else "") + (f", with {' and '.join(with_)}" if with_ else ""))
-        from . import incidents
+        from . import cases, incidents
         scanner = incidents.scanner_note()
+        board = cases.board_note({c.id: c.name for c in book})
         return ("The family tracker, as you see it on your screens. Answer only what he asked — "
                 "whoever he asked about, the way you would — not a roll call: " + "; ".join(lines)
                 + (f". Not on it: {', '.join(dark)}." if dark else ".")
-                + (f" {scanner}" if scanner else ""))
+                + (f" {scanner}" if scanner else "") + (f" {board}" if board else ""))
+
+    _CRIMEY = re.compile(r"(?i)\b(case|scanner|report|robbery|shooting|shots|body|kidnap|gang|riot|"
+                         r"hostage|take (it|that|this|one)|handle|deal with|check (it|that) out|go to|"
+                         r"head (to|over)|on it|working|crime|call(ed)? in|dispatch)\b")
+
+    def _casework(self, prompt):
+        """
+        For the ones who work scenes: the case they're on (always — it's what
+        they're doing), and when he's talking about trouble, what's open near
+        them that they could take.
+        """
+        from . import cases, incidents
+        if self.contact.id not in cases.FIELD:
+            return ""
+        parts = []
+        brief = cases.brief(self.contact.id)
+        if brief:
+            parts.append(brief)
+        if self._CRIMEY.search(prompt or "") and not cases.active(self.contact.id):
+            taken = {c["id"] for c in cases.board() if c["status"] != "closed"}
+            open_ = [r for r in incidents.at() if r["id"] not in taken and r["status"] != "resolved"
+                     and r["severity"] >= 2][:5]
+            if open_:
+                parts.append("Open on the scanner: " + "; ".join(
+                    f"{r['kind'].lower()} at {r['place']}" + (f" (\"{r['dispatch']}\")" if r.get("dispatch") else "")
+                    for r in open_)
+                    + ". If he asks you to take one — or you'd take it yourself — say so your way and end "
+                    "with [take: the place].")
+        return " ".join(parts)
 
     def _can_look(self):
         """

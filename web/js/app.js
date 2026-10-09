@@ -2096,7 +2096,7 @@
                           'text_reply', 'presence', 'call_incoming', 'call_unanswered',
                           'call_refused', 'group_created', 'group_deleted', 'group_sent',
                           'group_message', 'group_read', 'group_typing', 'group_idle',
-                          'group_updated', 'group_reaction']
+                          'group_updated', 'group_reaction', 'cases', 'scanner']
                           .indexOf(event.type) === -1;
     if (!state.connectedId && conversational) return;
 
@@ -2206,6 +2206,11 @@
 
       case 'party':
         onParty(event);
+        break;
+
+      case 'cases':
+      case 'scanner':
+        if (window.GothamMap) GothamMap.refreshCases();
         break;
 
       case 'picked_up':

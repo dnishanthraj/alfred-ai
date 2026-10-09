@@ -110,6 +110,20 @@ A full review of the code turned up, among others:
   asked something factual gets the answer found quietly, handed to them as
   what they might know — used only if someone like them would, never as "let
   me check". Alfred and Lucius at a computer still say they're looking.
+- **Cases.** Reports off the scanner become cases when you put someone on one —
+  from its card on the map, or by telling them in a call or a text ("take the
+  robbery in the Diamond District") — or when someone on patrol nearby takes it
+  themselves. They head there, it's part of what they know (ask what they're
+  working on), and they may text you that they've got it and how it went. A
+  case closes when they tell you it's handled — the pass after every
+  conversation listens for it — or when it runs its course, with a line of how
+  it ended in their words. The map's side panel has People, Cases and Scanner
+  tabs; Alfred and Barbara see the board. Each report carries a GCPD dispatch
+  written by the model while the console is idle — specific, and as grim as
+  Gotham gets — and moves from reported to responding, contained and resolved;
+  the rare worst carry signatures (laughing gas on the Amusement Mile, toxin in
+  the Narrows, a riddle at the scene). Unprompted texts are more frequent now:
+  twelve a day across everyone by default, at least 22 minutes apart.
 - **The map, deeper.** Terrain — Cherry Hills, Gotham Heights, the Bristol hills,
   a ridge across the mainland — shaded flat and raised in 3D, which is now how
   the map opens: the city as a model on the table, the far distance fading to

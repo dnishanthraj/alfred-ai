@@ -46,7 +46,7 @@ HANG_UP_RELEASE = int(setting("HANG_UP_RELEASE", "300"))
 # How often contacts get in touch unprompted — texts out of nowhere, chasing
 # an unanswered question — at most, across everyone, in a day. Promises ("I'll
 # call you when I'm out") are kept regardless; 0 turns the rest off.
-INITIATIVE_PER_DAY = int(setting("INITIATIVE_PER_DAY", "6"))
+INITIATIVE_PER_DAY = int(setting("INITIATIVE_PER_DAY", "12"))
 
 # Hours (local, "start-end") when nobody texts out of the blue, because the
 # person at the console is presumably asleep. Promises still arrive.

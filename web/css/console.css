@@ -1563,3 +1563,40 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm__head { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
 .gm__chips { flex-wrap: nowrap; }
 .gm-chip { padding: 5px 7px; }
+
+/* The side panel's tabs: People, Cases, Scanner. */
+.gm-side { padding-top: 0; }
+.gm-tabs { display: flex; border-bottom: 1px solid var(--hairline); position: sticky; top: 0; background: var(--surface); z-index: 2; }
+.gm-tab { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; padding: 11px 4px 9px;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-faint);
+  cursor: pointer; }
+.gm-tab.is-on { color: var(--primary); border-bottom-color: var(--primary); }
+.gm-tab__count { display: inline-block; min-width: 14px; padding: 0 4px; margin-left: 3px; border-radius: 7px;
+  background: var(--alert); color: #fff; font-weight: 500; letter-spacing: 0; }
+.gm-tab__count[hidden] { display: none; }
+.gm-roster, .gm-list { padding-top: 8px; }
+.gm-list { list-style: none; margin: 0; }
+.gm-list[hidden], .gm-roster[hidden] { display: none; }
+.gm-list__item { display: flex; align-items: center; gap: 10px; padding: 8px 14px; cursor: pointer;
+  border-left: 2px solid transparent; }
+.gm-list__item:hover { background: var(--hairline); border-left-color: var(--sev); }
+.gm-list__sev { width: 8px; height: 8px; flex: none; transform: rotate(45deg); background: var(--sev);
+  box-shadow: 0 0 6px var(--sev); }
+.gm-list__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.gm-list__text b { font-weight: 400; font-size: 12.5px; color: var(--text); }
+.gm-list__text small { font-size: 10.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gm-list__face { width: 22px; height: 22px; flex: none; border-radius: 50%; border: 1px solid var(--accent);
+  background-color: var(--surface-2); background-size: cover; }
+.gm-list__empty { padding: 14px; font-size: 12px; color: var(--text-faint); }
+/* Putting someone on a report. */
+.gm-info__note.is-plain { font-style: normal; color: var(--text); }
+.gm-info__note.is-plain::before { content: ""; }
+.gm-info__label { margin: 12px 0 6px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--text-faint); }
+.gm-info__assign[hidden] { display: none; }
+.gm-info__people { display: flex; flex-wrap: wrap; gap: 6px; }
+.gm-assign { display: flex; align-items: center; gap: 6px; padding: 3px 9px 3px 3px; border-radius: 14px;
+  background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim); font-size: 11.5px; cursor: pointer; }
+.gm-assign span { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--accent);
+  background-color: var(--surface-2); background-size: cover; }
+.gm-assign:hover, .gm-assign.is-on { color: var(--text); border-color: var(--accent); }

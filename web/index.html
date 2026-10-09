@@ -181,8 +181,14 @@
           </div>
 
           <aside class="gm-side">
-            <p class="gm-side__label">Whereabouts</p>
-            <ul class="gm-roster"></ul>
+            <div class="gm-tabs" role="tablist">
+              <button type="button" class="gm-tab is-on" data-tab="people" role="tab">People</button>
+              <button type="button" class="gm-tab" data-tab="cases" role="tab">Cases <b class="gm-tab__count" hidden></b></button>
+              <button type="button" class="gm-tab" data-tab="scanner" role="tab">Scanner</button>
+            </div>
+            <ul class="gm-roster" data-pane="people"></ul>
+            <ul class="gm-list" data-pane="cases" hidden></ul>
+            <ul class="gm-list" data-pane="scanner" hidden></ul>
           </aside>
           <div class="gm-info" hidden>
             <button type="button" class="gm-card__x gm-info__x" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
@@ -195,6 +201,10 @@
             </div>
             <p class="gm-info__bio"></p>
             <p class="gm-info__note"></p>
+            <div class="gm-info__assign" hidden>
+              <p class="gm-info__label">Put someone on it</p>
+              <div class="gm-info__people"></div>
+            </div>
           </div>
           <div class="gm-legend" aria-hidden="true"><span>Quiet</span><i></i><span>Rough</span></div>
           <div class="gm-card" hidden>

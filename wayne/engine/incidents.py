@@ -11,20 +11,37 @@ Anyone on patrol whose beat covers a report may well be there; Alfred and
 Barbara, who watch the scanner, know what's out there.
 """
 import hashlib
+import json
 import random
+import threading
 import time
 
+from .. import paths
+from ..memory.store import atomic_write, read_text
 from . import places
 
 SLOT = 10 * 60          # new reports are drawn ten minutes at a time
 LASTS = (25, 95)        # minutes a report stays open
 
-# (what was reported, how serious 1–4, how often relative to the rest)
+# (what was reported, how serious 1–4, how often relative to the rest, where it
+# belongs — its signature districts, five times likelier there, rare elsewhere)
 KINDS = [
-    ("Mugging", 1, 9), ("Break-in", 1, 9), ("Vandalism", 1, 6), ("Drug deal", 1, 8),
-    ("Assault", 2, 7), ("Gang activity", 2, 7), ("Smash-and-grab", 2, 5), ("Vehicle pursuit", 2, 4),
-    ("Suspicious package", 2, 3), ("Armed robbery", 3, 5), ("Shots fired", 3, 5), ("Arson", 3, 3),
-    ("Hostage situation", 4, 1), ("Explosion reported", 4, 1),
+    ("Mugging", 1, 9, None), ("Break-in", 1, 9, None), ("Vandalism", 1, 6, None), ("Drug deal", 1, 8, None),
+    ("Assault", 2, 7, None), ("Gang activity", 2, 7, None), ("Smash-and-grab", 2, 5, None),
+    ("Vehicle pursuit", 2, 4, None), ("Suspicious package", 2, 3, None), ("Missing person", 2, 3, None),
+    ("Armed robbery", 3, 5, None), ("Shots fired", 3, 5, None), ("Arson", 3, 3, None),
+    ("Body found", 3, 3, None), ("Kidnapping", 3, 2, None),
+    ("Riot", 3, 1, {"Crime Alley", "The Bowery", "The Narrows"}),
+    ("Mass overdose", 3, 1, {"The Bowery", "Crime Alley", "The Narrows"}),
+    ("Chemical spill", 3, 0.8, {"Upper East Side", "New Town"}),
+    ("Riddle left at a crime scene", 3, 0.8, None),
+    ("Cult gathering", 3, 0.6, {"Old Gotham", "The Narrows", "Tricorner"}),
+    ("Freezing incident", 3, 0.5, {"Diamond District", "Upper East Side", "Fashion District"}),
+    ("Plant overgrowth attack", 3, 0.5, {"Robinson Park", "Coventry", "University District"}),
+    ("Hostage situation", 4, 1, None), ("Explosion reported", 4, 1, None),
+    ("Toxin exposure", 4, 0.6, {"The Narrows", "Crime Alley", "Amusement Mile"}),
+    ("Laughing-gas attack", 4, 0.5, {"Amusement Mile", "Crime Alley", "Otisburg"}),
+    ("Serial killing", 4, 0.3, None),
 ]
 
 
@@ -73,20 +90,93 @@ def at(t=None):
         count = sum(1 for _ in range(4) if r.random() < _rate(start) / 4)
         for i in range(count):
             place, level = r.choices(spots, weights=weights)[0]
-            kind, severity, _ = r.choices(KINDS, weights=[w * (level if s >= 3 else 1)
-                                                          for _, s, w in KINDS])[0]
+            kind, severity, _, home = r.choices(KINDS, weights=[
+                w * (level if s >= 3 else 1) * ((5 if place["area"] in home else 0.3) if home else 1)
+                for _, s, w, home in KINDS])[0]
             began = start + r.uniform(0, SLOT)
             ends = began + r.uniform(*LASTS) * 60 * (1 + 0.3 * (severity - 1))
             if not began <= t < ends:
                 continue
-            open_now.append({
+            report = {
                 "id": f"{slot}-{i}", "kind": kind, "severity": severity,
                 "place": place["name"], "area": place["area"],
                 "x": round(place["x"] + r.uniform(-0.5, 0.5), 2), "y": round(place["y"] + r.uniform(-0.5, 0.5), 2),
-                "at": int(began),
-                "status": "reported" if t - began < 8 * 60 else "units responding",
-            })
+                "at": int(began), "ends": int(ends), "status": _status((t - began) / (ends - began)),
+            }
+            text = dispatches().get(report["id"])
+            if text:
+                report["dispatch"] = text
+            open_now.append(report)
     return sorted(open_now, key=lambda i: -i["at"])
+
+
+def _status(progress):
+    """Where a report has got to: called in, answered, held, over."""
+    if progress < 0.12:
+        return "reported"
+    if progress < 0.62:
+        return "units responding"
+    if progress < 0.9:
+        return "contained"
+    return "resolved"
+
+
+def get(report_id, t=None):
+    return next((r for r in at(t) if r["id"] == report_id), None)
+
+
+# --- the dispatches, written by the model ----------------------------------------------
+
+_lock = threading.Lock()
+
+
+def _dispatch_path():
+    return paths.DATA_DIR / "_dispatch.json"
+
+
+def dispatches():
+    try:
+        return json.loads(read_text(_dispatch_path()) or "{}")
+    except ValueError:
+        return {}
+
+
+def unwritten(t=None):
+    """Open reports with no dispatch yet, the worst first."""
+    written = dispatches()
+    return sorted((r for r in at(t) if r["id"] not in written and r["status"] != "resolved"),
+                  key=lambda r: (-r["severity"], -r["at"]))
+
+
+def write_dispatch(report, model, options):
+    """
+    The call as dispatch put it out: a line or two of radio, specific — what
+    callers saw, how many, what state they're in. Gotham is what it is: the
+    worst of these are said plainly, however grim. Blocking; run when idle.
+    """
+    import ollama
+    hour = time.strftime("%H:%M", time.localtime(report["at"]))
+    instruction = (
+        f"You are GCPD dispatch in Gotham City. At {hour} a call comes in: {report['kind'].lower()}, "
+        f"{report['place']} ({report['area']}), severity {report['severity']} of 4. Write the dispatch as it "
+        "goes out over the radio — one or two terse sentences, in dispatch voice, with the specifics a "
+        "caller would give: what was seen or heard, how many, descriptions, injuries, what's still going "
+        "on. This is Gotham — when it's bad, say it plainly, however grim or strange. Never mention "
+        "Batman or any vigilante. Reply with only the dispatch.")
+    try:
+        reply = ollama.chat(model=model, think=False, options={**options, "temperature": 0.95, "num_predict": 110},
+                            messages=[{"role": "user", "content": instruction}])["message"]["content"]
+    except Exception:
+        return ""
+    text = " ".join(reply.strip().strip('"').split())[:320]
+    if text:
+        with _lock:
+            data = dispatches()
+            data[report["id"]] = text
+            # Only the recent ones: yesterday's calls are no use to anyone.
+            data = dict(list(data.items())[-300:])
+            atomic_write(_dispatch_path(), json.dumps(data, ensure_ascii=False))
+    return text
 
 
 def near(areas, t=None):

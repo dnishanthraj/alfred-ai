@@ -89,7 +89,9 @@ _URGENT = re.compile(r"(?i)\b(help|emergency|hurt|hospital|bleeding|urgent|now|p
 # How often the console's clock ticks: presence, promises, the odd text.
 PULSE_SECONDS = 30
 # Nobody texts out of the blue twice within this long, across everyone.
-INITIATIVE_GAP = 45 * 60
+# The least time between unprompted texts from anyone: often enough to feel
+# like a life going on around him, not so often it's a feed.
+INITIATIVE_GAP = 22 * 60
 # How often someone whose phone is out of reach is looked at again.
 RECHECK_SECONDS = 15
 
@@ -1055,6 +1057,10 @@ class Console(GroupChats):
                 session._deferred = None
                 logging.getLogger("wayne").info("%s answered later", contact.id)
             group_task = getattr(session, "_group_task", None)
+            taking = getattr(session, "_take_case", None)
+            if taking:
+                session._take_case = None
+                self._spawn(self._take_by_name(contact, taking))
             tapback = getattr(session, "_text_react", None)
             if tapback:
                 session._text_react = None
@@ -1284,6 +1290,7 @@ class Console(GroupChats):
         await self._write_status_lines()
         await self._keep_up()
         await self._write_day_plans()
+        await self._write_dispatches()
         if not self.clients:
             return      # nobody at the console to hear about it
         for contact in self.directory:
@@ -1294,6 +1301,7 @@ class Console(GroupChats):
                 self._spawn(self._carry_out(contact, intent))
         await self._maybe_reach_out(now)
         await self._group_tick(now)
+        await self._case_tick(now)
 
     async def _write_status_lines(self):
         """
@@ -1320,6 +1328,113 @@ class Console(GroupChats):
                     await self._presence_changed(contact)
         finally:
             self._writing_lines = False
+
+    async def _write_dispatches(self):
+        """The scanner's calls get their dispatch text, two at a time, while the model's idle."""
+        from ..engine import incidents
+        if (self._writing_lines or not self.clients or self.current_id or self._texters
+                or self.turn_lock.locked()):
+            return
+        waiting = incidents.unwritten()[:2]
+        model = next(iter(self.directory)).model if waiting else None
+        if not waiting or not await asyncio.to_thread(_model_loaded, model):
+            return
+        self._writing_lines = True
+        try:
+            options = next(iter(self.directory)).options
+            for report in waiting:
+                await asyncio.to_thread(incidents.write_dispatch, report, model, options)
+            await self.broadcast({"type": "scanner"})
+        finally:
+            self._writing_lines = False
+
+    # --- cases ------------------------------------------------------------------
+
+    async def _take_by_name(self, contact, named):
+        """'[take: Diamond District]' — the open report they meant, by place or kind."""
+        import difflib
+
+        from ..engine import cases, incidents
+        taken = {c["id"] for c in cases.board() if c["status"] != "closed"}
+        open_ = [r for r in incidents.at() if r["id"] not in taken and r["status"] != "resolved"]
+        if not open_:
+            return
+        labels = {f"{r['place']} {r['area']} {r['kind']}".lower(): r for r in open_}
+        hit = difflib.get_close_matches(named.lower(), list(labels), 1, 0.1)
+        report = labels[hit[0]] if hit else None
+        if report is None:
+            report = next((r for r in open_ if named.lower() in (r["place"] + r["area"] + r["kind"]).lower()), None)
+        if report:
+            await self.assign_case(report["id"], contact.id, by="him", tell=False)
+
+    async def assign_case(self, report_id, contact_id, by="him", tell=True):
+        """
+        Put someone on a report: they head there, it's what they're doing, and
+        — if he did it from the map — they text him back about it.
+        """
+        from ..engine import cases, incidents
+        contact = self.directory.get(contact_id)
+        report = incidents.get(report_id) or cases.for_report(report_id)
+        if contact is None or report is None or contact_id not in cases.FIELD:
+            return None
+        current = cases.active(contact_id)
+        if current and current["id"] != report_id:
+            cases.drop(current["id"])          # off the last one, on to this
+        case = cases.assign(report, contact_id, by=by)
+        presence.of(contact).set_activity(f"working {report['kind'].lower()} at {report['place']}",
+                                          presence.BUSY, 90, where=report["place"])
+        log.info("%s on case %s (%s at %s, %s)", contact_id, report_id, report["kind"], report["place"], by)
+        await self._presence_changed(contact)
+        await self.broadcast({"type": "cases"})
+        if tell and contact_id not in self._members():
+            about = f"{report['kind'].lower()} at {report['place']}" + (
+                f" — dispatch said: {report['dispatch']}" if report.get("dispatch") else "")
+            why = "case_assigned" if by == "him" else "case_taken"
+            if by == "him" or random.random() < 0.4:
+                self._spawn(self._later(random.uniform(8, 40), self._send_unprompted(contact, about, why)))
+        return case
+
+    async def _case_tick(self, now):
+        """Patrols take what's on their beat; cases reach the scene, and run their course."""
+        from ..engine import cases, incidents, places
+        busy = {c["assignee"] for c in cases.board() if c["status"] != "closed"}
+        taken = {c["id"] for c in cases.everything()}
+        open_ = [r for r in incidents.at(now) if r["id"] not in taken and r["severity"] >= 2
+                 and r["status"] in ("reported", "units responding")]
+        for cid in cases.FIELD:
+            contact = self.directory.get(cid)
+            if contact is None or cid in busy or cid in self._members():
+                continue
+            state = presence.of(contact).now()
+            if not places.is_patrol(state["doing"]):
+                continue
+            areas = {(places.resolve(b) or {}).get("area") for b in contact.beat}
+            mine = [r for r in open_ if r["area"] in areas]
+            if mine and random.random() < 0.08:
+                await self.assign_case(mine[0]["id"], cid, by="self")
+                busy.add(cid)
+        for case in cases.advance(now):
+            self._spawn(self._close_case(case))
+
+    async def _close_case(self, case):
+        """It's run its course: they write how it ended, and may tell him."""
+        from ..engine import cases
+        contact = self.directory.get(case["assignee"])
+        if contact is None:
+            return cases.close(case["id"], "handled")
+        session = self.session_for(contact.id)
+        async with self.turn_lock:
+            outcome = await asyncio.get_running_loop().run_in_executor(None, session.case_outcome, case)
+        closed = cases.close(case["id"], outcome or "handled")
+        if not closed:
+            return
+        presence.of(contact).clear_activity()
+        await self._presence_changed(contact)
+        await self.broadcast({"type": "cases"})
+        log.info("%s closed case %s: %s", contact.id, case["id"], outcome)
+        if contact.id not in self._members() and random.random() < 0.3 + 0.12 * case["severity"]:
+            await self._send_unprompted(contact, f"{case['kind'].lower()} at {case['place']} — {outcome}",
+                                        "case_closed")
 
     async def _keep_up(self):
         """
@@ -1666,6 +1781,11 @@ class Console(GroupChats):
         if group:
             await self._hang_ups()
         await self._call_adds()
+        for member in (self.call.members if self.call else []):
+            taking = getattr(member, "_take_case", None)
+            if taking:
+                member._take_case = None
+                self._spawn(self._take_by_name(member.contact, taking))
 
     def _asked_to_add(self, text):
         """'Alfred, get Lucius on the line' — a contact not on the call, asked for."""
@@ -1890,9 +2010,30 @@ async def delete_pin(pin_id: str):
 
 @app.get("/api/map/incidents")
 async def map_incidents():
-    """What the scanner says is happening in the city right now."""
-    from ..engine import incidents
-    return JSONResponse({"incidents": incidents.at()})
+    """What the scanner says is happening in the city right now — and who's on what."""
+    from ..engine import cases, incidents
+    by_id = {c["id"]: c for c in cases.board()}
+    reports = []
+    for r in incidents.at():
+        case = by_id.get(r["id"])
+        if case:
+            r = {**r, "assignee": case["assignee"], "case": case["status"], "outcome": case.get("outcome", "")}
+        reports.append(r)
+    return JSONResponse({"incidents": reports})
+
+
+@app.get("/api/cases")
+async def case_board():
+    from ..engine import cases
+    return JSONResponse({"cases": cases.board()})
+
+
+@app.post("/api/cases/assign")
+async def assign_case(request: Request):
+    """He puts someone on a report, from the map."""
+    body = await request.json()
+    case = await console.assign_case(str(body.get("report", "")), str(body.get("contact", "")), by="him")
+    return JSONResponse({"case": case} if case else {"error": "can't assign that"}, status_code=200 if case else 400)
 
 
 @app.get("/api/map/trail/{contact_id}")

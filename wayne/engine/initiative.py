@@ -52,6 +52,8 @@ def afterthought(session, exchanges, by="text"):
     lines = ((["Earlier, for context only:"] + earlier + ["", "The newest exchange:"])
              if earlier else []) + latest
     now = time.strftime("%A %H:%M")
+    from . import cases
+    case = cases.active(contact.id)
     instruction = (
         f"It's {now}. Here is the latest of a conversation {'by text' if by == 'text' else 'on a call'} "
         f"between {operator.full_name()} and {contact.full_name}:\n\n" + "\n".join(lines) + "\n\n"
@@ -65,7 +67,10 @@ def afterthought(session, exchanges, by="text"):
         f"only said 'maybe' or 'if it matters', the answer is no.\n"
         f"3. Across the whole conversation: does {contact.name} come away worried about "
         f"{operator.name()} — something he said, how he sounded — and not reassured by the end? "
-        f"Only if it's clear; ordinary concern that was settled is no.\n\n"
+        f"Only if it's clear; ordinary concern that was settled is no.\n"
+        + (f"4. {contact.name} is working a case ({case['kind'].lower()} at {case['place']}). From the newest "
+           f"exchange: did they say it's dealt with — caught, stopped, over? If so, how, in a few words.\n"
+           if case else "") + "\n"
         "Reply with JSON only, in this shape:\n"
         '{"doing": "a few words, e.g. checking the docks" or null, '
         '"where": "the place it puts them, as it would show on a map (e.g. Gotham Docks)" or null, '
@@ -73,7 +78,8 @@ def afterthought(session, exchanges, by="text"):
         '"free": true if they said they are now free/back/done, '
         '"contact": {"by": "text" or "call", "in_minutes": number or null if it is "when done", '
         '"about": "the subject — e.g. what they found at the docks; never a time like when done"} '
-        'or null, "worried": "what about him worries them, in a few words" or null}')
+        'or null, "worried": "what about him worries them, in a few words" or null'
+        + (', "case_closed": "how it ended, in a few words" or null' if case else '') + '}')
     try:
         reply = ollama.chat(model=contact.model, think=False, format="json",
                             options={**contact.options, "temperature": 0, "num_predict": 160},
@@ -112,6 +118,13 @@ def apply(session, found):
                 else random.uniform(10, 40)
         due = time.time() + max(1.0, minutes) * 60 * random.uniform(0.85, 1.2)
         state.intend(reach.get("by", "text"), reach["about"], due, origin="promise")
+    closed = found.get("case_closed")
+    if isinstance(closed, str) and closed.strip() and closed.strip().lower() not in ("null", "none", "no"):
+        from . import cases
+        case = cases.active(session.contact.id)
+        if case:
+            cases.close(case["id"], closed.strip())
+            state.clear_activity()
     worry = found.get("worried")
     if isinstance(worry, str) and worry.strip() and worry.strip().lower() not in ("null", "none", "no"):
         # It stayed with them. Whether they say so later is theirs — Dick will,

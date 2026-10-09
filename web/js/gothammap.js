@@ -292,6 +292,10 @@
         { id: 'incident-pulse', type: 'circle', source: 'incidents',
           paint: { 'circle-radius': 10, 'circle-color': ['match', ['get', 'severity'], 1, SEVERITY[1], 2, SEVERITY[2], 3, SEVERITY[3], SEVERITY[4]],
                    'circle-opacity': 0.25, 'circle-blur': 0.6, 'circle-pitch-alignment': 'map' } },
+        // Someone's on it: a ring in their colour.
+        { id: 'case-ring', type: 'circle', source: 'incidents', filter: ['has', 'assignee'],
+          paint: { 'circle-radius': 15, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': ['get', 'acc'],
+                   'circle-stroke-width': 2, 'circle-pitch-alignment': 'map' } },
         { id: 'incident', type: 'symbol', source: 'incidents',
           layout: { 'icon-image': ['concat', 'gm-warn-', ['to-string', ['get', 'severity']]], 'icon-size': z([10.6, 0.6, 14, 0.85, 17, 1]),
                     'icon-allow-overlap': true, 'icon-anchor': 'bottom' } },
@@ -573,6 +577,9 @@
 
   function showInfo(title, sub, body, note, imageUrl, tint) {
     var card = $('.gm-info');
+    openReport = null;
+    card.querySelector('.gm-info__assign').hidden = true;
+    card.querySelector('.gm-info__note').classList.remove('is-plain');
     card.style.setProperty('--accent', tint || C.edge);
     card.querySelector('.gm-info__icon').style.backgroundImage = imageUrl ? 'url(' + imageUrl + ')' : '';
     card.querySelector('.gm-info__name').textContent = title;
@@ -591,15 +598,49 @@
   }
 
   function incidentCard(report) {
-    var when = new Date(report.at * 1000);
+    openReport = report.id;
+    var contacts = opts.contacts();
+    var who = report.assignee && contacts[report.assignee];
     var near = visible().filter(function (c) {
       var s = c.presence.spot;
       return Math.hypot(s.x - report.x, s.y - report.y) < 2.2;
     }).map(function (c) { return c.name; });
-    showInfo(report.kind, report.place + ' · ' + String(when.getHours()).padStart(2, '0') + ':' +
-             String(when.getMinutes()).padStart(2, '0') + ' · ' + report.status,
-             near.length ? 'On scene or close: ' + near.join(', ') + '.' : 'Nobody from the family nearby.',
+    var state = who ? (report.case === 'closed' ? who.name + ' closed it' + (report.outcome ? ': ' + report.outcome : '.')
+                                              : who.name + '\u2019s on it — ' + report.case + '.')
+                    : (near.length ? 'Close by: ' + near.join(', ') + '.' : 'Nobody from the family nearby.');
+    showInfo(report.kind, report.place + ' · ' + clock(report.at) + ' · ' + report.status,
+             report.dispatch ? 'Dispatch: \u201c' + report.dispatch + '\u201d' : 'Dispatch is still coming through.',
              '', '', SEVERITY[report.severity]);
+    $('.gm-info__note').hidden = false;
+    $('.gm-info__note').textContent = state;
+    $('.gm-info__note').classList.add('is-plain');
+    // Put someone on it: the ones who work scenes, nearest first.
+    var assign = $('.gm-info__assign'), people = $('.gm-info__people');
+    people.innerHTML = '';
+    if (report.case !== 'closed') {
+      FIELD.map(function (id) { return contacts[id]; }).filter(Boolean).sort(function (a, b) {
+        var sa = (a.presence || {}).spot, sb = (b.presence || {}).spot;
+        var da = sa ? Math.hypot(sa.x - report.x, sa.y - report.y) : 99, db = sb ? Math.hypot(sb.x - report.x, sb.y - report.y) : 99;
+        return da - db;
+      }).forEach(function (c) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'gm-assign' + (report.assignee === c.id ? ' is-on' : '');
+        b.style.setProperty('--accent', c.accent);
+        b.setAttribute('data-tip', 'Put ' + c.name + ' on it');
+        var face = document.createElement('span');
+        opts.portrait(face, c);
+        b.appendChild(face);
+        b.appendChild(document.createTextNode(c.name));
+        b.addEventListener('click', function () {
+          fetch('/api/cases/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                       body: JSON.stringify({ report: report.id, contact: c.id }) })
+            .then(function () { loadIncidents(); });
+        });
+        people.appendChild(b);
+      });
+    }
+    assign.hidden = report.case === 'closed';
   }
 
   /* --- the scanner ------------------------------------------------------------ */
@@ -609,10 +650,74 @@
     if (!ready || root.hidden) return;
     fetch('/api/map/incidents').then(function (r) { return r.json(); }).then(function (body) {
       reports = body.incidents || [];
-      map.getSource('incidents').setData({ type: 'FeatureCollection', features: reports.map(function (r) {
-        return { type: 'Feature', geometry: { type: 'Point', coordinates: ll(r.x, r.y) }, properties: r };
+      var contacts = opts.contacts();
+      map.getSource('incidents').setData({ type: 'FeatureCollection', features: reports.filter(function (r) {
+        return layerShown('crime');
+      }).map(function (r) {
+        var props = Object.assign({}, r);
+        if (r.assignee && contacts[r.assignee]) props.acc = contacts[r.assignee].accent;
+        return { type: 'Feature', geometry: { type: 'Point', coordinates: ll(r.x, r.y) }, properties: props };
       }) });
+      renderLists();
+      if (openReport) {
+        var again = reports.filter(function (r) { return r.id === openReport; })[0];
+        if (again) incidentCard(again);
+      }
     }).catch(function () {});
+  }
+
+  /* --- the side panel: who's where, what's being worked, what the scanner says --- */
+
+  var FIELD = ['nightwing', 'robin', 'batgirl', 'orphan', 'redhood', 'batwing'];
+  var openReport = null;
+
+  function showTab(name) {
+    root.querySelectorAll('.gm-tab').forEach(function (t) { t.classList.toggle('is-on', t.dataset.tab === name); });
+    root.querySelectorAll('[data-pane]').forEach(function (p) { p.hidden = p.dataset.pane !== name; });
+  }
+
+  function clock(at) {
+    var d = new Date(at * 1000);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  function reportItem(r, withWho) {
+    var li = document.createElement('li');
+    li.className = 'gm-list__item';
+    li.style.setProperty('--sev', SEVERITY[r.severity]);
+    var who = r.assignee && opts.contacts()[r.assignee];
+    li.innerHTML = '<i class="gm-list__sev"></i><span class="gm-list__text"><b></b><small></small></span>';
+    li.querySelector('b').textContent = r.kind;
+    li.querySelector('small').textContent = r.place + ' · ' + clock(r.at) + ' · ' +
+      (who ? who.name + ' — ' + (r.case === 'closed' ? 'closed' : r.case) : r.status);
+    if (withWho && who) {
+      var face = document.createElement('span');
+      face.className = 'gm-list__face';
+      face.style.setProperty('--accent', who.accent);
+      opts.portrait(face, who);
+      li.appendChild(face);
+    }
+    li.addEventListener('click', function () {
+      map.flyTo({ center: ll(r.x, r.y), zoom: Math.max(map.getZoom(), 15), duration: 900 });
+      incidentCard(r);
+    });
+    return li;
+  }
+
+  function renderLists() {
+    var casesPane = $('[data-pane="cases"]'), scannerPane = $('[data-pane="scanner"]');
+    casesPane.innerHTML = '';
+    scannerPane.innerHTML = '';
+    var worked = reports.filter(function (r) { return r.assignee; });
+    if (!worked.length) casesPane.innerHTML = '<li class="gm-list__empty">Nobody\u2019s on a case.</li>';
+    worked.forEach(function (r) { casesPane.appendChild(reportItem(r, true)); });
+    reports.slice().sort(function (a, b) { return b.severity - a.severity || b.at - a.at; })
+      .forEach(function (r) { scannerPane.appendChild(reportItem(r, true)); });
+    if (!reports.length) scannerPane.innerHTML = '<li class="gm-list__empty">The scanner\u2019s quiet.</li>';
+    var count = $('.gm-tab__count');
+    var open = worked.filter(function (r) { return r.case !== 'closed'; }).length;
+    count.textContent = open;
+    count.hidden = !open;
   }
 
   /* --- the living map: water that twinkles, reports that pulse ------------------ */
@@ -857,7 +962,10 @@
       renderCard(selected);
       if (following) map.easeTo({ center: people[following].getLngLat(), zoom: Math.max(map.getZoom(), 15), duration: 900 });
     });
-    $('.gm-info__x').addEventListener('click', function () { $('.gm-info').hidden = true; });
+    $('.gm-info__x').addEventListener('click', function () { $('.gm-info').hidden = true; openReport = null; });
+    root.querySelectorAll('.gm-tab').forEach(function (t) {
+      t.addEventListener('click', function () { showTab(t.dataset.tab); });
+    });
     $('.gm-card [data-act="dismiss"]').addEventListener('click', function () {
       selected = null; following = null;
       $('.gm-card').hidden = true;
@@ -942,6 +1050,7 @@
     isOpen: function () { return !!root && !root.hidden; },
     _map: function () { return map; },
     update: function () { if (map && !root.hidden) placePeople(); },
+    refreshCases: function () { if (map && !root.hidden) loadIncidents(); },
     focus: function (id) { if (map && !root.hidden) select(id, true); }
   };
 
