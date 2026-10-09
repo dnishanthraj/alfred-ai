@@ -24,6 +24,7 @@ words on every single one: about two and a half seconds of the four it took to
 say anything. They live in a directives message in the cached prefix now, and
 the tail carries only what genuinely differs turn to turn.
 """
+import random
 import re
 import time
 
@@ -60,9 +61,10 @@ VOICE_DIRECTIVE = (
 # the distribution has to be described explicitly — and, more importantly,
 # demonstrated in the primer, which does most of the actual work.
 LENGTH_GUIDANCE = (
-    "Vary your length. Usually one or two sentences, often a fragment, briefer "
-    "than him when he is curt. When he is struggling or about to do something "
-    "foolish, take four or six and argue properly. Never pad. Stop when done."
+    "On a call people talk in short turns: most of what you say is a few words or "
+    "a sentence, now and then more when it's earned — when he is struggling, or "
+    "about to do something foolish. Never pad, and stop when done. Never remark "
+    "on how much or how little he says; answer what's going on."
 )
 
 
@@ -189,7 +191,50 @@ _WEIGHT = re.compile(
 )
 
 
-def register_hint(prompt):
+# Spoken lengths a turn can be drawn at, shortest first, with the most
+# sentences each may run to — enforced, because a model told "a word or two"
+# still writes a paragraph often enough to be the norm.
+_SPOKEN = [
+    ("word", "a few words — a fragment, a single line at most", 1),
+    ("line", "a sentence or two", 2),
+    ("few", "three or four sentences", 4),
+    ("long", "longer — say properly what needs saying", None),
+]
+
+
+def spoken_length(contact, prompt, rng=random):
+    """
+    How long this reply runs on a call: drawn from the contact's own spread,
+    then moved by what he said — a word from him pulls it shorter, something
+    serious or long pushes it longer. Returns (hint, sentence cap or None).
+    Measured before: every contact's replies sat at 26–41 words, Jason's
+    included, with almost nothing under six — the length of a written answer,
+    not of a phone call.
+    """
+    weights = getattr(contact, "speech_length", None) or {}
+    kinds = [k for k, _, _ in _SPOKEN]
+    if not weights:
+        return "", None
+    level = kinds.index(rng.choices(kinds, weights=[weights.get(k, 0) for k in kinds])[0])
+    text = prompt or ""
+    words = len(text.split())
+    if _NOT_PLAYING.search(text) or _WEIGHT.search(text) or words > 25:
+        level = min(level + 1, len(kinds) - 1)
+    elif words <= 3 and "?" not in text:
+        level = 0
+    elif "?" in text or words >= 6:
+        # Something to answer can't be met with a shrug, however terse the
+        # person: "There's a kid caught up in Black Mask's operation" drew
+        # "Figures." from Jason, and never "where is the kid?".
+        level = max(level, 1)
+    _, hint, cap = _SPOKEN[level]
+    # The cap is a backstop against a monologue, with a sentence of slack — at
+    # the exact length it cut answers in half: "Though if we're being serious..."
+    cap = (cap + 1) if cap else contact.max_reply_sentences
+    return f"Length this time: {hint}, unless it truly needs otherwise.", cap
+
+
+def register_hint(prompt, length=None):
     """
     A nudge toward matching the operator's register — length *and* tone.
 
@@ -227,13 +272,19 @@ def register_hint(prompt):
     else:
         tone = ""
 
+    if length:
+        # The contact's own length, drawn for this turn (see spoken_length).
+        lead = ("He said very little — carry on naturally; don't comment on it. "
+                if words <= 3 and "?" not in text else "")
+        return lead + length + tone
     if words <= 3 and "?" in text:
         # "off with me?" is a question, not a grunt. Told to "answer in kind",
         # he met a run of them with "Yes." "Good." "Perfect." and then word
         # salad, when what was wanted was a plain answer.
         return "A short question. Answer it — briefly, but properly." + tone
     if words <= 3:
-        return "He said very little. Answer in kind — a word or a short line." + tone
+        return ("He said very little. Answer in kind — a word or a short line, and "
+                "don't comment on how little he said." + tone)
     if words <= 25:
         return "Conversational turn. A sentence or two, unless it warrants more." + tone
     return ("He has said a good deal. Engage with it properly rather than "
@@ -277,7 +328,7 @@ def standing_directives(contact):
     return "\n\n".join(parts)
 
 
-def reference_block(vault_block, prompt, search_context="", awareness=(), contact=None):
+def reference_block(vault_block, prompt, search_context="", awareness=(), contact=None, length=None):
     # Short on purpose. A paragraph of caveats about the hour made the hour
     # the most prominent thing in the block, and he remarked on it constantly —
     # "a heavy question for ten o'clock on a Wednesday".
@@ -327,12 +378,12 @@ def reference_block(vault_block, prompt, search_context="", awareness=(), contac
         parts.append("You have noticed:\n" + "\n".join(f"- {n}" for n in awareness))
 
     # Only the register hint stays here: it depends on what he just said.
-    parts.append(register_hint(prompt))
+    parts.append(register_hint(prompt, length))
     return "\n\n".join(parts)
 
 
 def compose_user_turn(prompt, vault_block, search_context="", awareness=(), spoken=None,
-                      hearsay="", contact=None):
+                      hearsay="", contact=None, length=None):
     """
     Wrap the prompt with fenced context. The actual message comes last.
 
@@ -340,7 +391,7 @@ def compose_user_turn(prompt, vault_block, search_context="", awareness=(), spok
     operator said — on a call, the lines heard from everyone, labelled. The
     register hint is still taken from the operator's own words.
     """
-    context = reference_block(vault_block, prompt, search_context, awareness, contact)
+    context = reference_block(vault_block, prompt, search_context, awareness, contact, length)
     if hearsay:
         context += "\n\n" + hearsay
     return (

@@ -103,6 +103,9 @@ class Contact:
     # sending a reply as several messages}. Described to the model as well,
     # but a model told "lowercase" capitalises anyway often enough to show.
     texting_style: dict = field(default_factory=dict)
+    # How long they speak on a call, as a spread they're drawn from each turn:
+    # {"word": .45, "line": .38, "few": .15, "long": .02} for Jason.
+    speech_length: dict = field(default_factory=dict)
     # Worked examples of how they text, used in place of the call primer when
     # the reply is a text: a model texts like the samples it is shown.
     texting_primer: tuple = ()
@@ -120,6 +123,9 @@ class Contact:
     search_aloud: bool = True
     # Whether he can see what they're doing. Jason and Selina don't share.
     shares_status: bool = True
+    # What a hidden status shows as: "unknown", or "offline" for someone who
+    # has simply gone dark (Randy).
+    hidden_as: str = "unknown"
 
     @property
     def has_voice(self):
@@ -228,12 +234,14 @@ def _load_profile(path):
         group=raw.get("group", "Contacts"),
         texting_pace=raw.get("texting_pace", {}),
         texting_style=raw.get("texting_style", {}),
+        speech_length=raw.get("speech_length", {}),
         texting_primer=tuple(raw.get("texting_primer", [])),
         routine=tuple(raw.get("routine", [])),
         initiative=raw.get("initiative", {}),
         sees_calendar=bool(raw.get("sees_calendar", False)),
         search_aloud=bool(raw.get("search_aloud", True)),
         shares_status=bool(raw.get("shares_status", True)),
+        hidden_as=raw.get("hidden_as", "unknown"),
     )
 
 

@@ -11,7 +11,9 @@
     "nightwing": "Mostly nothing. 'Bruce'; now and then 'B' when it's easy between you; 'Batman' over comms.",
     "redhood": "Mostly nothing. 'Old man' when you're needling him; 'Bruce' only when it matters — and it costs you to say it.",
     "robin": "Mostly nothing. 'Bruce'; 'Batman' in the field or when you're being formal about a case.",
-    "batgirl": "Mostly nothing. 'Bruce'; 'Batman' in the field."
+    "batgirl": "Mostly nothing. 'Bruce'; 'Batman' in the field.",
+    "batwing": "Mostly nothing. 'Bruce', flat, like a stranger's name; 'Batman' when you want it to sting. Never 'Dad'.",
+    "orphan": "Mostly nothing. 'Bruce'; very rarely 'Dad', and only when it matters most."
   },
   "default_address": "Mostly no name at all; 'Bruce' when it lands.",
   "world": [
@@ -25,39 +27,43 @@
     },
     {
       "known_by": "*",
-      "text": "Bruce's family: Dick Grayson, his eldest adopted son, now a police officer in Blüdhaven; Jason Todd, his second ward — estranged and angry; Tim Drake, the youngest he took in; Barbara Gordon, Commissioner Jim Gordon's daughter, close to all of them."
+      "text": "Bruce's family: Dick Grayson, his eldest adopted son, in Blüdhaven; Jason Todd, his second ward — estranged and angry; Tim Drake, the youngest boy he took in; Cassandra Cain, his adopted daughter; Barbara Gordon, Commissioner Jim Gordon's daughter, close to all of them."
     },
     {
       "known_by": "*",
-      "text": "Randy Wayne is Bruce and Selina Kyle's son. Bruce took him to be raised at the manor; Selina has never entirely made her peace with that."
+      "text": "Randy Wayne is Bruce and Selina Kyle's son. Selina kept him hidden for his first years, then gave him to Bruce, who raised him at the manor. He's grown and gone now — he barely speaks to Bruce. Selina has never made her peace with any of it."
     },
     {
       "known_by": [
         "alfred",
+        "batgirl",
+        "batwing",
         "lucius",
         "nightwing",
+        "orphan",
         "redhood",
-        "robin",
-        "batgirl"
+        "robin"
       ],
-      "text": "Under the masks: Dick Grayson was the first Robin and is now Nightwing; Jason Todd was the second Robin, was murdered by the Joker, came back, and is now the Red Hood, who will kill; Tim Drake is the current Robin; Barbara Gordon is Batgirl, and was Oracle for years after the Joker shot her."
+      "text": "Under the masks: Dick Grayson was the first Robin and is now Nightwing; Jason Todd was the second Robin, was murdered by the Joker, came back, and is now the Red Hood, who will kill; Randy Wayne was Robin after Jason, then Batwing; Tim Drake is the current Robin; Barbara Gordon is Batgirl, and was Oracle for years after the Joker shot her; Cassandra Cain was Batgirl too, and is now Orphan."
     },
     {
       "known_by": [
         "alfred",
+        "batgirl",
+        "batwing",
         "lucius",
         "nightwing",
+        "orphan",
         "redhood",
-        "robin",
-        "batgirl"
+        "robin"
       ],
-      "text": "Randy Wayne flies as Batwing, in a suit Lucius built. His mother, Selina, does not know."
+      "text": "Randy Wayne flies as Batwing, in a suit Lucius built and still quietly maintains — but on his own now: he walked out on Bruce, works alone over the Narrows, and rarely answers his father. His mother, Selina, knows nothing of any of it."
     },
     {
       "known_by": [
         "catwoman"
       ],
-      "text": "You know Bruce is Batman. You don't know who's under the other masks around him — Nightwing, the Red Hood, Robin, Batgirl, Batwing — and you'd quite like to."
+      "text": "You know Bruce is Batman. You don't know who's under the other masks around him — Nightwing, the Red Hood, Robin, Batgirl, Batwing, Orphan — and you'd quite like to. You know Cassandra Cain only as the daughter he adopted."
     },
     {
       "known_by": "*",
@@ -66,11 +72,13 @@
     {
       "known_by": [
         "alfred",
-        "nightwing",
-        "redhood",
-        "robin",
         "batgirl",
-        "lucius"
+        "batwing",
+        "lucius",
+        "nightwing",
+        "orphan",
+        "redhood",
+        "robin"
       ],
       "text": "Selina Kyle knows Bruce is Batman, but not who is under any of the other masks. Around her — on a call she's on, especially — the family guards it: no names under masks, no slips."
     },
@@ -97,7 +105,10 @@
     "Batwing",
     "Gotham",
     "Blüdhaven",
-    "Arkham"
+    "Arkham",
+    "Cass",
+    "Cassandra",
+    "Orphan"
   ],
   "network": {
     "_doc": "How likely news is to pass between two contacts (0–1), in either direction.",
@@ -121,19 +132,36 @@
     "batgirl|catwoman": 0.1,
     "redhood|lucius": 0.05,
     "redhood|catwoman": 0.25,
-    "lucius|catwoman": 0.05
+    "lucius|catwoman": 0.05,
+    "batwing|alfred": 0.3,
+    "batwing|nightwing": 0.35,
+    "batwing|redhood": 0.3,
+    "batwing|robin": 0.1,
+    "batwing|batgirl": 0.2,
+    "batwing|lucius": 0.3,
+    "batwing|catwoman": 0.15,
+    "batwing|orphan": 0.4,
+    "orphan|batgirl": 0.8,
+    "orphan|nightwing": 0.55,
+    "orphan|robin": 0.5,
+    "orphan|alfred": 0.6,
+    "orphan|redhood": 0.25,
+    "orphan|lucius": 0.15,
+    "orphan|catwoman": 0.1
   },
   "secrets": {
     "_doc": "News that mentions any of these never reaches a contact outside known_by.",
     "terms": [
+      "Batcave",
+      "Batgirl",
+      "Batwing",
+      "Black Bat",
       "Nightwing",
+      "Oracle",
+      "Orphan",
       "Red Hood",
       "Robin",
-      "Batgirl",
-      "Oracle",
-      "Batwing",
-      "the cave",
-      "Batcave"
+      "the cave"
     ],
     "known_by": [
       "alfred",
@@ -141,7 +169,9 @@
       "nightwing",
       "redhood",
       "robin",
-      "batgirl"
+      "batgirl",
+      "batwing",
+      "orphan"
     ]
   }
 }

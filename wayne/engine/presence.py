@@ -169,14 +169,27 @@ class Presence:
         written once per key, so it changes when their situation does.
         """
         state = self.now(t)
-        day = time.strftime("%Y-%m-%d", time.localtime(t or time.time()))
-        if not self.contact.shares_status or not state["doing"]:
-            return f"day:{day}"
+        t = t or time.time()
+        day = time.strftime("%Y-%m-%d", time.localtime(t))
+        if not self.contact.shares_status:
+            return f"day:{day}"             # nothing to give away; a new mood a day
+        if not state["doing"]:
+            # Free time: a fresh line every few hours — the spell length drawn
+            # per contact and day, so they don't all change on the hour together.
+            span = 2 + int(_draw(self.contact.id, "span", day) * 4)     # 2–5 hours
+            return f"free:{day}:{time.localtime(t).tm_hour // span}"
         return f"{state['source']}:{state['doing']}"
 
     def line(self, t=None):
-        """The status line they wrote for what they're doing now, or ''."""
-        return (self._state.get("lines") or {}).get(self.line_key(t), "")
+        """
+        The status line they wrote for now — or, until they've written one,
+        the last they set. A status stays up until someone changes it.
+        """
+        lines = self._state.get("lines") or {}
+        return lines.get(self.line_key(t)) or (list(lines.values())[-1] if lines else "")
+
+    def has_current_line(self, t=None):
+        return self.line_key(t) in (self._state.get("lines") or {})
 
     def set_line(self, key, text):
         with self._lock:
@@ -194,7 +207,8 @@ class Presence:
         """
         state = self.now(t)
         if not self.contact.shares_status:
-            return {"status": "unknown", "doing": "", "last_active": None, "line": self.line(t)}
+            shown = getattr(self.contact, "hidden_as", "unknown") or "unknown"
+            return {"status": shown, "doing": "", "last_active": None, "line": self.line(t)}
         return {"status": state["status"], "doing": state["doing"],
                 "last_active": state["last_active"] or None, "line": self.line(t)}
 

@@ -379,7 +379,7 @@ global hotkey; the web console needs only a microphone permission).
 
 ## Contacts
 
-The console is a phone book, not a single assistant. Seven contacts ship:
+The console is a phone book, not a single assistant. Nine contacts ship:
 
 | Contact | Who | Voice variable |
 |---|---|---|
@@ -387,7 +387,9 @@ The console is a phone book, not a single assistant. Seven contacts ship:
 | **Dick Grayson** | Nightwing — the first Robin; warm, quick, the one everyone calls | `NIGHTWING_VOICE_ID` |
 | **Tim Drake** | Robin — the detective; methodical, dry, won't let him spiral | `ROBIN_VOICE_ID` |
 | **Barbara Gordon** | Batgirl and Oracle — a peer who commands; won't be pushed | `BATGIRL_VOICE_ID` |
+| **Cassandra Cain** | Orphan — raised to read bodies, not words; says little, sees everything | `ORPHAN_VOICE_ID` |
 | **Jason Todd** | Red Hood — came back angry, reads everything, protects kids | `REDHOOD_VOICE_ID` |
+| **Randy Wayne** | Batwing — Bruce and Selina's son, Robin after Jason, now flying alone and estranged | `BATWING_VOICE_ID` |
 | **Lucius Fox** | Wayne Enterprises' engineer-CEO — calm, wry, a firm ethical line | `LUCIUS_VOICE_ID` |
 | **Selina Kyle** | Catwoman — a self-made thief from the East End; Randy's mother | `CATWOMAN_VOICE_ID` |
 
@@ -416,6 +418,9 @@ Adding one is a file, not a code change. The fields that matter:
   deal of careful prompting.
 - **`availability`** — `always`, or `hours` (which may run past midnight).
 - **`order`** and **`group`** — position and heading in the console's directory.
+- **`speech_length`** — how long they speak on a call, as a spread each turn is
+  drawn from (Jason mostly a few words; Lucius a measured sentence or two), moved
+  by what was said and held to it in code.
 - **`texting`** — how they write a text message, described for the model.
 - **`texting_style`** — the habits enforced in code: chance of all lowercase,
   dropping the last full stop, sending several messages, keeping an emoji.

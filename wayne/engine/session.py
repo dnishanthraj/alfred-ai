@@ -304,7 +304,7 @@ class ContactSession:
         Stream a reply, yielding guarded sentence events as they complete and
         returning the full spoken text.
         """
-        max_sentences = self.contact.max_reply_sentences
+        max_sentences = getattr(self, "_turn_cap", None) or self.contact.max_reply_sentences
         leaving = guards.user_is_leaving(prompt)
 
         # Compared like with like: sentence against sentence. Matching one
@@ -370,6 +370,11 @@ class ContactSession:
                 dropped_presence += 1
                 return False, None
             if guards.presumes_presence(delivery.clean(text)):
+                dropped_presence += 1
+                return False, None
+            # "Just 'okay'?" — people don't audit each other's word counts on a
+            # call. Told not to, every contact still did it to a short reply.
+            if guards.remarks_on_brevity(delivery.clean(text), prompt):
                 dropped_presence += 1
                 return False, None
             if index == 0 and not spoken and self.already_greeted:
@@ -511,6 +516,15 @@ class ContactSession:
         """
         for i, char in enumerate(text):
             if char in _BOUNDARY and i + 1 < len(text) and text[i + 1].isspace():
+                if char == "…" or text[max(0, i - 2):i + 1] == "...":
+                    # An ellipsis is a pause, not an ending, when the thought
+                    # carries on in lowercase — "You sound... tired." Cut there,
+                    # a one-line reply stopped at "You sound...". Wait to see.
+                    rest = text[i + 1:].lstrip()
+                    if not rest:
+                        return None
+                    if rest[0].islower():
+                        continue
                 return i + 1
         return None
 
@@ -545,7 +559,8 @@ class ContactSession:
         text = self._plain(text)
         if not text or guards.parrots(text, prompt) or guards.too_similar(text, recent):
             text = self._deflection()
-        text = guards.apply(text, prompt, self.contact.max_reply_sentences,
+        text = guards.apply(text, prompt,
+                            getattr(self, "_turn_cap", None) or self.contact.max_reply_sentences,
                             self.already_greeted, self.contact.forbidden_address,
                             farewell=getattr(self, "_hanging_up", False))
         if self.call:
@@ -1078,6 +1093,12 @@ class ContactSession:
 
         awareness = self._awareness(prompt, interrupted, confidence)
         texting = via == "text"
+        length, self._turn_cap = None, None
+        if via is None and not self.call:
+            # A call: this turn's length, from their own spread (see
+            # prompting.spoken_length) — and held to it.
+            length, self._turn_cap = prompting.spoken_length(self.contact, prompt)
+            length = length or None
         if texting:
             state = presence.of(self.contact).now()
             if state["status"] == presence.BUSY and state["doing"]:
@@ -1095,9 +1116,7 @@ class ContactSession:
                 "written the way you text" + (f" ({self.contact.texting})" if self.contact.texting
                                               else "") + ", no stage cues. "
                 "Several short texts go on separate lines.")
-            length = initiative.length_hint(self.contact)
-            if length:
-                awareness.append(length)
+            length = initiative.length_hint(self.contact) or None
         if self.call:
             awareness.append(self.call.note_for(self, follow_up))
         elif via is None and self._said_this_call() >= 2:
@@ -1127,7 +1146,7 @@ class ContactSession:
 
         user_turn = prompting.compose_user_turn(
             prompt, vault_block, search_context, awareness, spoken=said,
-            hearsay=grapevine.block(self.contact.id), contact=self.contact)
+            hearsay=grapevine.block(self.contact.id), contact=self.contact, length=length)
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn,
                                           texting=texting)
 
@@ -1154,7 +1173,8 @@ class ContactSession:
                 query, hold_for=None if spoke or not self.contact.search_aloud else prompt)
 
             user_turn = prompting.compose_user_turn(
-                prompt, vault_block, search_context, awareness, spoken=said, contact=self.contact)
+                prompt, vault_block, search_context, awareness, spoken=said, contact=self.contact,
+                length=length)
             payload = prompting.build_payload(
                 self.contact, self.history.for_model(), user_turn, texting=texting)
             yield events.state(events.THINKING)

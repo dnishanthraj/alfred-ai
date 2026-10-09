@@ -84,3 +84,32 @@ def test_the_call_start_survives_the_history_being_trimmed():
     said = session.call_messages()
     assert [m["content"] for m in said] == ["Sir.", "the docks"]
     assert session._said_this_call() == 1
+
+
+def test_remarks_about_how_little_he_said_are_caught():
+    assert guards.remarks_on_brevity("Just 'okay'?", "Okay.")
+    assert guards.remarks_on_brevity("Only Ha?", "Ha.")
+    assert guards.remarks_on_brevity("Don't 'hm' me.", "Hm.")
+    assert guards.remarks_on_brevity("Is that all?", "whatever")
+    assert not guards.remarks_on_brevity("That's a broody 'hm'.", "Hm.")   # an observation
+    assert not guards.remarks_on_brevity("Just tell me.", "Okay.")
+    assert not guards.remarks_on_brevity("Only three?", "Yeah. Three of them got away, one ran.")
+
+
+def test_an_ellipsis_mid_thought_is_a_pause_not_an_ending():
+    assert guards.split_sentences("You sound... tired. Okay?") == ["You sound... tired.", "Okay?"]
+
+
+def test_each_call_turn_draws_its_length_from_the_contact():
+    import random
+
+    from wayne.engine import prompting
+    jason = SimpleNamespace(speech_length={"word": 1.0}, max_reply_sentences=7)
+    hint, cap = prompting.spoken_length(jason, "Hm.", random.Random(1))
+    assert cap == 2 and "a few words" in hint
+    # Something to answer is never met with a shrug, however terse the person.
+    assert prompting.spoken_length(jason, "Where are you tonight?")[1] == 3
+    # Something serious moves it up a step; a grunt brings it right down.
+    lucius = SimpleNamespace(speech_length={"line": 1.0}, max_reply_sentences=8)
+    assert prompting.spoken_length(lucius, "word " * 30)[1] == 5
+    assert prompting.spoken_length(lucius, "Hm.")[1] == 2

@@ -938,7 +938,7 @@ class Console:
         """
         if self._writing_lines or not self.clients:
             return
-        stale = [c for c in self.directory if not presence.of(c).line()]
+        stale = [c for c in self.directory if not presence.of(c).has_current_line()]
         if not stale or not await asyncio.to_thread(_model_loaded, stale[0].model):
             return
         self._writing_lines = True

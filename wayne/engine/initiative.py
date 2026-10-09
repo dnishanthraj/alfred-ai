@@ -129,11 +129,12 @@ def status_line(contact, state):
     elif state.get("doing"):
         situation = f"Right now you're {state['doing']}."
     else:
-        situation = "Nothing in particular going on."
+        situation = "Nothing in particular going on — whatever's on your mind, or nothing at all."
+    now = time.strftime("%A %-I%p", time.localtime()).replace("AM", "am").replace("PM", "pm")
     instruction = (
-        f"Write the status line you'd set on your phone right now, the one people see under "
-        f"your name. {situation} The way you text ({contact.texting}). A few words at most, "
-        "or a single emoji. Reply with only the line itself.")
+        f"It's {now}. Write the status line you'd set on your phone right now, the one people see "
+        f"under your name. {situation} The way you text ({contact.texting}). A few words at most, "
+        "or a single emoji — whatever you'd actually put. Reply with only the line itself.")
     try:
         reply = ollama.chat(model=contact.model, think=False,
                             options={**contact.options, "temperature": 0.9, "num_predict": 24},

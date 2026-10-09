@@ -45,6 +45,22 @@ A full review of the code turned up, among others:
 
 ### Added
 
+- **Randy Wayne (Batwing) and Cassandra Cain (Orphan).** Randy is Bruce and
+  Selina's son — hidden by her, then handed to Bruce, raised as Robin after Jason
+  and before Tim, and now flying alone, bitter and estranged: he rarely answers,
+  never jokes with his father, and shows as offline. Cass is from the comics:
+  raised by David Cain to read bodies instead of words, she speaks sparingly (she
+  isn't mute), hears in his breathing what he won't say, and calls him Dad only
+  when it matters. The rest of the family, and the world facts, know them both.
+- **Calls that sound like calls.** Replies were measured at 26–41 words for every
+  contact, Jason included, with almost nothing short. Each contact now has their
+  own spread of spoken length, drawn per turn and moved by what was said — a
+  grunt gets a word, a confession gets an answer — and held to it with a cap that
+  has a sentence of slack, so it stops monologues without cutting answers in
+  half. Remarks on how little he said ("Just 'okay'?") are dropped, an ellipsis
+  mid-thought no longer ends the sentence, and each character has a line on how
+  they talk on a call — who swears and how much, Dick's effortless humour,
+  Selina's allure. Status lines rotate through the day.
 - **Four of the family:** Dick Grayson (Nightwing), Tim Drake (Robin), Barbara
   Gordon (Batgirl and Oracle) and Jason Todd (Red Hood), written from a
   researched bible of the comics, films, games and animation — Dick warm and

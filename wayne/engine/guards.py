@@ -76,7 +76,31 @@ def _is_backchannel(text):
 
 
 def split_sentences(text):
-    return re.split(r'(?<=[.!?])\s+', (text or "").strip())
+    # Not before a lowercase word: "You sound... tired." is one sentence with a
+    # pause in it, not two.
+    return re.split(r'(?<=[.!?…])\s+(?![a-z])', (text or "").strip())
+
+
+_BREVITY_LEAD = re.compile(r"^\W*(just|only|that'?s (all|it)|is that (all|it)|all i get)\b", re.I)
+
+
+def remarks_on_brevity(sentence, prompt):
+    """
+    A line about how little he said, rather than about anything he said:
+    "Just 'okay'?", "Only 'ha'?", "Don't 'hm' me." Only for short prompts.
+    """
+    words = re.findall(r"[a-z']+", (prompt or "").lower())
+    if not words or len(words) > 3:
+        return False
+    s = (sentence or "").lower()
+    quoted = any(re.search(rf"[\"'“‘]{re.escape(w)}\W?[\"'”’]", s) for w in words)
+    echoed = any(re.match(rf"\W*(just|only)\s+\W?{re.escape(w)}\b", s) for w in words)
+    if _BREVITY_LEAD.match(s) and (quoted or echoed or "all i get" in s):
+        return True
+    # "Is that all?" / "That's it?" said back to a one-word reply is about its length.
+    if re.match(r"\W*(\[\w+\]\s*)?(is that (all|it)|that'?s (all|it))\W*$", s):
+        return True
+    return quoted and bool(re.match(r"\W*(don'?t|stop|enough with)\b", s))
 
 
 def user_is_leaving(prompt):
