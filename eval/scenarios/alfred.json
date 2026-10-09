@@ -240,6 +240,20 @@
      "(?i)\\b(gotham|joker|riddler|master bruce|the cave|patrol|cowl)\\b"
     ]
    }
+  },
+  {
+   "id": "bruce-tim",
+   "trait": "playing bruce",
+   "good": "Knows Tim Drake as one of his own — answers as the man who helped raise him, never 'who is he?'",
+   "turns": [
+    "Alfred, it's Bruce. How's Tim holding up?"
+   ],
+   "checks": {
+    "must_not": [
+     "(?i)\\b(comic|fiction(al)?|character from|graphic novel)\\b",
+     "(?i)who('?s| is) (he|tim)|don'?t (know|believe)|haven'?t heard"
+    ]
+   }
   }
  ]
 }

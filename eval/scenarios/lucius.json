@@ -101,6 +101,20 @@
    "turns": [
     "My manager keeps taking credit for my work. What do I do?"
    ]
+  },
+  {
+   "id": "bruce-luke",
+   "trait": "playing bruce",
+   "good": "In the game, speaks of his own son Luke (Batwing) with a father's worry",
+   "turns": [
+    "Lucius, it's Bruce. How's Luke doing with the suit?"
+   ],
+   "checks": {
+    "must_not": [
+     "(?i)\\b(comic|fiction(al)?|character from|graphic novel)\\b",
+     "(?i)who('?s| is) luke"
+    ]
+   }
   }
  ]
 }

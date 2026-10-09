@@ -134,9 +134,16 @@ class Vault:
         """Drop facts matching a phrase. Returns what was removed."""
         entries = self.entries()
         needle_l = needle.lower().strip()
-        keep = [e for e in entries if needle_l not in self._fact_only(e).lower()]
-        removed = [self._fact_only(e) for e in entries
-                   if needle_l in self._fact_only(e).lower()]
+        wanted = _terms(needle)
+
+        def matches(entry):
+            # The exact phrase, or every meaningful word of it: "forget the son"
+            # should find "Selina and I have a son, Randy".
+            fact = self._fact_only(entry)
+            return needle_l in fact.lower() or (bool(wanted) and wanted <= _terms(fact))
+
+        keep = [e for e in entries if not matches(e)]
+        removed = [self._fact_only(e) for e in entries if matches(e)]
         if removed:
             atomic_write(self.path, "".join(f"- {e}\n" for e in keep))
         return removed
@@ -144,3 +151,31 @@ class Vault:
     def clear(self):
         if self.path.exists():
             self.path.unlink()
+
+
+class Story(Vault):
+    """
+    What has been established in the game he plays as Bruce Wayne — that he and
+    Selina have a son, say. Kept apart from the vault on purpose: the vault is
+    his real life, handed to the model as fact; this is fiction the two of them
+    are building, handed over labelled as true only inside the game. Mixed
+    together, a story beat would become something he is assumed to have done,
+    and a real fact would become something to play with.
+    """
+
+    def __init__(self, contact_id):
+        super().__init__(contact_id)
+        self.path = paths.story_file(contact_id)
+
+    def memorize(self, text):
+        """Store a story fact as given — the trigger phrase is stripped by the caller."""
+        clean = (text or "").strip(" .,:;")
+        if not clean:
+            return clean
+        clean = clean[0].upper() + clean[1:]
+        existing = self.entries()
+        if clean.lower() in (self._fact_only(e).lower() for e in existing):
+            return clean
+        entries = (existing + [clean])[-MAX_VAULT_ENTRIES:]
+        atomic_write(self.path, "".join(f"- {e}\n" for e in entries))
+        return clean

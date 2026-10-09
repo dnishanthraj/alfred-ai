@@ -366,6 +366,13 @@
   function placeCall(contactId) {
     var contact = state.contacts[contactId];
     if (!contact) return;
+    // Already on a call with someone else: hang that up properly first — the
+    // end tone, the console's line — then ring the new one.
+    if (state.connectedId && state.connectedId !== contactId) {
+      hangUp({ switching: true });
+      setTimeout(function () { placeCall(contactId); }, 900);
+      return;
+    }
     state.currentId = contactId;
     state.ringingId = contactId;
     state.connectedId = contactId;   // input is accepted while it rings
@@ -409,7 +416,7 @@
     armIdleCheck();
   }
 
-  function hangUp() {
+  function hangUp(opts) {
     ConsoleAudio.stop();
     ConsoleTones.stopRinging();
     ConsoleTones.disconnected();
@@ -420,7 +427,9 @@
     clearTimeout(state.resumeTimer);
     state.closing = false;
     state.hangUpWhenQuiet = false;
-    send({ type: 'disconnect' });
+    // A switch tells the server by connecting to someone else, so the call it
+    // ends can be remembered as cut short rather than simply over.
+    if (!(opts && opts.switching)) send({ type: 'disconnect' });
     state.connectedId = null;
     state.ringingId = null;
     el['bar-title'].textContent = '';
@@ -506,6 +515,11 @@
         }
         break;
 
+      case 'call_ending':
+        // He said goodbye and was answered: ring off once the voice stops.
+        state.hangUpWhenQuiet = true;
+        break;
+
       case 'turn_complete':
         state.generationDone = true;
         answered();
@@ -519,6 +533,8 @@
           state.closing = false;
           state.hangUpWhenQuiet = true;
           closeIfFinished();
+        } else if (state.hangUpWhenQuiet) {
+          closeIfFinished();   // after a goodbye; waits for the voice if it's still going
         } else {
           armIdleCheck();
         }

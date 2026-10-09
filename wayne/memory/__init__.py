@@ -4,9 +4,9 @@ import json
 from .. import paths
 from .history import History
 from .store import atomic_write, read_text
-from .vault import Vault
+from .vault import Story, Vault
 
-__all__ = ["History", "Vault", "atomic_write", "read_text", "migrate_legacy"]
+__all__ = ["History", "Story", "Vault", "atomic_write", "read_text", "migrate_legacy"]
 
 
 def migrate_legacy(contact_id):

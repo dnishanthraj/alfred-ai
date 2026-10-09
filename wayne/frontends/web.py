@@ -316,6 +316,10 @@ class Console:
         if self._release:
             self._release.cancel()
             self._release = None
+        if self.current_id and self.current_id != contact_id:
+            # Switching lines mid-call: whoever was on it notices next time.
+            self.sessions[self.current_id].call_ended("switched")
+            self.interrupt()
         async with self.turn_lock:
             self.current_id = contact_id
             session = self.session_for(contact_id)

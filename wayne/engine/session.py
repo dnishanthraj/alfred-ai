@@ -31,7 +31,7 @@ from collections import deque
 import ollama
 
 from .. import config, delivery, events
-from ..memory import History, Vault
+from ..memory import History, Story, Vault
 from . import guards, prompting, world
 from .search import format_search_results, google_search, is_factual_lookup
 
@@ -128,7 +128,8 @@ _REMINISCING = re.compile(
 
 # A reach for a shared memory: "you remember…", "remember when…", "that time we…".
 _SHARED_PAST = re.compile(
-    r"\b(you remember|remember (when|that|the)|do you recall|that time (we|you|i)|"
+    r"\b(you remember|(do|don'?t|didn'?t) you remember|you don'?t remember|"
+    r"remember (when|that|the|our|my)|do you recall|that time (we|you|i)|"
     r"the (night|day|time|weekend|trip) (we|you|i))\b", re.I)
 
 
@@ -137,6 +138,20 @@ _COMMON = {"remember", "recall", "that", "when", "time", "night", "weekend", "wi
            "what", "were", "right", "there", "they", "then", "this", "your", "have",
            "trip", "back", "those", "about", "after", "before"}
 
+
+# Building the story of the game he plays as Bruce (see wayne.memory.Story).
+_STORY_REMEMBER = re.compile(
+    r"^\s*(?:(?:for|in) (?:our|the) (?:story|game)[,:]?\s*(?:remember|note)?(?:\s+that)?|"
+    r"remember (?:for|in) (?:our|the) (?:story|game)(?:\s+that)?|story note:?)\s*[,:]?\s*(.+)$", re.I)
+_STORY_FORGET = re.compile(
+    r"^\s*(?:forget (?:from|in) (?:our|the) (?:story|game)(?:\s+that)?|"
+    r"(?:for|in) (?:our|the) (?:story|game)[,:]?\s*forget(?:\s+that)?)\s*[,:]?\s*(.+)$", re.I)
+_STORY_RESET = re.compile(r"^\s*(reset|clear|wipe|start over) (our|the) (story|game)\b", re.I)
+# Gotham's words — only to keep real-life rules from contradicting the game.
+_GAME_WORDS = re.compile(
+    r"\b(bruce|wayne|batman|bats|gotham|cave|cowl|batmobile|batwing|robin|nightwing|"
+    r"red hood|oracle|jason|dick|tim drake|damian|barbara|cassandra|stephanie|selina|"
+    r"catwoman|gordon|joker|penguin|riddler|arkham|our son|our daughter)\b", re.I)
 
 _BARE_OPINION = re.compile(
     r"^\s*(and )?(so )?(what do you think|what d'?you reckon|thoughts|your (view|take)|"
@@ -200,6 +215,7 @@ class ContactSession:
         self.contact = contact
         self.history = History(contact.id)
         self.vault = Vault(contact.id)
+        self.story = Story(contact.id)
         self.already_greeted = False
         # How many times he has talked over a reply this session.
         self.interruptions = 0
@@ -214,6 +230,7 @@ class ContactSession:
         # followed by "Still breathing yet?" is a machine with two phrasings.
         self._recent_asides = deque(maxlen=6)
         self._looked = False   # a search has run this turn
+        self._last_call = None  # how the previous call ended (see call_ended)
         # Silences broken since he last spoke, and the last way one was broken.
         self._silences = 0
         self._last_silence_move = None
@@ -482,6 +499,14 @@ class ContactSession:
 
     # --- turns ------------------------------------------------------------
 
+    def call_ended(self, how):
+        """
+        How the last call ended, for the next one to know: "switched" when he
+        rang off mid-call to ring someone else. A person notices being cut off
+        for another line; the next greeting can say so, once.
+        """
+        self._last_call = how
+
     def boot(self):
         """
         Generate the opening line. Stored as a proper user/assistant pair: a
@@ -494,11 +519,13 @@ class ContactSession:
         # Read before pruning: this is the greeting about to be removed.
         marker = _link_marker(self.contact)
         previous = self.history.last_greeting(marker)
-        payload = prompting.build_payload(
-            self.contact, self.history.for_model(),
-            prompting.boot_prompt(self.contact, returning,
-                                  self.history.time_since_last(), previous),
-        )
+        instruction = prompting.boot_prompt(self.contact, returning,
+                                            self.history.time_since_last(), previous)
+        if self._last_call == "switched":
+            instruction += ("\n(Last time, he cut your call short to ring someone else. "
+                            "You may remark on it, once and lightly — or not.)")
+        self._last_call = None
+        payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
 
         greeting = "Online. I'm here when you're ready."
         try:
@@ -654,7 +681,14 @@ class ContactSession:
                     "and without pretending you hadn't noticed the earlier ones."
                 )
 
-        if _SHARED_PAST.search(prompt) and not self._on_record(prompt):
+        if _SHARED_PAST.search(prompt) and self._in_the_game(prompt):
+            # "You don't remember our son, Randy?" — said as Bruce — got "I
+            # don't have a son", because the rule against inventing his real
+            # past fired inside the game too. In the game his lead is the truth.
+            notes.append(
+                "He's reaching for something in the game you play. It's true in your "
+                "story — go with it and build on it; don't deny it or ask if it happened.")
+        elif _SHARED_PAST.search(prompt) and not self._on_record(prompt):
             # Asked "you remember that weekend in Cornwall?", he described the
             # leaking roof in Polperro — a whole shared past, invented on the
             # spot, which is the one thing that makes everything else he says
@@ -669,8 +703,9 @@ class ContactSession:
         if guards.user_is_leaving(prompt):
             # "Goodnight my friend" got a bare "Goodnight." and nothing else,
             # however the character was described. Said on the turn, it holds.
-            notes.append("He's saying goodnight. Send him off warmly, with a little "
-                         "of you in it — a line or two, not a bare goodnight.")
+            notes.append("He's saying goodbye, and the call ends after your reply. "
+                         "Send him off warmly, with a little of you in it — a line or "
+                         "two, not a bare goodbye.")
 
         if _DANGER.search(prompt):
             # Half the time "I'm fine to drive, it was only three pints" got a
@@ -731,6 +766,16 @@ class ContactSession:
             else:
                 notes.append("He cut you off mid-sentence. Let it go and answer what he asked.")
         return notes
+
+    def _in_the_game(self, prompt):
+        """
+        Whether this turn is part of the game: Gotham's words in it or in what
+        he said just before, or something already in the story. Used only to
+        stop the real-life grounding rules contradicting the game — the
+        character decides for itself which world it's in.
+        """
+        recent = " ".join(self.history.recent_user(turns=6)[-3:] + [prompt])
+        return bool(_GAME_WORDS.search(recent)) or self.story.mentions(prompt)
 
     def _on_record(self, prompt):
         """
@@ -900,6 +945,8 @@ class ContactSession:
 
         self.history.record_exchange(prompt, reply)
         yield events.reply_end(reply)
+        if guards.user_is_leaving(prompt):
+            yield events.call_ending()
         yield events.state(events.IDLE)
 
     def _consider_search(self, prompt):
@@ -1034,9 +1081,31 @@ class ContactSession:
         """
         lowered = prompt.lower()
 
+        story = _STORY_REMEMBER.match(prompt)
+        if story:
+            fact = self.story.memorize(story.group(1))
+            yield from self._acknowledge(
+                prompt, f"In the game you play with him, this is now part of your story: "
+                        f"\"{fact}\". It's true in the game from here on.")
+            return True
+        story = _STORY_FORGET.match(prompt)
+        if story:
+            removed = self.story.forget(story.group(1).strip(" ."))
+            yield from self._acknowledge(
+                prompt, "He asked to take this out of your story: \"" + story.group(1) + "\". "
+                + ("It's gone from the story." if removed else "It wasn't in the story to begin with."))
+            return True
+        if _STORY_RESET.match(prompt):
+            self.story.clear()
+            yield from self._acknowledge(
+                prompt, "He asked to start your story over. Everything established in the "
+                        "game so far is wiped; you begin fresh.")
+            return True
+
         if lowered in _WIPE_COMMANDS:
             self.history.clear()
             self.vault.clear()
+            self.story.clear()
             yield from self._acknowledge(
                 prompt, "You have just wiped everything you remembered of him and "
                         "your conversations, as he asked. You start fresh.", record=False)

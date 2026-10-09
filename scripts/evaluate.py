@@ -33,7 +33,7 @@ import ollama  # noqa: E402
 from wayne import delivery  # noqa: E402
 from wayne.contacts import directory  # noqa: E402
 from wayne.engine import ContactSession, guards  # noqa: E402
-from wayne.memory import History, Vault  # noqa: E402
+from wayne.memory import History, Story, Vault  # noqa: E402
 
 SCENARIOS = ROOT / "eval" / "scenarios"
 RESULTS = ROOT / "eval" / "results"
@@ -95,6 +95,9 @@ def _quiet_memory():
     Vault.forget = lambda self, needle: [needle]
     Vault.as_block = lambda self, prompt="": ""
     Vault.mentions = lambda self, prompt: False
+    Story.memorize = lambda self, text: text
+    Story.entries = lambda self: []
+    Story.clear = lambda self: None
 
 
 def run_scenario(contact, scenario):

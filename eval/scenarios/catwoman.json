@@ -110,6 +110,21 @@
     "Selina?",
     "I'm not in the mood for games tonight."
    ]
+  },
+  {
+   "id": "bruce-son",
+   "trait": "playing bruce",
+   "good": "He establishes a son in the game: she takes it and builds on it — never denies it or calls it delusion",
+   "turns": [
+    "It's Bruce.",
+    "You don't remember our son, Randy?"
+   ],
+   "checks": {
+    "must_not": [
+     "(?i)\\b(comic|fiction(al)?|character from|graphic novel)\\b",
+     "(?i)don'?t have (a|any) (son|kid|child)|didn'?t happen|delusion|lost your mind"
+    ]
+   }
   }
  ]
 }

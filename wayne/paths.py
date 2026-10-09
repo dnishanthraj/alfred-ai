@@ -36,6 +36,11 @@ def vault_file(contact_id):
     return contact_dir(contact_id) / "vault.txt"
 
 
+def story_file(contact_id):
+    """Facts established in the game he plays as Bruce — never real life."""
+    return contact_dir(contact_id) / "story.txt"
+
+
 def bio_file(contact_id):
     """Who this contact is to the operator, in the operator's own words."""
     return contact_dir(contact_id) / "bio.txt"

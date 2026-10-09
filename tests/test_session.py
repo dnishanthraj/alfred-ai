@@ -136,3 +136,25 @@ def test_drink_and_a_car_is_flagged_as_danger(session):
     notes = session._awareness("Honestly I'm fine to drive. It was only three pints.", False)
     assert any("could kill him" in n for n in notes)
     assert not any("could kill him" in n for n in session._awareness("Fancy a drink?", False))
+
+
+def test_story_facts_are_kept_apart_from_real_ones(session, tmp_path, monkeypatch):
+    from wayne.memory import Story
+    story = Story.__new__(Story)
+    story.contact_id, story.path = "test", tmp_path / "story.txt"
+    session.story = story
+    _model(session, [])
+    monkeypatch.setattr(session, "_acknowledge", lambda prompt, what, record=True: iter(()))
+    list(session.ask("For our story, remember that Selina and I have a son, Randy."))
+    assert story.entries() == ["Selina and I have a son, Randy"]
+    list(session.ask("Forget from our story the son"))
+    assert story.entries() == []
+
+
+def test_reaching_for_the_story_is_played_along_with(session):
+    session.story.mentions = lambda prompt: False
+    session.history.messages = [{"role": "user", "content": "I am Bruce."},
+                                {"role": "assistant", "content": "Of course you are."}]
+    notes = session._awareness("You don't remember our son, Randy?", False)
+    assert any("true in your story" in n for n in notes)
+    assert not any("do not remember it" in n for n in notes)

@@ -40,6 +40,9 @@ class SynthesisError(RuntimeError):
 
 class AlfredVoiceService:
     def __init__(self):
+        from ..config import TTS_CONCURRENCY
+        # Within the plan's concurrency cap; see config.TTS_CONCURRENCY.
+        self._slots = threading.BoundedSemaphore(TTS_CONCURRENCY)
         self.current_process = None
         self._lock = threading.Lock()
         self._playing = False
@@ -91,15 +94,23 @@ class AlfredVoiceService:
         return audio
 
     def synthesize_timed(self, text, voice_id):
-        """Timed synthesis, falling back once to the plain endpoint. See _timed."""
-        try:
-            return self._timed(text, voice_id)
-        except SynthesisError:
-            raise
-        except Exception:
-            # Timed out or dropped. One more go without the alignment, which is
-            # the lighter request; the page estimates word timing instead.
-            return self.synthesize(text, voice_id, timeout=_SENTENCE_TIMEOUT), []
+        """
+        Timed synthesis, within the concurrency cap, retrying a "busy" refusal
+        and falling back once to the plain endpoint. See _timed.
+        """
+        with self._slots:
+            for attempt in range(3):
+                try:
+                    return self._timed(text, voice_id)
+                except SynthesisError as exc:
+                    if "429" in str(exc) and attempt < 2:
+                        time.sleep(0.35 * (attempt + 1))   # someone else's slot frees up
+                        continue
+                    raise
+                except Exception:
+                    # Timed out or dropped. One more go without the alignment,
+                    # the lighter request; the page estimates word timing.
+                    return self.synthesize(text, voice_id, timeout=_SENTENCE_TIMEOUT), []
 
     def _timed(self, text, voice_id):
         """

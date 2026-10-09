@@ -67,6 +67,14 @@ def speak(audio_id, text, index=0, words=None):
     return {"type": "speak", "words": words or [], "audio_id": audio_id, "text": text, "index": index}
 
 
+def call_ending():
+    """
+    He said goodbye and the contact has answered it: the contact hangs up once
+    they have finished speaking, the way a call between two people ends.
+    """
+    return {"type": "call_ending"}
+
+
 def turn_complete():
     """
     Generation *and* synthesis are both finished for this turn.

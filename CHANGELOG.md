@@ -7,6 +7,22 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Added
 
+- **A story that persists, kept apart from real life.** "For our story, remember
+  that Selina and I have a son" adds to a per-contact story store; "forget from
+  our story…" and "reset our story" edit it. It reaches the model labelled as the
+  game's and nobody's real life, so a story beat can't become something he's
+  assumed to have done, and a real fact can't become something to play with.
+- **Playing Bruce works.** Each contact follows his lead inside the game — what
+  he establishes is true there, and they build on it — and knows the world by
+  name: Alfred his family (Dick, Jason, Tim, Damian, Barbara…), Lucius his son
+  Luke, Selina the Robins, Holly, Ivy and Harley. "How's Tim?" no longer gets
+  "who is he?"; reaching for the story no longer trips the rule against inventing
+  his real past, which still holds for real life.
+- **Calls end like calls.** Say goodbye and the contact sends you off and then
+  rings off once they've finished speaking. Ring someone else mid-call and the
+  current line is hung up properly first — and that contact may remark, next time,
+  on being cut off for another line.
+
 - **Lucius Fox and Selina Kyle.** Two new contacts, written from a researched
   bible of the comics, the films and the Arkham games. Lucius: the engineer who
   became Wayne Enterprises' CEO and never stopped being an engineer — calm, wry,
@@ -64,6 +80,13 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Fixed
 
+- **Some sentences were never spoken.** Every sentence went to ElevenLabs at
+  once, and requests over the plan's concurrency cap came back "429 Too many
+  concurrent requests" and were dropped. Synthesis is now held to
+  `WAYNE_TTS_CONCURRENCY` (default 2) and a refusal is retried; six sentences at
+  once all land, the last in ~1.3s.
+- **"Stop playing around" didn't stop the teasing.** The not-playing signal
+  now covers it, "be serious" and "enough".
 - **Replies sometimes went silent, or the console seemed to freeze.** Two causes.
   One slow ElevenLabs request held every later sentence behind it for up to 30
   seconds, then the reply arrived as text; each sentence now gives up after 3s

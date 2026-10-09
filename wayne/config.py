@@ -77,6 +77,11 @@ WHISPER_HINT_PROMPT = setting("WHISPER_HINTS", USER_NAME)
 # room or accent says otherwise.
 WHISPER_MODEL = setting("WHISPER_MODEL", "mlx-community/whisper-small.en-mlx")
 
+# How many sentences may be synthesised at once. ElevenLabs caps concurrent
+# requests by plan, and every sentence going out together drew "429 Too many
+# concurrent requests" — the sentences over the cap were simply never spoken.
+TTS_CONCURRENCY = max(1, int(setting("TTS_CONCURRENCY", "2")))
+
 # The console's own voice, for logging in and out and placing and ending calls.
 # Optional; without it those moments stay silent.
 BATCOMPUTER_VOICE_ID = os.getenv("BATCOMPUTER_VOICE_ID", "").strip()

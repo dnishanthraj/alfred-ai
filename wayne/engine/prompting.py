@@ -28,6 +28,7 @@ import re
 import time
 
 from .. import delivery, paths
+from ..memory import Story
 from ..memory.store import read_text
 from . import world
 
@@ -146,7 +147,8 @@ GROUNDING_DIRECTIVE = (
     "ask. Inventing something he did is the one thing you must never do. Never "
     "invent past conversations either: if you cannot see an earlier exchange in "
     "this transcript, it did not happen — say you don't recall it. Your own side "
-    "is yours to say."
+    "is yours to say. All of this is about his real life; the game he sometimes "
+    "plays as Bruce Wayne runs on his lead instead."
 )
 
 
@@ -175,7 +177,8 @@ _SINCERE = re.compile(
 )
 
 _NOT_PLAYING = re.compile(
-    r"\b(not in the mood|no games|stop (it|joking|messing)|i'?m (being )?serious|"
+    r"\b(not in the mood|no games|stop (it|joking|messing|playing( around)?)|"
+    r"be serious|enough|i'?m (being )?serious|"
     r"seriously though|not now|not funny|i mean it|cut it out|drop it)\b", re.I)
 
 _WEIGHT = re.compile(
@@ -374,6 +377,9 @@ def build_payload(contact, history, user_turn):
         bio = relationship(contact)
         if bio:
             parts.append(bio)
+        story = story_so_far(contact)
+        if story:
+            parts.append(story)
         parts.append(standing_directives(contact))
         script = _primer_script(contact)
         if script:
@@ -382,6 +388,21 @@ def build_payload(contact, history, user_turn):
     messages.extend(list(history))
     messages.append({"role": "user", "content": user_turn})
     return messages
+
+
+def story_so_far(contact):
+    """
+    What has been established in the game he plays as Bruce, labelled as the
+    game's and nobody's real life. In the cached prefix: it changes only when
+    he adds to it, and then one prefix re-read is the whole cost.
+    """
+    facts = Story(contact.id).entries()
+    if not facts:
+        return ""
+    return ("=== YOUR STORY WITH HIM — the game he plays as Bruce Wayne ===\n"
+            "Established between you in the game. True inside the game, always; never "
+            "part of his real life, and never brought into it.\n"
+            + "\n".join(f"- {fact}" for fact in facts))
 
 
 def relationship(contact):
