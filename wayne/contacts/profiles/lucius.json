@@ -9,12 +9,12 @@
   "model_env": "LUCIUS_OLLAMA_MODEL",
   "voice_env": "LUCIUS_VOICE_ID",
   "think": false,
-  "max_reply_sentences": 8,
+  "max_reply_sentences": 3,
   "speech_length": {
     "word": 0.2,
-    "line": 0.5,
+    "line": 0.6,
     "few": 0.27,
-    "long": 0.03
+    "long": 0.01
   },
   "can_search": true,
   "forbidden_address": [
@@ -310,7 +310,8 @@
     "follows": [
       "engineering and science breakthroughs",
       "jazz",
-      "technology business news"
+      "technology business news",
+      "films in cinemas"
     ]
   }
 }

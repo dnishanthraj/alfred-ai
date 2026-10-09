@@ -1449,7 +1449,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
   font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45); }
 .gm-hover[hidden] { display: none; }
-.gm-tool--text { width: auto; padding: 0 9px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; }
+.gm-tool--text { padding: 0; font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em; line-height: 28px; text-align: center; }
 .gm-flash { width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--primary-lit);
   animation: gm-flash 1.8s ease-out both; pointer-events: none; }
 @keyframes gm-flash { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.8); opacity: 0; } }
@@ -1560,7 +1560,8 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm__tools--float { position: absolute; right: 224px; bottom: 14px; z-index: 850; flex-direction: column;
   margin: 0; gap: 4px; }
 .gm__tools--float .gm-tool { background: rgba(10, 13, 20, 0.88); }
-.gm__head { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+/* Nothing in the header may clip what drops out of it (search results, the layers menu). */
+.gm__head { flex-wrap: nowrap; overflow: visible; position: relative; z-index: 30; }
 .gm__chips { flex-wrap: nowrap; }
 .gm-chip { padding: 5px 7px; }
 
@@ -1600,3 +1601,40 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm-assign span { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--accent);
   background-color: var(--surface-2); background-size: cover; }
 .gm-assign:hover, .gm-assign.is-on { color: var(--text); border-color: var(--accent); }
+
+/* Layers: one button, a menu of switches. */
+.gm-layers { position: relative; }
+.gm-layers__btn { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; cursor: pointer;
+  background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim); font-family: var(--mono);
+  font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; }
+.gm-layers__btn svg { width: 14px; height: 14px; }
+.gm-layers__btn:hover, .gm-layers__btn[aria-expanded="true"] { color: var(--primary); border-color: var(--primary-dim); }
+.gm-layers__menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 1000; min-width: 190px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px; background: var(--raised); border: 1px solid var(--hairline-2);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55); animation: toast-in 0.12s var(--ease) both; }
+.gm-layers__menu[hidden] { display: none; }
+.gm-layers__item { display: flex; justify-content: space-between; align-items: center; width: 100%; text-align: left;
+  border: 0; padding: 8px 10px; }
+.gm-layers__item::after { content: ""; width: 22px; height: 12px; border-radius: 6px; background: var(--hairline-2);
+  box-shadow: inset -10px 0 0 2px var(--surface-2); transition: background 0.2s var(--ease), box-shadow 0.2s var(--ease); }
+.gm-layers__item.is-on { background: transparent; }
+.gm-layers__item.is-on::after { background: var(--primary-dim); box-shadow: inset 10px 0 0 2px var(--surface-2); }
+.gm-layers__item:hover { background: var(--hairline); }
+
+/* The side panel folds away; everything floating over the map follows its edge. */
+.gm-side { transition: margin-right 0.25s var(--ease); }
+.gm.is-wide .gm-side { margin-right: -210px; }
+.gm-side__toggle { position: absolute; top: 12px; right: 218px; z-index: 860; width: 22px; height: 40px; padding: 3px;
+  background: rgba(10, 13, 20, 0.88); border: 1px solid var(--hairline-2); border-right: 0; color: var(--text-dim);
+  cursor: pointer; transition: right 0.25s var(--ease); }
+.gm-side__toggle svg { width: 100%; height: 100%; display: block; transition: transform 0.25s var(--ease); }
+.gm-side__toggle:hover { color: var(--primary); }
+.gm.is-wide .gm-side__toggle { right: 0; }
+.gm.is-wide .gm-side__toggle svg { transform: rotate(180deg); }
+.gm-info, .gm__tools--float { transition: right 0.25s var(--ease); }
+.gm.is-wide .gm-info, .gm.is-wide .gm__tools--float { right: 34px; }
+.gm-info { right: 252px; }
+.gm__tools--float { right: 228px; }
+/* End call: the directory's handset, a size up. */
+.end-call { background: transparent; border-color: rgba(224, 87, 79, 0.45); padding: 11px; display: grid; place-items: center; }
+.end-call:hover { background: rgba(224, 87, 79, 0.12); color: var(--alert); }

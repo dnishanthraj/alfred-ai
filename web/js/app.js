@@ -2363,6 +2363,8 @@
 
     el['dossier-close'].addEventListener('click', function () { el.dossier.hidden = true; });
     el['messages-close'].addEventListener('click', closeMessages);
+    // The same handset as the directory's end-call, so ending a call looks the same everywhere.
+    $('end-call').innerHTML = ICONS.end;
     $('end-call').addEventListener('click', function () { if (state.connectedId) hangUp(); });
     el['messages-compose'].addEventListener('submit', sendMessage);
     el['dossier-save'].addEventListener('click', saveDossier);
@@ -2380,6 +2382,17 @@
 
     window.addEventListener('keydown', function (e) {
       if (document.documentElement.dataset.phase !== 'live') return;
+      var typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable);
+      if (!typing && window.GothamMap && (e.key === 'm' || e.key === 'M') && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        if (GothamMap.isOpen()) GothamMap.close(); else GothamMap.open();
+        return;
+      }
+      if (!typing && e.key === '/' && window.GothamMap && GothamMap.isOpen()) {
+        e.preventDefault();
+        GothamMap.search();
+        return;
+      }
       if (e.key === 'Escape') {
         if (window.GothamMap && GothamMap.isOpen()) { GothamMap.close(); return; }
         interruptHim();

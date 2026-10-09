@@ -96,8 +96,18 @@ def curve(points, iterations=3):
     return LineString(chaikin(points, iterations, closed=False))
 
 
-def ellipse(at, rx, ry):
-    return affinity.scale(Point(at).buffer(1, 32), rx, ry)
+def ellipse(at, rx, ry, seed=0):
+    """A lake as water really sits: an ellipse with a shoreline of its own."""
+    ring = list(affinity.scale(Point(at).buffer(1, 16), rx, ry).exterior.coords)[:-1]
+    return Polygon(chaikin(roughen(ring, seed, amp=0.18 * min(rx, ry), levels=2), 3)).buffer(0)
+
+
+def blob(cx, cy, radius, seed):
+    """A small organic patch: a pocket park, a plaza, a pond."""
+    r = random.Random(seed)
+    pts = [(cx + math.cos(a) * radius * r.uniform(0.65, 1.25), cy + math.sin(a) * radius * r.uniform(0.65, 1.25))
+           for a in [i * math.pi / 5 for i in range(10)]]
+    return Polygon(chaikin(pts, 3)).buffer(0)
 
 
 def lines_of(geom):
@@ -131,6 +141,7 @@ def street_grid(area, angle, block, warp, seed):
     minx, miny, maxx, maxy = area.bounds
     cx, cy = (minx + maxx) / 2, (miny + maxy) / 2
     reach = math.hypot(maxx - minx, maxy - miny) / 2 + 2
+    warp = max(warp, 0.16)      # nowhere is ruler-straight
     raw = []      # (line, class)
     for family, (deg, spacing, staggered) in enumerate((
             (angle, block, False), (angle + 90, block * r.uniform(1.45, 1.85), True))):
@@ -141,14 +152,15 @@ def street_grid(area, angle, block, warp, seed):
         while t < reach:
             n += 1
             cls = "avenue" if family == 0 and n % 4 == 0 else "street"
-            steps = max(2, int(2 * reach / 0.7)) if warp else 1
+            steps = max(2, int(2 * reach / 0.7))
+            bend, phase = warp * r.uniform(0.5, 1.6), r.uniform(0, 6.3)
+            kink = r.uniform(-0.05, 0.05)           # a line a few degrees off the grid
             pts = []
             for k in range(steps + 1):
                 s = -reach + 2 * reach * k / steps
                 x, y = cx + vx * t + ux * s, cy + vy * t + uy * s
-                if warp:
-                    off = warp * math.sin(s / 2.7 + t * 0.41 + family * 1.7)
-                    x, y = x + vx * off, y + vy * off
+                off = bend * math.sin(s / r.uniform(2.4, 3.2) + t * 0.41 + family * 1.7 + phase) + kink * s
+                x, y = x + vx * off, y + vy * off
                 pts.append((x, y))
             line = LineString(pts)
             if staggered:
@@ -212,6 +224,17 @@ def disc(cx, cy, r):
     return Point(cx, cy).buffer(r, 20)
 
 
+def junction(rb, scale):
+    """A roundabout's footprint at a scale: ring, oval, rounded square or star."""
+    x, y, r = rb["at"][0], rb["at"][1], rb["r"] * scale
+    shape = rb.get("shape", "ring")
+    if shape == "oval":
+        return affinity.rotate(affinity.scale(Point(x, y).buffer(1, 24), r * 1.5, r * 0.8), 25)
+    if shape == "square":
+        return box(x - r * 0.8, y - r * 0.8, x + r * 0.8, y + r * 0.8).buffer(r * 0.25, quad_segs=6)
+    return Point(x, y).buffer(r, 28)
+
+
 def landmark_shapes(name, x, y):
     """
     The few buildings anyone would know from the skyline, each as tiers of
@@ -249,8 +272,12 @@ def landmark_shapes(name, x, y):
         tanks = [(disc(x + 0.35 + 0.38 * i, y + dy, 0.16), 0, 16) for i in range(3) for dy in (-0.25, 0.25)]
         return [(rect(x - 0.35, y, 0.9, 0.55), 0, 22), (disc(x - 0.7, y - 0.25, 0.07), 0, 54)] + tanks
     if name == "Statue of Justice":
-        return [(square(x, y, 0.46), 0, 12), (square(x, y, 0.26), 12, 18), (square(x, y, 0.1), 18, 46),
-                (square(x + 0.04, y, 0.04), 46, 56)]
+        # Plinth, pedestal, the robe narrowing to the waist, shoulders, head —
+        # and the arm raised with the scales, the sword held low at her side.
+        return [(square(x, y, 0.62), 0, 8), (square(x, y, 0.36), 8, 22), (disc(x, y, 0.13), 22, 30),
+                (disc(x, y, 0.1), 30, 38), (rect(x, y, 0.2, 0.09), 38, 41), (disc(x, y, 0.045), 41, 45),
+                (rect(x + 0.1, y, 0.035, 0.035), 36, 52), (rect(x + 0.1, y, 0.12, 0.03), 52, 53.5),
+                (rect(x - 0.11, y + 0.02, 0.025, 0.025), 24, 37)]
     if name == "Cape Carmine Lighthouse":
         return [(disc(x, y, 0.15), 0, 6), (disc(x, y, 0.08), 6, 34), (disc(x, y, 0.11), 34, 39)]
     if name == "Iceberg Lounge":
@@ -389,7 +416,7 @@ def build():
 
     # Water first: rivers and lakes cut the land they run through.
     rivers = [curve(r["line"], 3).buffer(r["width"] / 2, quad_segs=8) for r in src["rivers"]]
-    lakes = [ellipse(lake["at"], lake["rx"], lake["ry"]) for lake in src["lakes"]]
+    lakes = [ellipse(lake["at"], lake["rx"], lake["ry"], 300 + i) for i, lake in enumerate(src["lakes"])]
     water_cut = unary_union(rivers + lakes)
 
     island = landmass(src["coast"], 1)
@@ -405,7 +432,8 @@ def build():
     for lake, spec in zip(lakes, src["lakes"], strict=True):
         add(lake, "water", n=spec["name"])
 
-    parks = [Polygon(chaikin(p["coast"], 3)).buffer(0) for p in src["parks"]]
+    parks = [Polygon(chaikin(roughen(p["coast"], 400 + i, amp=0.35), 3)).buffer(0)
+             for i, p in enumerate(src["parks"])]
     park_names = [p["name"] for p in src["parks"]]
 
     # Districts: the cells around their centres, clipped to the land they're on.
@@ -446,14 +474,43 @@ def build():
             continue
         parks.append(shore.intersection(area))
         park_names.append("")
-    for rb in src.get("roundabouts", []):
-        parks.append(disc(rb["at"][0], rb["at"][1], rb["r"] * 0.7))
+    shapes = ["ring", "star", "oval", "square", "star"]
+    for i, rb in enumerate(src.get("roundabouts", [])):
+        rb.setdefault("shape", shapes[i % len(shapes)])
+        parks.append(junction(rb, 0.7))
         park_names.append("")
+    plazas = []
+    pr = random.Random(91)
+    for i, (name, area) in enumerate(areas.items()):
+        if name not in island_names or name in SPARSE:
+            continue
+        minx, miny, maxx, maxy = area.bounds
+        for k in range(pr.randint(1, 3)):
+            for _ in range(12):
+                x, y = pr.uniform(minx, maxx), pr.uniform(miny, maxy)
+                spot = blob(x, y, pr.uniform(0.35, 0.95), 700 + i * 10 + k)
+                if area.buffer(-0.4).contains(spot) and not spot.intersects(unary_union(parks)):
+                    if pr.random() < 0.35:
+                        plazas.append(spot)
+                    else:
+                        parks.append(spot)
+                        park_names.append("")
+                    break
     parks.append(Polygon(chaikin([[-7, 3], [7, 2], [9, 15], [-6, 17]], 3)).buffer(0).difference(water_cut))
     park_names.append("Wayne Estate")
     park_union = unary_union(parks)
     for p, name in zip(parks, park_names, strict=True):
         add(p, "park", n=name)
+    for p in plazas:
+        add(p, "plaza")
+    # Ponds in the bigger parks.
+    for i, p in enumerate(parks[:2]):
+        c = p.representative_point()
+        for k in range(2):
+            pond = blob(c.x + pr.uniform(-2, 2), c.y + pr.uniform(-3, 3), pr.uniform(0.3, 0.6), 900 + i * 5 + k)
+            if p.buffer(-0.3).contains(pond) and not pond.intersects(water_cut):
+                add(pond, "water", n="")
+    plaza_union = unary_union(plazas)
 
     outer = {d["name"] for d in ds if "limit" in d or "city" in d}
     for i, (name, area) in enumerate(areas.items()):
@@ -474,8 +531,8 @@ def build():
                            or grid_of.get(n, {}).get("city")])
     borders = borders.difference(land.boundary.buffer(0.55)).difference(water_cut.buffer(0.2))
     # Softened a little, so district borders read as avenues that bend, not ruled lines.
-    secondary = [LineString(chaikin(list(s.coords), 2, closed=False)).simplify(0.03)
-                 for s in lines_of(shapely.line_merge(borders)) if s.length > 0.6]
+    secondary = [LineString(chaikin(roughen(list(s.coords), 50 + i, amp=0.22, closed=False), 2, closed=False))
+                 .simplify(0.03) for i, s in enumerate(lines_of(shapely.line_merge(borders))) if s.length > 0.6]
 
     named, elevated = [], []
     for road in src["roads"]:
@@ -494,7 +551,23 @@ def build():
     park_drive = parks[0].buffer(-0.9).exterior
     named.append((LineString(park_drive.coords), "secondary", "Park Drive"))
     for rb in src.get("roundabouts", []):
-        named.append((LineString(disc(rb["at"][0], rb["at"][1], rb["r"]).exterior.coords), "primary", rb["name"]))
+        named.append((LineString(junction(rb, 1.0).exterior.coords), "primary", rb["name"]))
+        if rb["shape"] == "star":
+            # A star: avenues leaving the circle like spokes.
+            for k in range(7):
+                a = k * 2 * math.pi / 7 + 0.3
+                x0, y0 = rb["at"][0] + math.cos(a) * rb["r"], rb["at"][1] + math.sin(a) * rb["r"]
+                spoke = LineString([(x0, y0), (rb["at"][0] + math.cos(a) * rb["r"] * 3.4,
+                                               rb["at"][1] + math.sin(a) * rb["r"] * 3.4)])
+                named.append((spoke.intersection(land), "secondary", ""))
+    # Nothing drives straight across a roundabout: everything meets the ring.
+    holes = unary_union([junction(rb, 0.97) for rb in src.get("roundabouts", [])])
+    streets = [(p, c) for s, c in streets for p in lines_of(s.difference(holes).difference(plaza_union))
+               if p.length > 0.2]
+    secondary = [p for s in secondary for p in lines_of(s.difference(holes)) if p.length > 0.2]
+    named = [(p, c, n) for ln, c, n in named
+             for p in (lines_of(ln.difference(holes)) if n not in [rb["name"] for rb in src.get("roundabouts", [])]
+                       else [ln]) if p.length > 0.15]
     bridges = [(curve(b["line"], 2), b["name"]) for b in src["bridges"]]
 
     for s, c in streets:
@@ -502,7 +575,8 @@ def build():
     for s in secondary:
         add(s, "road", c="secondary")
     for line, cls, name in named:
-        add(line, "road", c=cls, n=name, **({"e": 1} if name == "Gotham Skyway" else {}))
+        props = {"c": cls, **({"n": name} if name else {}), **({"e": 1} if name == "Gotham Skyway" else {})}
+        add(line, "road", **props)
     for line, name in bridges:
         add(line, "road", c="bridge", n=name)
 
@@ -567,9 +641,9 @@ def build():
     cuts = unary_union([s.buffer(0.12 if c == "avenue" else 0.085, quad_segs=2) for s, c in streets]
                        + [s.buffer(0.15, quad_segs=2) for s in secondary]
                        + [ln.buffer(0.24 if c == "highway" else 0.2 if c == "primary" else 0.15, quad_segs=2)
-                          for ln, c, _ in named if c != "rail"]
-                       + [ln.buffer(0.22) for ln, _ in bridges] + reserved)
-    cores = src.get("cores", [])
+                          for ln, c, _ in named]
+                       + [ln.buffer(0.22) for ln, _ in bridges] + reserved + [plaza_union])
+    cores = src.get("cores", []) + [[d["at"][0], d["at"][1], 0.55, 2.6] for d in ds]
     count = 0
     for i, (name, area) in enumerate(areas.items()):
         g = grid_of[name]
@@ -590,8 +664,8 @@ def build():
                     pull = 1 + sum(k * math.exp(-((c.x - cx) ** 2 + (c.y - cy) ** 2) / (rad * rad))
                                    for cx, cy, k, rad in cores)
                     h = g["tall"] * r.lognormvariate(0, 0.5) * pull
-                    if r.random() < 0.025:
-                        h *= 2.4            # the odd tower, anywhere
+                    if r.random() < 0.05:
+                        h *= r.uniform(2.0, 3.6)            # the odd tower, anywhere
                     building(piece.simplify(0.04), round(max(4, min(260, h))))
                     count += 1
 
@@ -609,7 +683,7 @@ def build():
                 px, py = x + tr.uniform(-0.12, 0.12), y + tr.uniform(-0.12, 0.12)
                 if tr.random() < 0.72 and park.contains(Point(px, py)) and not water_cut.contains(Point(px, py)) \
                         and not paths.contains(Point(px, py)):
-                    trees.append([round(px * 100), round(py * 100), tr.randint(8, 17)])
+                    trees.append([round(px * 100), round(py * 100), tr.randint(7, 19), tr.randint(6, 13)])
                 x += step
             y += step
 

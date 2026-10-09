@@ -110,6 +110,29 @@ A full review of the code turned up, among others:
   asked something factual gets the answer found quietly, handed to them as
   what they might know — used only if someone like them would, never as "let
   me check". Alfred and Lucius at a computer still say they're looking.
+- **The map, more alive and less tidy.** Coastlines that meander out to sea
+  instead of ruling off at the edge, and a view held near Gotham (the tilt eases
+  off as you zoom out, so the horizon never shows). Lakes and parks with real
+  shorelines; pocket parks, plazas and ponds scattered through the districts;
+  roundabouts as rings, ovals, rounded squares and star junctions with spokes,
+  and no road drives straight across one; every street bends a little and
+  some run a few degrees off their grid; rail no longer runs through buildings;
+  tall buildings across the city, not just downtown; round trees of different
+  sizes; a Statue of Justice shaped like a figure. The layer chips moved into a
+  Layers menu, the side panel folds away, search finds reports too, M opens
+  the map and / searches it, and the End call button wears the same handset as
+  the directory's.
+- **From the persona evaluation:** the culture feed comes up for real culture
+  talk and each person's own interests — not for "rough night, lost someone" —
+  and hands over only what bears on the question, labelled film, game, book and
+  so on, with what's out and what's coming; background knowledge isn't searched
+  for questions about people in his life ("what was Randy like when he was
+  little?"), is scoped to what they follow when it's in their world, and says
+  so when it isn't; nobody leans on the same opener or phrase reply after reply
+  (they're shown what they've worn out); a stage cue never comes two replies
+  running; "sir" mid-sentence is lower-case; nobody opens with "Bruce," every
+  time; Alfred gets "Master Wayne" and Lucius keeps "Bruce" for real trouble;
+  both talk shorter; a literal "no reply" is no reply.
 - **Cases.** Reports off the scanner become cases when you put someone on one —
   from its card on the map, or by telling them in a call or a text ("take the
   robbery in the Diamond District") — or when someone on patrol nearby takes it

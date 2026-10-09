@@ -205,6 +205,9 @@
                    'hillshade-highlight-color': '#1d4d6e', 'hillshade-accent-color': '#06121c',
                    'hillshade-illumination-direction': 315 } },
         { id: 'park', type: 'fill', source: 'city', filter: is('park'), paint: { 'fill-color': C.park, 'fill-opacity': 0.9 } },
+        { id: 'plaza', type: 'fill', source: 'city', filter: is('plaza'), paint: { 'fill-color': '#122131', 'fill-opacity': 0.95 } },
+        { id: 'plaza-edge', type: 'line', source: 'city', filter: is('plaza'),
+          paint: { 'line-color': '#2f6f9c', 'line-width': 0.6, 'line-opacity': 0.5 } },
         { id: 'apron', type: 'fill', source: 'city', filter: is('apron'), paint: { 'fill-color': '#0e1f2e' } },
         { id: 'runway', type: 'fill', source: 'city', filter: is('runway'), paint: { 'fill-color': '#15293a' } },
         { id: 'runway-line', type: 'line', source: 'city', filter: is('runway_line'),
@@ -364,10 +367,11 @@
       return fetch('/static/map/gotham-trees.json');
     }).then(function (r) { return r.json(); }).then(function (trees) {
       // Each tree a small hexagon, so it can stand up in 3D.
+      // Each tree a round crown of its own size, so it stands up in 3D.
       var features = trees.map(function (t) {
-        var x = t[0] / 100, y = t[1] / 100, r = 0.09, ring = [];
-        for (var i = 0; i <= 6; i++) {
-          var a = i * Math.PI / 3;
+        var x = t[0] / 100, y = t[1] / 100, r = (t[3] || 9) / 100, ring = [];
+        for (var i = 0; i <= 12; i++) {
+          var a = i * Math.PI / 6;
           ring.push(ll(x + Math.cos(a) * r, y + Math.sin(a) * r));
         }
         return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: { h: t[2] } };
@@ -608,9 +612,12 @@
     var state = who ? (report.case === 'closed' ? who.name + ' closed it' + (report.outcome ? ': ' + report.outcome : '.')
                                               : who.name + '\u2019s on it — ' + report.case + '.')
                     : (near.length ? 'Close by: ' + near.join(', ') + '.' : 'Nobody from the family nearby.');
+    var img = warning(report.severity), canvas = document.createElement('canvas');
+    canvas.width = img.width; canvas.height = img.height;
+    canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
     showInfo(report.kind, report.place + ' · ' + clock(report.at) + ' · ' + report.status,
              report.dispatch ? 'Dispatch: \u201c' + report.dispatch + '\u201d' : 'Dispatch is still coming through.',
-             '', '', SEVERITY[report.severity]);
+             '', canvas.toDataURL(), SEVERITY[report.severity]);
     $('.gm-info__note').hidden = false;
     $('.gm-info__note').textContent = state;
     $('.gm-info__note').classList.add('is-plain');
@@ -835,6 +842,7 @@
       close();
       input.blur();
       if (o.person) return select(o.person, true);
+      if (o.report) incidentCard(o.report);
       map.flyTo({ center: ll(o.x, o.y), zoom: Math.max(map.getZoom(), o.district ? 14.2 : 15.6), duration: 1100 });
       flash(ll(o.x, o.y));
     }
@@ -870,6 +878,11 @@
       Object.keys(pins).forEach(function (id) {
         var pin = pins[id]._pin;
         if (pin.label.toLowerCase().indexOf(q) !== -1) found.push({ name: pin.label, kind: 'Your pin', x: pin.x, y: pin.y });
+      });
+      reports.forEach(function (r) {
+        if ((r.kind + ' ' + r.place + ' ' + (r.dispatch || '')).toLowerCase().indexOf(q) !== -1) {
+          found.push({ name: r.kind, kind: r.place + ' · ' + r.status, x: r.x, y: r.y, report: r });
+        }
       });
       options = found.slice(0, 8);
       chosen = 0;
@@ -949,6 +962,16 @@
     root.querySelectorAll('[data-layer]').forEach(function (chip) {
       chip.addEventListener('click', function () { setLayer(chip.dataset.layer); });
     });
+    // The layers live in a menu, not across the header.
+    var layersBtn = $('.gm-layers__btn'), layersMenu = $('.gm-layers__menu');
+    layersBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      layersMenu.hidden = !layersMenu.hidden;
+      layersBtn.setAttribute('aria-expanded', String(!layersMenu.hidden));
+    });
+    document.addEventListener('pointerdown', function (e) {
+      if (!layersMenu.hidden && !layersMenu.contains(e.target) && e.target !== layersBtn) layersMenu.hidden = true;
+    });
     $('[data-act="zoom-in"]').addEventListener('click', function () { map.zoomIn(); });
     $('[data-act="zoom-out"]').addEventListener('click', function () { map.zoomOut(); });
     $('[data-act="fit"]').addEventListener('click', fit);
@@ -966,6 +989,14 @@
     root.querySelectorAll('.gm-tab').forEach(function (t) {
       t.addEventListener('click', function () { showTab(t.dataset.tab); });
     });
+    // The side panel folds away for more map; remembered.
+    function side(hidden) {
+      root.classList.toggle('is-wide', hidden);
+      remember('gotham-map-side-hidden', hidden);
+      setTimeout(function () { map.resize(); }, 260);
+    }
+    $('.gm-side__toggle').addEventListener('click', function () { side(!root.classList.contains('is-wide')); });
+    if (recall('gotham-map-side-hidden', false)) root.classList.add('is-wide');
     $('.gm-card [data-act="dismiss"]').addEventListener('click', function () {
       selected = null; following = null;
       $('.gm-card').hidden = true;
@@ -989,9 +1020,11 @@
       map = new maplibregl.Map({
         container: $('.gm-canvas'), style: style(), center: ll(50, 70), zoom: 12,
         // Zoomed all the way out, the land and water still run past every edge.
-        minZoom: 10.8, maxZoom: 18.5, maxPitch: 70, attributionControl: false,
+        // Held near Gotham: zoomed out, the tilt eases off, so the far horizon
+        // never comes into view.
+        minZoom: 11, maxZoom: 18.5, maxPitch: 70, attributionControl: false,
         renderWorldCopies: false, dragRotate: true, pitchWithRotate: true,
-        maxBounds: [ll(-300, 330), ll(330, -300)]
+        maxBounds: [ll(-130, 230), ll(230, -110)]
       });
       map.on('load', function () {
         ICON_KINDS.forEach(function (kind) {
@@ -1021,6 +1054,10 @@
         $('[data-act="3d"]').classList.toggle('is-on', threeD);
       });
       map.on('zoom', fogFor);
+      map.on('zoom', function () {
+        var most = 30 + Math.max(0, Math.min(40, (map.getZoom() - 11) * 22));
+        if (Math.abs(map.getMaxPitch() - most) > 0.5) map.setMaxPitch(most);
+      });
       wireHover();
       wireFrame();
       wireSearch();
@@ -1051,6 +1088,7 @@
     _map: function () { return map; },
     update: function () { if (map && !root.hidden) placePeople(); },
     refreshCases: function () { if (map && !root.hidden) loadIncidents(); },
+    search: function () { if (root && !root.hidden) $('.gm-search__input').focus(); },
     focus: function (id) { if (map && !root.hidden) select(id, true); }
   };
 

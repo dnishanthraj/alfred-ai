@@ -355,6 +355,11 @@ def strip_presence(text):
     return " ".join(kept).strip()
 
 
+def tidy_address(text):
+    """", Sir." mid-sentence is "sir" — only a sentence's first word wears a capital."""
+    return re.sub(r"(?<=[,;—-] )Sir\b|(?<=[,;] )Sir\b", "sir", text or "")
+
+
 def strip_forbidden_address(text, terms):
     """
     Remove forms of address a character would never use.

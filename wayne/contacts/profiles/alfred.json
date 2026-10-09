@@ -9,12 +9,12 @@
   "model_env": "ALFRED_OLLAMA_MODEL",
   "voice_env": "ALFRED_VOICE_ID",
   "think": false,
-  "max_reply_sentences": 9,
+  "max_reply_sentences": 3,
   "speech_length": {
     "word": 0.25,
-    "line": 0.45,
+    "line": 0.55,
     "few": 0.25,
-    "long": 0.05
+    "long": 0.02
   },
   "can_search": true,
   "forbidden_address": [

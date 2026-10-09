@@ -351,7 +351,12 @@ class ContactSession:
         checked_opening = False
         can_search = self._can_look() and not getattr(self, "_no_search", False)
         self._pending_query = None
-        self._cue_spent = False
+        # A cue in the last reply spends this one's: "[sarcastic]" on every
+        # other line is a tic, not a delivery.
+        self._cue_spent = getattr(self, "_cued_now", False)
+        self._cued_now = False
+        named_lately = sum(1 for r in self.history.recent_assistant(turns=2)
+                           if re.match(rf"\W*{re.escape(operator_name())}\b", r or ""))
         self._hanging_up = False
         self._call_add = []
 
@@ -363,6 +368,11 @@ class ContactSession:
             sentence = _SEARCH_MARKER.sub("", sentence).strip()
             text = guards.strip_forbidden_address(
                 sentence.strip(), self.contact.forbidden_address)
+            text = guards.tidy_address(text)
+            if index == 0 and named_lately:
+                # "Bruce, ..." again: people don't open with your name every time.
+                text = re.sub(rf"^\W*{re.escape(operator_name())}\s*[,.…—-]+\s*", "", text)
+                text = text[:1].upper() + text[1:] if text else text
             # On a call, a line written for somebody else ("Lucius: Indeed.")
             # is dropped, and his own name as a speaker label is stripped.
             if self.call:
@@ -384,6 +394,8 @@ class ContactSession:
             if delivery.voiced(text) != delivery.clean(text):
                 if self._cue_spent:
                     text = delivery.clean(text)
+                else:
+                    self._cued_now = True
                 self._cue_spent = True
             if self._looked and _PROMISE_TO_LOOK.search(delivery.clean(text)):
                 dropped_presence += 1
@@ -431,6 +443,8 @@ class ContactSession:
                 buffer = _TEXT_REACT.sub("", buffer)
             elif "[react" in buffer.lower() and "]" not in buffer[buffer.lower().rfind("[react"):]:
                 continue        # half a tapback so far
+            if re.fullmatch(r"\W*no reply\W*", buffer.strip(), re.I) and len(buffer) < 16:
+                buffer = "[no reply]"           # said in words rather than as the marker
             choice = _REPLY_CHOICE.search(buffer)
             if choice:
                 self._reply_choice = "none" if "no" in choice.group(1).lower() else "later"
@@ -1420,23 +1434,32 @@ class ContactSession:
         work = self._casework(prompt)
         if work:
             awareness.append(work)
+        leaning = self._leaning_on()
+        if leaning:
+            awareness.append(leaning)
         known = ""
         if (self._can_look() and is_factual_lookup(prompt) and not covered
-                and not placeless and not follow_up):
+                and not placeless and not follow_up and not self._about_people(prompt)):
             yield events.state(events.SEARCHING)
             search_context = yield from self._run_search(
                 prompt, hold_for=None if via == "text" or not self.contact.search_aloud else prompt)
-        elif is_factual_lookup(prompt) and not covered and not placeless and not follow_up:
+        elif (is_factual_lookup(prompt) and not covered and not placeless and not follow_up
+              and not self._about_people(prompt)):
             # Nobody at a screen still knows things. The answer is found quietly
             # and handed over as what they might know — theirs to use if someone
             # like them would, never as a lookup: Dick knows the score, Jason
             # doesn't know the charts, and nobody says "let me check".
-            found = yield from self._run_search(prompt, hold_for=None, silent=True)
+            topic = culture.topic_for(self.contact, prompt)
+            found = yield from self._run_search(f"{prompt} {topic}" if topic else prompt, hold_for=None,
+                                                silent=True)
             if found:
+                field = ("This is your world — something you follow — so you'd likely know it."
+                         if topic else "This isn't something you follow; you'd know it only if it's "
+                         "big news, and would happily say you don't.")
                 known = ("What's true here, if you happen to know it — you'd have heard, read or "
-                         "seen it the way someone like you would. Use only what you'd plausibly "
-                         "know, said as you'd say it; never as though you'd just looked it up. If "
-                         "you honestly wouldn't know, say so your way:\n" + found)
+                         f"seen it the way someone like you would. {field} Use only what you'd "
+                         "plausibly know, said as you'd say it; never as though you'd just looked it "
+                         "up. If you honestly wouldn't know, say so your way:\n" + found)
 
         hearsay = "\n\n".join(part for part in (self._background(), known) if part)
         user_turn = prompting.compose_user_turn(
@@ -1545,6 +1568,45 @@ class ContactSession:
                 "whoever he asked about, the way you would — not a roll call: " + "; ".join(lines)
                 + (f". Not on it: {', '.join(dark)}." if dark else ".")
                 + (f" {scanner}" if scanner else "") + (f" {board}" if board else ""))
+
+    _PEOPLE_Q = re.compile(r"(?i)\b(going to be|gonna be|was \w+ like|were \w+ like|do you think|"
+                           r"should (i|we)|would you|are you|you think|remember when)\b")
+
+    def _about_people(self, prompt):
+        """A question about someone in his life, or about how things will go — not the web's."""
+        from ..contacts import directory
+        names = {operator_name().lower(), "bruce", "batman", "alfred", "family"}
+        for c in directory():
+            names.update({c.name.lower(), c.full_name.lower(), c.id})
+        low = (prompt or "").lower()
+        return bool(self._PEOPLE_Q.search(low)) or any(re.search(rf"\b{re.escape(n)}\b", low) for n in names)
+
+    def _leaning_on(self):
+        """
+        What they've leaned on lately — the same opener, the same phrase three
+        replies running — so they reach for something else. Read off their own
+        recent replies, not a list.
+        """
+        recent = [delivery.clean(r) for r in self.history.recent_assistant(turns=8) if r and r.strip()]
+        if len(recent) < 3:
+            return ""
+        openers = {}
+        for r in recent:
+            words = re.findall(r"[A-Za-z'’]+", r)[:2]
+            if words:
+                key = " ".join(words)
+                openers[key] = openers.get(key, 0) + 1
+        phrases = {}
+        for r in recent:
+            words = re.findall(r"[a-z'’]+", r.lower())
+            for gram in {" ".join(words[i:i + 3]) for i in range(len(words) - 2)}:
+                phrases[gram] = phrases.get(gram, 0) + 1
+        worn = [k for k, n in openers.items() if n >= 2]
+        worn += [k for k, n in sorted(phrases.items(), key=lambda kv: -kv[1]) if n >= 3][:3]
+        if not worn:
+            return ""
+        return ("You've leaned on these lately — reach for something else this time: "
+                + "; ".join(f"\"{w}\"" for w in worn[:4]) + ".")
 
     _CRIMEY = re.compile(r"(?i)\b(case|scanner|report|robbery|shooting|shots|body|kidnap|gang|riot|"
                          r"hostage|take (it|that|this|one)|handle|deal with|check (it|that) out|go to|"

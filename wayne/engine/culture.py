@@ -31,17 +31,30 @@ from .search import google_search
 
 # How long what they've seen stays fresh before it's looked for again.
 STALE_AFTER = 20 * 3600
-TOPICS_PER_REFRESH = 3
+TOPICS_PER_REFRESH = 4
 ITEMS_PER_TOPIC = 3
 
 _lock = threading.Lock()
 
 # A conversation that's turned to the things people follow.
+# Words, not stems: "won't" and "lost someone" are not about the box office.
 _ABOUT_CULTURE = re.compile(
-    r"(?i)\b(films?|movies?|cinema|watch(ed|ing)?|seen|trailer|series|show|episode|season|"
-    r"games?|gaming|play(ed|ing)?|console|switch|ps5|xbox|songs?|albums?|music|band|concert|tour|"
-    r"listen(ing)?|books?|novel|read(ing)?|author|match|race|fight|score|won|lost|league|"
-    r"cricket|boxing|f1|formula|ballet|gig|release[ds]?|came out|new)\b")
+    r"(?i)\b(films?|movies?|cinema|box office|trailer|series|episodes?|streaming|telly|binge\w*|"
+    r"seen anything|watching|games?|gaming|playing|console|switch|ps5|xbox|songs?|albums?|charts?|"
+    r"concerts?|tour|gig|playlist|podcasts?|reading|novel|author|matches|fixtures?|race|grand prix|"
+    r"fights?|bout|league|cricket|boxing|f1|formula one|ballet|exhibition|gallery|auction|sotheby'?s|"
+    r"jazz|theatre|theater|premiere|released?|coming out|out now)\b")
+
+
+def _their_words(contact):
+    """Words from what they're into and what they follow — Jason's 'motorcycles', Alfred's 'cricket'."""
+    interests = contact.interests or {}
+    words = set()
+    for key in ("follows", "pastimes", "games", "watching", "music", "reading"):
+        for item in interests.get(key, []):
+            words.update(w for w in re.findall(r"[a-z]{5,}", item.lower())
+                         if w not in {"there", "their", "about", "thing", "where", "which", "while", "after"})
+    return words
 
 
 def _path():
@@ -77,8 +90,22 @@ def mark_tried(contact):
         atomic_write(_path(), json.dumps(data, ensure_ascii=False, indent=1))
 
 
-def about_culture(text):
-    return bool(_ABOUT_CULTURE.search(text or ""))
+def about_culture(text, contact=None):
+    if _ABOUT_CULTURE.search(text or ""):
+        return True
+    if contact is None:
+        return False
+    low = set(re.findall(r"[a-z]{5,}", (text or "").lower()))
+    return bool(low & _their_words(contact))
+
+
+def topic_for(contact, text):
+    """The topic they follow that this question is about, for a better search — or ''."""
+    low = set(re.findall(r"[a-z]{4,}", (text or "").lower()))
+    for topic in (contact.interests or {}).get("follows", []):
+        if low & set(re.findall(r"[a-z]{4,}", topic.lower())):
+            return topic
+    return ""
 
 
 def note(contact, text):
@@ -87,11 +114,15 @@ def note(contact, text):
     lately, so they talk about what's real — with their own take, as a fan
     or a sceptic — or "" when it isn't that kind of turn.
     """
-    if not about_culture(text):
+    if not about_culture(text, contact):
         return ""
     items = seen(contact)
     if not items:
         return ""
+    # Only the few that bear on the question; a stack of headlines was recited.
+    words = set(re.findall(r"[a-z]{4,}", (text or "").lower()))
+    relevant = [i for i in items if words & set(re.findall(r"[a-z]{4,}", i.lower()))]
+    items = (relevant or items)[:4]
     return ("What you've seen lately in the things you follow (real, current — use it the way "
             "you'd actually talk about it, with your own take; don't recite it, and say you "
             "haven't seen something if you wouldn't have). Nothing beyond it is known: no results, "
@@ -142,9 +173,12 @@ def _condense(contact, topic, snippets, month):
     instruction = (
         f"It's {month}. These are search results about {topic}:\n" + "\n".join(snippets[:6])
         + f"\n\nList up to {ITEMS_PER_TOPIC} things someone who follows {topic} would know right now — "
-        "each a short factual line with the actual name or title, and a date or number if there is "
-        "one (\"X opened at number one this weekend\", \"Y is out on 19 November\"). Only what the "
-        "results say; nothing older than a few months; no opinions. JSON only: {\"items\": [\"...\"]}")
+        "each a short factual line that starts with what it is in brackets — [film], [show], [game], "
+        "[book], [music], [sport], [event], [tech] — then the actual name or title, and whether it's "
+        f"out now or when it's coming, against today ({month}): \"[film] X opened at number one this "
+        "weekend\", \"[game] Y is out on 19 November\". Only what the results say; nothing older than a "
+        "few months; no opinions; nothing about Batman, his family or any Gotham villain. "
+        "JSON only: {\"items\": [\"...\"]}")
     try:
         reply = ollama.chat(model=contact.model, think=False, format="json",
                             options={**contact.options, "temperature": 0.2, "num_predict": 260},

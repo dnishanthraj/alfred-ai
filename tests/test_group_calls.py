@@ -288,7 +288,7 @@ def test_on_patrol_they_are_somewhere_on_their_beat_not_at_home(private_data, mo
     tim = SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake", shares_status=True,
                           shares_location=True, home="Wayne Manor", texting_pace={},
                           beat=("Diamond District", "Gotham Docks"),
-                          routine=({"from": 0, "to": 24, "doing": "on patrol", "status": "online"},))
+                          routine=({"from": 0, "to": 24, "doing": "on patrol", "status": "online", "drift": 0},))
     whereabouts = presence.of(tim)
     where, _ = whereabouts.whereabouts()
     assert where in tim.beat
@@ -335,7 +335,7 @@ def test_the_map_traces_where_a_patrol_has_been(private_data, monkeypatch):
     tim = SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake", shares_status=True,
                           shares_location=True, home="Wayne Manor", texting_pace={},
                           beat=("Diamond District", "Gotham Docks", "Old Gotham"),
-                          routine=({"from": 0, "to": 24, "doing": "on patrol", "status": "online"},))
+                          routine=({"from": 0, "to": 24, "doing": "on patrol", "status": "online", "drift": 0},))
     trail = presence.of(tim).trail(hours=3)
     assert len(trail) >= 2
     assert all(p["name"] in tim.beat for p in trail)
@@ -404,3 +404,32 @@ def test_only_the_field_takes_cases():
 def test_taking_a_report_is_heard_in_what_they_say():
     from wayne.engine import session
     assert session._TAKE.search("On it. [take: Diamond District]").group(1) == "Diamond District"
+
+
+# --- from the persona evaluation -------------------------------------------------------
+
+
+def test_grief_is_not_a_cue_for_the_box_office():
+    from wayne.engine import culture
+    dick = SimpleNamespace(interests={"follows": ["new films and the box office"], "pastimes": ["trapeze"]})
+    assert not culture.about_culture("rough night. lost someone. won't talk about it", dick)
+    assert culture.about_culture("seen anything good lately?", dick)
+    assert culture.about_culture("how was trapeze practice", dick)     # their own interests count
+    assert culture.topic_for(SimpleNamespace(interests={"follows": ["England Test cricket"]}),
+                             "who won the cricket this week?") == "England Test cricket"
+
+
+def test_a_question_about_someone_in_his_life_is_never_a_web_search(private_data):
+    from wayne.contacts import directory
+    from wayne.engine.session import ContactSession
+    session = ContactSession.__new__(ContactSession)
+    session.contact = directory().get("catwoman")
+    assert session._about_people("What was Randy like when he was little?")
+    assert session._about_people("Who's going to be the problem?")
+    assert not session._about_people("Who won the heavyweight fight last night?")
+
+
+def test_sir_mid_sentence_is_lower_case():
+    from wayne.engine import guards
+    assert guards.tidy_address("Goodnight, Sir.") == "Goodnight, sir."
+    assert guards.tidy_address("Sir, the car is ready.") == "Sir, the car is ready."
