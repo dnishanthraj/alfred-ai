@@ -62,7 +62,10 @@ def afterthought(session, exchanges, by="text"):
         f"patrol, sleep? Or did they say they're now free, done, or back?\n"
         f"2. Did {contact.name} agree or offer to get back in touch — call {operator.name()}, text "
         f"him, report back? If {operator.name()} asked and {contact.name} refused, brushed it off or "
-        f"only said 'maybe' or 'if it matters', the answer is no.\n\n"
+        f"only said 'maybe' or 'if it matters', the answer is no.\n"
+        f"3. Across the whole conversation: does {contact.name} come away worried about "
+        f"{operator.name()} — something he said, how he sounded — and not reassured by the end? "
+        f"Only if it's clear; ordinary concern that was settled is no.\n\n"
         "Reply with JSON only, in this shape:\n"
         '{"doing": "a few words, e.g. checking the docks" or null, '
         '"where": "the place it puts them, as it would show on a map (e.g. Gotham Docks)" or null, '
@@ -70,7 +73,7 @@ def afterthought(session, exchanges, by="text"):
         '"free": true if they said they are now free/back/done, '
         '"contact": {"by": "text" or "call", "in_minutes": number or null if it is "when done", '
         '"about": "the subject — e.g. what they found at the docks; never a time like when done"} '
-        'or null}')
+        'or null, "worried": "what about him worries them, in a few words" or null}')
     try:
         reply = ollama.chat(model=contact.model, think=False, format="json",
                             options={**contact.options, "temperature": 0, "num_predict": 160},
@@ -109,6 +112,15 @@ def apply(session, found):
                 else random.uniform(10, 40)
         due = time.time() + max(1.0, minutes) * 60 * random.uniform(0.85, 1.2)
         state.intend(reach.get("by", "text"), reach["about"], due, origin="promise")
+    worry = found.get("worried")
+    if isinstance(worry, str) and worry.strip() and worry.strip().lower() not in ("null", "none", "no"):
+        # It stayed with them. Whether they say so later is theirs — Dick will,
+        # Jason might, a terse "you good?" an hour on; Randy probably won't.
+        leaning = session.contact.initiative or {}
+        odds = leaning.get("checks_in", 0.15 + leaning.get("per_day", 0.4) * 0.35)
+        if random.random() < odds and not any(i.get("origin") in ("promise", "worry") for i in state.intents()):
+            due = time.time() + random.uniform(25, 180) * 60
+            state.intend("text", worry.strip()[:120], due, origin="worry")
 
 
 def _number(value, default):

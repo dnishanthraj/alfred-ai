@@ -1174,6 +1174,10 @@ class ContactSession:
         elif why in ("declined", "missed"):
             ask = (f"You just rang him and he {'declined the call' if why == 'declined' else 'did not pick up'}. "
                    f"You were calling about: {about}. Text him instead, the way you would.")
+        elif why == "worry":
+            ask = (f"Since you last spoke, something's stayed with you: {about}. Check in on him — "
+                   "the way you would, which might be a word, a joke, or something that never says "
+                   "'worried'. If you'd honestly let it go, reply with exactly SKIP.")
         elif why == "second_thought":
             ask = ("You've just texted him. A moment later one more thing occurs to you — send it "
                    "as a short follow-up text. If nothing would, reply with exactly SKIP.")
@@ -1207,7 +1211,7 @@ class ContactSession:
         # A text, not a letter: told "a line or two", a model writes a paragraph.
         lines = [guards.cap_length(line, 3) for line in text.splitlines() if line.strip()][:4]
         text = "\n".join(lines)
-        if why in ("second_thought", "chase") and re.match(r"\W*skip\b", text, re.I):
+        if why in ("second_thought", "chase", "worry") and re.match(r"\W*skip\b", text, re.I):
             return ""
         if text:
             self.history.record_exchange(REACH_MARKER, text, via="text")
@@ -1378,6 +1382,9 @@ class ContactSession:
         lately = culture.note(self.contact, prompt)
         if lately:
             awareness.append(lately)
+        tracker = self._tracker(prompt)
+        if tracker:
+            awareness.append(tracker)
         known = ""
         if (self._can_look() and is_factual_lookup(prompt) and not covered
                 and not placeless and not follow_up):
@@ -1470,6 +1477,34 @@ class ContactSession:
         if closing and not self.call and via is None:
             yield events.call_ending()
         yield events.state(events.IDLE)
+
+    _WHEREABOUTS = re.compile(r"(?i)\b(where(?:'s| is| are|abouts)?|location|heard from|seen|up to|"
+                              r"status|on patrol|out tonight|doing|check on|tracker)\b")
+
+    def _tracker(self, prompt):
+        """
+        Where the family are, for the ones who see the tracker as he does —
+        Alfred in the cave, Barbara at her screens — when he's asking after
+        someone. Those who don't share their location aren't on it.
+        """
+        if not getattr(self.contact, "sees_whereabouts", False) or not self._WHEREABOUTS.search(prompt or ""):
+            return ""
+        from ..contacts import directory
+        book = directory()
+        lines, dark = [], []
+        for other in book:
+            if other.id == self.contact.id:
+                continue
+            if not other.shares_location:
+                dark.append(other.name)
+                continue
+            state, (where, company) = presence.of(other).now(), presence.of(other).whereabouts()
+            with_ = [book.get(c).name for c in company if book.get(c)]
+            lines.append(f"{other.name}: {state['status']}" + (f", {state['doing']}" if state["doing"] else "")
+                         + (f" — {where}" if where else "") + (f", with {' and '.join(with_)}" if with_ else ""))
+        return ("The family tracker, as you see it on your screens. Answer only what he asked — "
+                "whoever he asked about, the way you would — not a roll call: " + "; ".join(lines)
+                + (f". Not on it: {', '.join(dark)}." if dark else "."))
 
     def _can_look(self):
         """

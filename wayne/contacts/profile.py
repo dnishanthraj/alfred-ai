@@ -138,6 +138,8 @@ class Contact:
     interests: dict = field(default_factory=dict)
     # Where they patrol, as places on the map; they move through it on a patrol.
     beat: tuple = ()
+    # Whether they see the family tracker as he does (Alfred in the cave, Oracle).
+    sees_whereabouts: bool = False
 
     @property
     def has_voice(self):
@@ -281,6 +283,7 @@ def _load_profile(path):
         home=raw.get("home", ""),
         interests=raw.get("interests", {}),
         beat=tuple(raw.get("beat", [])),
+        sees_whereabouts=bool(raw.get("sees_whereabouts", False)),
         shares_location=bool(raw.get("shares_location", raw.get("shares_status", True))),
     )
 

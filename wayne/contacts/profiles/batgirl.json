@@ -281,5 +281,6 @@
     "Burnside",
     "City Hall",
     "Theater District"
-  ]
+  ],
+  "sees_whereabouts": true
 }

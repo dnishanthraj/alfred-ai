@@ -134,6 +134,11 @@ A full review of the code turned up, among others:
   by `scripts/build_map.py`; the hover card keeps just the place line.
 - **Tapbacks in DMs too** — double-click their message; and they react to yours,
   with a text or instead of one.
+- **Alfred and Barbara see the tracker.** Ask either where someone is and they
+  know, as you do — from the cave, from Oracle's screens; Lucius doesn't.
+- **Worry carries.** A call or a text that leaves someone worried about you and
+  not reassured may bring a check-in later — a word, a joke, a terse "you good?"
+  — at odds that fit them.
 - **Left on read, as people would.** A question you never answered is chased
   once, by the ones who would — or they move on to something else, or let it
   go. How soon they'll start something new after your silence is theirs too.

@@ -1418,7 +1418,8 @@ class Console(GroupChats):
                 whereabouts.postpone(intent["id"], 300)   # he's on another call
                 return
         whereabouts.done(intent["id"])
-        await self._send_unprompted(contact, intent["about"], "callback" if callback else "promise")
+        why = "callback" if callback else "worry" if intent.get("origin") == "worry" else "promise"
+        await self._send_unprompted(contact, intent["about"], why)
 
     def _quiet(self, now):
         try:
