@@ -5,7 +5,38 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ## [Unreleased]
 
+### Changed
+
+- **You are Bruce Wayne.** The console is a roleplay of Gotham, and who the user
+  is lives in an operator profile (`wayne/operators/bruce.json`): who Bruce is,
+  what each contact calls him, and the world — every fact tagged with who knows
+  it, so a secret identity reaches only the characters who would know it.
+  Anyone can be someone else: copy the profile, point `WAYNE_OPERATOR` at it,
+  and every contact follows. The previous real-life operator files are gone.
+
 ### Added
+
+- **Four of the family:** Dick Grayson (Nightwing), Tim Drake (Robin), Barbara
+  Gordon (Batgirl and Oracle) and Jason Todd (Red Hood), written from a
+  researched bible of the comics, films, games and animation — Dick warm and
+  quick with the ache under the jokes, Jason bookish and furious and fierce
+  about kids, Tim deductive and steady, Barbara a peer who won't be pushed.
+  Bios in Bruce's own words; first marks 82.5, 77.4, 75.0 and 79.3.
+- **Randy Wayne**, Bruce and Selina's son, raised at the manor and flying as
+  Batwing in Lucius's suit — and Selina doesn't know. She keeps that secret by not
+  having it: asked about Batwing on a call with Dick listening, she went fishing
+  for leverage.
+- **Texting.** Message any contact, on a call or not: a thread with their
+  portrait on their side, replies in their own texting style, unread dots, and
+  the same memory as their calls — they know what you texted when you next ring.
+- **The grapevine.** After a call, what might be passed on is noted; with a
+  chance set by how close two people are and after hours rather than seconds, it
+  reaches others as hearsay with its source — "Dick told me…". Never anything you
+  asked to keep quiet, and never across a secret.
+- **A directory for seven:** grouped (Wayne Manor, Family, Gotham), portraits,
+  one-line roles, and icon actions — message, and call / add / drop / end.
+- **Lookups in character:** a looked-up answer is relayed as the person would,
+  with their take, not read out like a forecast.
 
 - **Group calls.** Up to three contacts on one line. Add someone from the
   directory or by asking ("Alfred, get Lucius on the line"); the console

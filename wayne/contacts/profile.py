@@ -89,6 +89,12 @@ class Contact:
     # "50% 18%"}. Supplied images vary — a square render, a tall full-length
     # shot — and one crop does not suit them all.
     portrait: dict = field(default_factory=dict)
+    # How they write a text message — "full sentences, proper punctuation",
+    # "lowercase, no full stops". A text from Selina should not read like one
+    # from Alfred.
+    texting: str = ""
+    # Heading the directory lists them under ("Family", "Gotham").
+    group: str = "Contacts"
 
     @property
     def has_voice(self):
@@ -193,6 +199,8 @@ def _load_profile(path):
         deflections=tuple(raw.get("deflections", [])),
         judge=raw.get("judge", ""),
         portrait=raw.get("portrait", {}),
+        texting=raw.get("texting", ""),
+        group=raw.get("group", "Contacts"),
     )
 
 

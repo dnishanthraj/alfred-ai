@@ -149,6 +149,7 @@ class Weather(Feed):
                 return ""
             self._coords = (found["latitude"], found["longitude"], found.get("name", self.place))
         lat, lon, name = self._coords
+        name = config.LOCATION_NAME or name
         response = requests.get(
             "https://api.open-meteo.com/v1/forecast",
             params={

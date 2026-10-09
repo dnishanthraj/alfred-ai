@@ -27,7 +27,7 @@ the tail carries only what genuinely differs turn to turn.
 import re
 import time
 
-from .. import delivery, paths
+from .. import delivery, operator, paths
 from ..memory import Story
 from ..memory.store import read_text
 from . import world
@@ -142,13 +142,13 @@ LOOKUP_DIRECTIVE = (
 # thinks, what he saw. Those are colour, and nobody can be contradicted about
 # their own afternoon.
 GROUNDING_DIRECTIVE = (
-    "Never state anything about his life, day, work, feelings or surroundings "
-    "unless he told you or it is in the facts below. Do not guess or fill gaps — "
-    "ask. Inventing something he did is the one thing you must never do. Never "
-    "invent past conversations either: if you cannot see an earlier exchange in "
-    "this transcript, it did not happen — say you don't recall it. Your own side "
-    "is yours to say. All of this is about his real life; the game he sometimes "
-    "plays as Bruce Wayne runs on his lead instead."
+    "His past is what you know of him — the briefing above and your own history "
+    "with him — and you may draw on it. What you must never invent is what he has "
+    "done lately — today, tonight, this week — or a conversation between you that "
+    "isn't in this transcript or your memory: ask instead, and if he asks whether "
+    "you remember something you can't see, say you don't. When he tells you "
+    "something new about his life or the world, it's true; build on it. Your own "
+    "side — your day, your past, your opinions — is yours to say."
 )
 
 
@@ -310,9 +310,10 @@ def reference_block(vault_block, prompt, search_context="", awareness=()):
             # two, verbatim, which is a script rather than a man reading a
             # screen.
             "Live intel — retrieved via search just now, so it is current even if "
-            "it postdates what you know. Answer in your own words, the way you "
-            "would relay something you have just read; you need not announce that "
-            "you looked. Never read the results out as a list, never quote a URL. "
+            "it postdates what you know. Relay it as yourself — the gist in a line, "
+            "with your own take on it — the way you'd pass on something you've just "
+            "read, never as a report or a forecast; you need not announce that you "
+            "looked. Never read the results out as a list, never quote a URL. "
             "If they don't actually answer him, say you looked and couldn't find it "
             "— never that you haven't looked:\n"
             f"{search_context}"
@@ -330,7 +331,8 @@ def reference_block(vault_block, prompt, search_context="", awareness=()):
     return "\n\n".join(parts)
 
 
-def compose_user_turn(prompt, vault_block, search_context="", awareness=(), spoken=None):
+def compose_user_turn(prompt, vault_block, search_context="", awareness=(), spoken=None,
+                      hearsay=""):
     """
     Wrap the prompt with fenced context. The actual message comes last.
 
@@ -339,6 +341,8 @@ def compose_user_turn(prompt, vault_block, search_context="", awareness=(), spok
     register hint is still taken from the operator's own words.
     """
     context = reference_block(vault_block, prompt, search_context, awareness)
+    if hearsay:
+        context += "\n\n" + hearsay
     return (
         "[REFERENCE — context only, do not speak any of this aloud]\n"
         f"{context}\n"
@@ -379,7 +383,7 @@ def build_payload(contact, history, user_turn):
     """
     messages = []
     if contact.system:
-        parts = [contact.system]
+        parts = [contact.system, operator.briefing(contact.id)]
         bio = relationship(contact)
         if bio:
             parts.append(bio)
@@ -426,11 +430,8 @@ def relationship(contact):
     text = (read_text(paths.bio_file(contact.id)) or contact.bio or "").strip()
     if not text:
         return ""
-    # Written, as it happens, half in the voice of the Bruce Wayne he likes to
-    # play. The feeling is his; the cowl is the game.
     return ("=== HOW HE DESCRIBES YOU ===\n"
-            "In his own words — the truth of what you are to each other, even where "
-            "he has written it in the voice of the game he plays with you. Live it; "
+            "In his own words — the truth of what you are to each other. Live it; "
             "don't quote it.\n\n" + text)
 
 

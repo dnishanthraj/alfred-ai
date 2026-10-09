@@ -93,6 +93,24 @@
       </div>
     </aside>
 
+    <!-- Messages: a text thread with one contact -->
+    <aside class="messages" id="messages" hidden>
+      <header class="messages__head">
+        <span class="messages__avatar" id="messages-avatar"></span>
+        <div class="messages__who">
+          <span class="messages__name" id="messages-name"></span>
+          <span class="messages__role" id="messages-role"></span>
+        </div>
+        <button class="messages__close" id="messages-close" type="button" aria-label="Close messages">Close</button>
+      </header>
+      <ol class="messages__thread" id="messages-thread"></ol>
+      <form class="messages__compose" id="messages-compose">
+        <input class="messages__input" id="messages-input" type="text" autocomplete="off"
+               spellcheck="true" placeholder="Message…">
+        <button class="messages__send" type="submit" aria-label="Send">Send</button>
+      </form>
+    </aside>
+
     <!-- The link itself -->
     <section class="stage">
 

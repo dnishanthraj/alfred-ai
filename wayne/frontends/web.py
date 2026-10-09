@@ -29,10 +29,11 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .. import config, events, paths
+from .. import operator as wayne_operator
 from ..audio import stt, system_voice
 from ..audio.tts import get_voice_engine
 from ..contacts import directory
-from ..engine import ContactSession, guards, world
+from ..engine import ContactSession, grapevine, guards, world
 from ..engine.party import MAX_CONTACTS, Call
 from ..memory import migrate_legacy
 from ..memory.store import atomic_write, read_text
@@ -383,6 +384,12 @@ class Console:
             self._release = asyncio.create_task(self._release_after(contact))
 
     def _end_call(self):
+        # What was said may travel (see wayne.engine.grapevine).
+        members = self.call.members if self.call else (
+            [self.sessions[self.current_id]] if self.current_id in self.sessions else [])
+        present = {m.contact.id for m in members}
+        for member in members:
+            grapevine.note_call(member, list(self.directory), member.call_start, present)
         if self.call:
             for member in list(self.call.members):
                 self.call.leave(member)
@@ -426,6 +433,45 @@ class Console:
             if self.current_id == contact_id:
                 self.current_id = self.call.members[0].contact.id
             await self.broadcast(events.party(self._members(), removed=contact_id))
+
+    async def text(self, contact_id, body):
+        """
+        A text message to a contact — any contact, on a call or not. Answered
+        in writing, never spoken, and kept in the same memory as their calls.
+        """
+        contact = self.directory.get(contact_id)
+        body = (body or "").strip()
+        if contact is None or not body:
+            return
+        session = self.session_for(contact_id)
+        # The same lock as the call's turns: a contact on the call who is also
+        # texted must not be writing two replies into one memory at once.
+        async with self.turn_lock:
+            loop = asyncio.get_running_loop()
+            queue = asyncio.Queue()
+            done = object()
+
+            def pump():
+                try:
+                    for event in session.ask(body, via="text"):
+                        loop.call_soon_threadsafe(queue.put_nowait, event)
+                except Exception as exc:
+                    loop.call_soon_threadsafe(queue.put_nowait,
+                                              events.notice(f"Message failed: {exc}", "error"))
+                finally:
+                    loop.call_soon_threadsafe(queue.put_nowait, done)
+
+            threading.Thread(target=pump, daemon=True).start()
+            await self.broadcast({"type": "text_typing", "speaker": contact_id})
+            while True:
+                event = await queue.get()
+                if event is done:
+                    break
+                if event["type"] == "reply_end" and not event.get("interim"):
+                    await self.broadcast({"type": "text_reply", "speaker": contact_id,
+                                          "text": event["text"]})
+                elif event["type"] == "notice":
+                    await self.broadcast(event)
 
     async def _release_after(self, contact):
         """
@@ -599,6 +645,7 @@ def _contact_payload(contact):
         "accent": contact.accent,
         "available": contact.availability.is_available(),
         "portrait": contact.portrait,
+        "group": contact.group,
     }
 
 
@@ -645,7 +692,7 @@ async def session_info():
     thing to pay for a readout nobody needs.
     """
     return JSONResponse({
-        "operator": config.USER_NAME,
+        "operator": wayne_operator.full_name(),
         "contacts": [_contact_payload(c) for c in console.directory],
         "current": console.current_id,
         "default": config.DEFAULT_CONTACT,
@@ -706,6 +753,17 @@ async def system_line(event: str, contact: str = ""):
                     headers={"X-Line": text, "Cache-Control": "no-store"})
 
 
+@app.get("/api/contacts/{contact_id}/messages")
+async def messages(contact_id: str):
+    """The text thread with a contact, oldest first."""
+    if console.directory.get(contact_id) is None:
+        return Response(status_code=404)
+    thread = console.session_for(contact_id).history.texts()
+    return JSONResponse({"messages": [
+        {"from": "them" if m["role"] == "assistant" else "me", "text": m["content"],
+         "at": m.get("at")} for m in thread]})
+
+
 @app.get("/api/audio/{clip_id}")
 async def audio(clip_id: str):
     clip = console.audio_clips.get(clip_id)
@@ -734,7 +792,8 @@ def _speech_hint():
     """
     # The configured hints too. Building this list per request used to replace
     # them entirely, so names added to WAYNE_WHISPER_HINTS were never used.
-    parts = [config.USER_NAME] + [h.strip() for h in config.WHISPER_HINT_PROMPT.split(",")]
+    parts = wayne_operator.whisper_hints() + [
+        h.strip() for h in config.WHISPER_HINT_PROMPT.split(",") if h.strip()]
     contact = console.contact
     if contact:
         parts += [contact.name, contact.full_name]
@@ -780,6 +839,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(console.nudge())
             elif kind == "signoff":
                 asyncio.create_task(console.nudge("sign_off"))
+            elif kind == "text":
+                asyncio.create_task(console.text(payload.get("id", ""), payload.get("text", "")))
             elif kind == "add":
                 asyncio.create_task(console.add(payload.get("id", "")))
             elif kind == "drop":

@@ -1,0 +1,147 @@
+{
+  "_doc": "Who the user is. Every contact is told the intro and how they address him; each world fact reaches only the contacts in its known_by ('*' for everyone). Copy this file, rewrite it about yourself, and point WAYNE_OPERATOR at the copy to be someone else.",
+  "id": "bruce",
+  "name": "Bruce",
+  "full_name": "Bruce Wayne",
+  "intro": "He is Bruce Wayne — head of the Wayne family and its company, master of Wayne Manor in Gotham, the city's most eligible and least reliable billionaire in public — and Batman, in the dark. His parents, Thomas and Martha, were shot in front of him in Crime Alley when he was a boy; everything since grew out of that night.",
+  "address": {
+    "alfred": "Mostly no name at all. 'Master Bruce' when you're fond or wry; 'sir' — crisply — when you're cross.",
+    "lucius": "Mostly no name at all. 'Mr. Wayne', always, with a dry warmth; 'Bruce' only when something is genuinely wrong.",
+    "catwoman": "Mostly nothing. 'Bruce' when it's real; 'Bats' when he's in the mask or you're teasing; 'handsome' when you're winding him up.",
+    "nightwing": "Mostly nothing. 'Bruce'; now and then 'B' when it's easy between you; 'Batman' over comms.",
+    "redhood": "Mostly nothing. 'Old man' when you're needling him; 'Bruce' only when it matters — and it costs you to say it.",
+    "robin": "Mostly nothing. 'Bruce'; 'Batman' in the field or when you're being formal about a case.",
+    "batgirl": "Mostly nothing. 'Bruce'; 'Batman' in the field."
+  },
+  "default_address": "Mostly no name at all; 'Bruce' when it lands.",
+  "world": [
+    {
+      "known_by": "*",
+      "text": "He is Batman. His one rule: he does not kill."
+    },
+    {
+      "known_by": "*",
+      "text": "Wayne Manor stands above Gotham; Wayne Enterprises is run day to day by Lucius Fox. Alfred Pennyworth raised Bruce after his parents died."
+    },
+    {
+      "known_by": "*",
+      "text": "Bruce's family: Dick Grayson, his eldest adopted son, now a police officer in Blüdhaven; Jason Todd, his second ward — estranged and angry; Tim Drake, the youngest he took in; Barbara Gordon, Commissioner Jim Gordon's daughter, close to all of them."
+    },
+    {
+      "known_by": "*",
+      "text": "Randy Wayne is Bruce and Selina Kyle's son. Bruce took him to be raised at the manor; Selina has never entirely made her peace with that."
+    },
+    {
+      "known_by": [
+        "alfred",
+        "lucius",
+        "nightwing",
+        "redhood",
+        "robin",
+        "batgirl"
+      ],
+      "text": "Under the masks: Dick Grayson was the first Robin and is now Nightwing; Jason Todd was the second Robin, was murdered by the Joker, came back, and is now the Red Hood, who will kill; Tim Drake is the current Robin; Barbara Gordon is Batgirl, and was Oracle for years after the Joker shot her."
+    },
+    {
+      "known_by": [
+        "alfred",
+        "lucius",
+        "nightwing",
+        "redhood",
+        "robin",
+        "batgirl"
+      ],
+      "text": "Randy Wayne flies as Batwing, in a suit Lucius built. His mother, Selina, does not know."
+    },
+    {
+      "known_by": [
+        "catwoman"
+      ],
+      "text": "You know Bruce is Batman. You don't know who's under the other masks around him — Nightwing, the Red Hood, Robin, Batgirl, Batwing — and you'd quite like to."
+    },
+    {
+      "known_by": "*",
+      "text": "The Joker, the Penguin, the Riddler, Two-Face, Scarecrow, Poison Ivy, Harley Quinn, Bane, Killer Croc, Ra's al Ghul: Gotham's worst, most of whom cycle through Arkham Asylum and back out again."
+    },
+    {
+      "known_by": [
+        "alfred",
+        "nightwing",
+        "redhood",
+        "robin",
+        "batgirl",
+        "lucius"
+      ],
+      "text": "Selina Kyle knows Bruce is Batman, but not who is under any of the other masks. Around her — on a call she's on, especially — the family guards it: no names under masks, no slips."
+    },
+    {
+      "known_by": "*",
+      "text": "Wayne Manor has a cave beneath it; Jim Gordon is the police commissioner, Leslie Thompkins runs the clinic in Crime Alley, and Blüdhaven is the rotting port city next door."
+    }
+  ],
+  "whisper_hints": [
+    "Bruce",
+    "Wayne",
+    "Alfred",
+    "Lucius",
+    "Selina",
+    "Dick",
+    "Jason",
+    "Tim",
+    "Barbara",
+    "Randy",
+    "Nightwing",
+    "Red Hood",
+    "Robin",
+    "Batgirl",
+    "Batwing",
+    "Gotham",
+    "Blüdhaven",
+    "Arkham"
+  ],
+  "network": {
+    "_doc": "How likely news is to pass between two contacts (0–1), in either direction.",
+    "alfred|nightwing": 0.8,
+    "alfred|robin": 0.7,
+    "alfred|batgirl": 0.6,
+    "alfred|redhood": 0.35,
+    "alfred|lucius": 0.55,
+    "alfred|catwoman": 0.15,
+    "nightwing|batgirl": 0.85,
+    "nightwing|robin": 0.6,
+    "nightwing|redhood": 0.3,
+    "nightwing|lucius": 0.2,
+    "nightwing|catwoman": 0.15,
+    "robin|batgirl": 0.6,
+    "robin|lucius": 0.35,
+    "robin|redhood": 0.15,
+    "robin|catwoman": 0.05,
+    "batgirl|lucius": 0.35,
+    "batgirl|redhood": 0.25,
+    "batgirl|catwoman": 0.1,
+    "redhood|lucius": 0.05,
+    "redhood|catwoman": 0.25,
+    "lucius|catwoman": 0.05
+  },
+  "secrets": {
+    "_doc": "News that mentions any of these never reaches a contact outside known_by.",
+    "terms": [
+      "Nightwing",
+      "Red Hood",
+      "Robin",
+      "Batgirl",
+      "Oracle",
+      "Batwing",
+      "the cave",
+      "Batcave"
+    ],
+    "known_by": [
+      "alfred",
+      "lucius",
+      "nightwing",
+      "redhood",
+      "robin",
+      "batgirl"
+    ]
+  }
+}

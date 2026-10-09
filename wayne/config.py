@@ -59,6 +59,9 @@ CONTEXT_WINDOW = int(setting("CONTEXT_WINDOW", "8192"))
 # contact is handed a live weather reading for it (see wayne/engine/world.py)
 # instead of being left to imagine one. Personal, so it lives in .env.
 LOCATION = setting("LOCATION", "").strip()
+# What to call that place when speaking of it — "Gotham", in a roleplay whose
+# real weather comes from somewhere considerably less dramatic.
+LOCATION_NAME = setting("LOCATION_NAME", "").strip()
 
 # An RSS feed of headlines he has glanced at (e.g. a national news front page).
 # Optional; titles only, refreshed every half hour in the background.
@@ -132,10 +135,6 @@ def missing_requirements():
     problems = []
     if not ELEVENLABS_API_KEY:
         problems.append("Voice link unavailable — text only. (ELEVENLABS_API_KEY is unset.)")
-    if USER_NAME == "Operator":
-        problems.append(
-            "Operator unidentified. Set WAYNE_USER_NAME in .env so the console knows who you are."
-        )
     if not MEMORY_KEY:
         problems.append(
             "Memory vault is unencrypted on disk. Run `python run.py --new-key` to secure it."

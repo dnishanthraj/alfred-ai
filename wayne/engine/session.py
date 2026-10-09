@@ -32,7 +32,7 @@ import ollama
 
 from .. import config, delivery, events
 from ..memory import History, Story, Vault
-from . import guards, prompting, world
+from . import grapevine, guards, prompting, world
 from .search import format_search_results, google_search, is_factual_lookup
 
 # Searches run on a worker so the holding line can be written meanwhile.
@@ -231,6 +231,7 @@ class ContactSession:
         self._recent_asides = deque(maxlen=6)
         self._looked = False   # a search has run this turn
         self._last_call = None  # how the previous call ended (see call_ended)
+        self.call_start = len(self.history.messages)
         # On a call with others (see wayne.engine.party): the call, and what
         # this contact has heard said since they last spoke.
         self.call = None
@@ -564,6 +565,8 @@ class ContactSession:
 
         # Only the most recent connection belongs in the context.
         self.history.drop_prior_greetings(marker)
+        # Where this call begins in the history, for the grapevine at hang-up.
+        self.call_start = len(self.history.messages)
 
         # The 'user' side is a neutral placeholder, never shown on screen.
         self.history.append("user", marker)
@@ -896,7 +899,7 @@ class ContactSession:
         yield events.reply_end(text)
         yield events.state(events.IDLE)
 
-    def ask(self, prompt, interrupted=False, confidence=1.0, follow_up=False):
+    def ask(self, prompt, interrupted=False, confidence=1.0, follow_up=False, via=None):
         """
         Run one full turn.
 
@@ -906,13 +909,13 @@ class ContactSession:
         """
         self._spoken = []
         try:
-            yield from self._ask(prompt, interrupted, confidence, follow_up)
+            yield from self._ask(prompt, interrupted, confidence, follow_up, via)
         except GeneratorExit:
             if self._spoken:
                 self.history.record_exchange((prompt or "").strip(), " ".join(self._spoken))
             raise
 
-    def _ask(self, prompt, interrupted, confidence, follow_up=False):
+    def _ask(self, prompt, interrupted, confidence, follow_up=False, via=None):
         self._silences = 0
         self._looked = False
         prompt = (prompt or "").strip()
@@ -932,6 +935,12 @@ class ContactSession:
                 return
 
         awareness = self._awareness(prompt, interrupted, confidence)
+        if via == "text":
+            # A text is answered as a text: short, written, in their own style.
+            awareness.append(
+                "He's texting you, not calling. Reply as a text message — a line or two, "
+                "written the way you text" + (f" ({self.contact.texting})" if self.contact.texting
+                                              else "") + ", no stage cues.")
         if self.call:
             awareness.append(self.call.note_for(self, follow_up))
         vault_block = self.vault.as_block(prompt)
@@ -949,10 +958,12 @@ class ContactSession:
         if (self.contact.can_search and is_factual_lookup(prompt) and not covered
                 and not placeless and not follow_up):
             yield events.state(events.SEARCHING)
-            search_context = yield from self._run_search(prompt, hold_for=prompt)
+            search_context = yield from self._run_search(
+                prompt, hold_for=None if via == "text" else prompt)
 
         user_turn = prompting.compose_user_turn(
-            prompt, vault_block, search_context, awareness, spoken=said)
+            prompt, vault_block, search_context, awareness, spoken=said,
+            hearsay=grapevine.block(self.contact.id))
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn)
 
         yield events.state(events.THINKING)
@@ -990,10 +1001,10 @@ class ContactSession:
                 yield events.state(events.IDLE)
                 return
 
-        self.history.record_exchange(said, reply)
+        self.history.record_exchange(said, reply, via=via)
         self.heard = []
         yield events.reply_end(reply)
-        if guards.user_is_leaving(prompt) and not self.call:
+        if guards.user_is_leaving(prompt) and not self.call and via != "text":
             yield events.call_ending()
         yield events.state(events.IDLE)
 
@@ -1166,6 +1177,7 @@ class ContactSession:
             self.history.clear()
             self.vault.clear()
             self.story.clear()
+            grapevine.clear(self.contact.id)
             yield from self._acknowledge(
                 prompt, "You have just wiped everything you remembered of him and "
                         "your conversations, as he asked. You start fresh.", record=False)

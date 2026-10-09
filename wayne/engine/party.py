@@ -22,7 +22,8 @@ as on any call: talking over whoever is speaking closes the whole exchange.
 """
 import re
 
-from .. import config, events
+from .. import events
+from .. import operator as wayne_operator
 
 MAX_CONTACTS = 3
 # Contact turns per operator turn: the people he addressed, plus one follow-up.
@@ -35,7 +36,7 @@ _THE_ROOM = re.compile(
 
 class Call:
     def __init__(self, operator=None):
-        self.operator = operator or config.USER_NAME
+        self.operator = operator or wayne_operator.full_name()
         self.members = []          # ContactSession, in the order they joined
         self.last_speaker = None
         # Everything said on the call, labelled — so whoever joins late is

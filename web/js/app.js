@@ -49,6 +49,10 @@
     quietUntil: 0,    // he was asked for time; don't chase until then
     askedLast: false, // his last reply ended on a question
     party: [],        // who is on the call, in order of joining
+    messagesWith: null, // whose text thread is open
+    unread: {},       // contacts with a text reply not yet seen
+    typing: {},       // contacts writing a reply
+    typingBubble: null,
     lastSpeaker: null // who said the line on screen, on a call with company
   };
 
@@ -106,7 +110,8 @@
      'heard', 'utterance', 'status', 'empty', 'viz-wrap', 'ringing-label',
      'mode-ptt', 'mode-ambient', 'dossier', 'dossier-close', 'dossier-name',
      'dossier-role', 'dossier-text', 'dossier-save', 'dossier-saved',
-     'dossier-portrait'].forEach(function (id) { el[id] = $(id); });
+     'dossier-portrait', 'messages', 'messages-avatar', 'messages-name', 'messages-role',
+     'messages-close', 'messages-thread', 'messages-compose', 'messages-input'].forEach(function (id) { el[id] = $(id); });
   }
 
   /* --- the spoken line ---------------------------------------------------- */
@@ -348,12 +353,43 @@
 
   function onCall(id) { return state.party.indexOf(id) !== -1; }
 
+  var ICONS = {
+    call: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>',
+    add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>',
+    drop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11h-6"/></svg>',
+    end: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(135deg)"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>',
+    text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+  };
+  var ACTION_TITLE = { call: 'Call', add: 'Add to call', drop: 'Drop from call', end: 'End call' };
+
+  function actionButton(kind, title, onClick, disabled) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'book__act';
+    b.dataset.kind = kind;
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.innerHTML = ICONS[kind];
+    b.disabled = !!disabled;
+    b.addEventListener('click', function (e) { e.stopPropagation(); onClick(); });
+    return b;
+  }
+
   function renderDirectory() {
     el.book.innerHTML = '';
     var inCall = state.party.length > 0;
     var group = state.party.length > 1;
+    var lastGroup = null;
     state.order.forEach(function (id) {
       var contact = state.contacts[id];
+      // Grouped under small headings, in directory order.
+      if (contact.group && contact.group !== lastGroup) {
+        var heading = document.createElement('li');
+        heading.className = 'book__group';
+        heading.textContent = contact.group;
+        el.book.appendChild(heading);
+        lastGroup = contact.group;
+      }
       var live = onCall(id) && state.ringingId !== id;
       var ringing = state.ringingId === id;
 
@@ -366,7 +402,6 @@
       var row = document.createElement('div');
       row.className = 'book__row';
 
-      // Portrait, with the status dot sitting on its edge.
       var avatar = document.createElement('span');
       avatar.className = 'book__avatar';
       portraitStyle(avatar, contact, 'center 22%');
@@ -377,7 +412,7 @@
       var text = document.createElement('button');
       text.type = 'button';
       text.className = 'book__open';
-      text.title = 'Open personnel file';
+      text.title = contact.full_name + ' — ' + contact.role + ' (open personnel file)';
       var name = document.createElement('span');
       name.className = 'book__name';
       name.textContent = contact.name;
@@ -393,34 +428,110 @@
         openDossier(id);
       });
 
-      row.appendChild(avatar);
-      row.appendChild(text);
-
-      // One button, whose job depends on the call: ring them, add them to the
-      // call in progress, let them off it, or end it.
-      var call = document.createElement('button');
-      call.type = 'button';
-      call.className = 'book__call';
+      // Message, and one call action whose job depends on the call.
       var action;
-      if (!inCall) action = 'call';
+      if (ringing) action = 'end';
+      else if (!inCall) action = 'call';
       else if (onCall(id)) action = group ? 'drop' : 'end';
       else action = 'add';
-      call.dataset.live = (action === 'end' || action === 'drop') ? '1' : '0';
-      call.textContent = ringing ? 'Cancel'
-                       : { call: 'Call', add: 'Add to call', drop: 'Drop', end: 'End' }[action];
-      call.disabled = (action === 'call' || action === 'add')
-        && (!contact.available || (action === 'add' && state.party.length >= MAX_PARTY));
-      call.addEventListener('click', function () {
+      var actions = document.createElement('div');
+      actions.className = 'book__actions';
+      var msg = actionButton('text', 'Message ' + contact.name, function () { openMessages(id); });
+      if (state.unread[id]) msg.dataset.unread = '1';
+      actions.appendChild(msg);
+      actions.appendChild(actionButton(action, ACTION_TITLE[action] + ' — ' + contact.name, function () {
         if (action === 'call') placeCall(id);
         else if (action === 'add') addToCall(id);
         else if (action === 'drop') send({ type: 'drop', id: id });
         else hangUp();
-      });
+      }, (action === 'call' || action === 'add')
+          && (!contact.available || (action === 'add' && state.party.length >= MAX_PARTY))));
 
+      row.appendChild(avatar);
+      row.appendChild(text);
+      row.appendChild(actions);
       li.appendChild(row);
-      li.appendChild(call);
       el.book.appendChild(li);
     });
+  }
+
+  /* --- messages ------------------------------------------------------------
+     A text thread with one contact. Written, never spoken, and kept in the
+     same memory as their calls — they know what you texted when you next ring.
+     ------------------------------------------------------------------------ */
+
+  function bubble(from, textBody, contact, typing) {
+    var li = document.createElement('li');
+    li.className = 'bubble bubble--' + from + (typing ? ' bubble--typing' : '');
+    if (from === 'them') {
+      var av = document.createElement('span');
+      av.className = 'bubble__avatar';
+      portraitStyle(av, contact, 'center 22%');
+      li.style.setProperty('--contact-accent', contact.accent);
+      li.appendChild(av);
+    }
+    var t = document.createElement('span');
+    t.className = 'bubble__text';
+    t.textContent = textBody;
+    li.appendChild(t);
+    el['messages-thread'].appendChild(li);
+    el['messages-thread'].scrollTop = el['messages-thread'].scrollHeight;
+    return li;
+  }
+
+  function openMessages(id) {
+    var contact = state.contacts[id];
+    if (!contact) return;
+    state.messagesWith = id;
+    delete state.unread[id];
+    el.messages.style.setProperty('--contact-accent', contact.accent);
+    portraitStyle(el['messages-avatar'], contact, 'center 22%');
+    el['messages-name'].textContent = contact.full_name;
+    el['messages-role'].textContent = contact.role;
+    el['messages-thread'].innerHTML = '';
+    el.messages.hidden = false;
+    renderDirectory();
+    fetch('/api/contacts/' + id + '/messages')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (state.messagesWith !== id) return;
+        (d.messages || []).forEach(function (m) { bubble(m.from, m.text, contact); });
+        if (state.typing[id]) state.typingBubble = bubble('them', '•••', contact, true);
+      });
+    el['messages-input'].focus();
+  }
+
+  function closeMessages() {
+    state.messagesWith = null;
+    el.messages.hidden = true;
+  }
+
+  function sendMessage(e) {
+    e.preventDefault();
+    var body = el['messages-input'].value.trim();
+    var id = state.messagesWith;
+    if (!body || !id) return;
+    el['messages-input'].value = '';
+    bubble('me', body, state.contacts[id]);
+    send({ type: 'text', id: id, text: body });
+  }
+
+  function onTextTyping(event) {
+    state.typing[event.speaker] = true;
+    if (state.messagesWith === event.speaker && !state.typingBubble) {
+      state.typingBubble = bubble('them', '•••', state.contacts[event.speaker], true);
+    }
+  }
+
+  function onTextReply(event) {
+    delete state.typing[event.speaker];
+    if (state.typingBubble) { state.typingBubble.remove(); state.typingBubble = null; }
+    if (state.messagesWith === event.speaker && !el.messages.hidden) {
+      bubble('them', event.text, state.contacts[event.speaker]);
+    } else {
+      state.unread[event.speaker] = true;
+      renderDirectory();
+    }
   }
 
   /* Patch someone into the call in progress. The console announces it and
@@ -563,7 +674,8 @@
     // Nothing on the line means nothing to render. Without this, hanging up
     // mid-reply leaves the rest of the turn still arriving: sentences queue,
     // audio plays, and a contact you just cut off keeps talking.
-    var conversational = event.type !== 'notice';
+    // Texts arrive whether or not anyone is on a call.
+    var conversational = ['notice', 'text_typing', 'text_reply'].indexOf(event.type) === -1;
     if (!state.connectedId && conversational) return;
 
     switch (event.type) {
@@ -617,6 +729,14 @@
             if (state.connectedId) send({ type: 'resume' });
           }, RESUME_MIN_MS + Math.random() * RESUME_SPREAD_MS);
         }
+        break;
+
+      case 'text_typing':
+        onTextTyping(event);
+        break;
+
+      case 'text_reply':
+        onTextReply(event);
         break;
 
       case 'party':
@@ -743,6 +863,8 @@
     });
 
     el['dossier-close'].addEventListener('click', function () { el.dossier.hidden = true; });
+    el['messages-close'].addEventListener('click', closeMessages);
+    el['messages-compose'].addEventListener('submit', sendMessage);
     el['dossier-save'].addEventListener('click', saveDossier);
     el.dossier.addEventListener('click', function (e) {
       if (e.target === el.dossier) el.dossier.hidden = true;

@@ -832,3 +832,117 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
   text-transform: uppercase;
   vertical-align: 0.35em;
 }
+
+/* --- directory: groups and icon actions ---------------------------------- */
+
+.book__group {
+  margin: 16px 0 6px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.book__group:first-child { margin-top: 0; }
+
+.book__row { grid-template-columns: 38px 1fr auto; }
+
+.book__actions { display: flex; gap: 6px; }
+
+.book__act {
+  position: relative;
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  border: 1px solid var(--hairline-2);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease), background 0.2s var(--ease);
+}
+.book__act svg { width: 14px; height: 14px; }
+.book__act:hover { color: var(--contact-accent, var(--primary)); border-color: var(--contact-accent, var(--primary-dim)); }
+.book__act[data-kind="end"], .book__act[data-kind="drop"] { color: var(--alert); border-color: rgba(224, 87, 79, 0.4); }
+.book__act[data-kind="end"]:hover, .book__act[data-kind="drop"]:hover { background: rgba(224, 87, 79, 0.1); color: var(--alert); }
+.book__act:disabled { opacity: 0.35; cursor: default; }
+.book__act[data-unread="1"]::after {
+  content: "";
+  position: absolute; top: -1px; right: -1px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--contact-accent, var(--primary));
+  border: 2px solid var(--surface);
+}
+
+/* --- messages ------------------------------------------------------------ */
+
+.messages {
+  position: fixed;
+  top: var(--bar-h); right: 0; bottom: 0;
+  width: min(400px, 100%);
+  z-index: 18;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--hairline-2);
+  animation: slide-in 0.3s var(--ease) both;
+}
+.messages[hidden] { display: none; }
+@keyframes slide-in { from { transform: translateX(24px); opacity: 0; } }
+
+.messages__head {
+  display: grid; grid-template-columns: 34px 1fr auto; gap: 12px; align-items: center;
+  padding: 14px 16px; border-bottom: 1px solid var(--hairline);
+}
+.messages__avatar, .bubble__avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid var(--contact-accent, var(--hairline-2));
+  background-color: var(--surface-2);
+  background-size: 160%, 160%, 160%, cover;
+  background-position: center 15%, center 15%, center 15%, center 22%;
+  background-repeat: no-repeat;
+}
+.messages__name { display: block; font-size: 14px; color: var(--text); }
+.messages__role { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-faint); margin-top: 2px; }
+.messages__close {
+  background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim);
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+  padding: 6px 10px; cursor: pointer;
+}
+
+.messages__thread {
+  flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.bubble { display: flex; gap: 8px; align-items: flex-end; max-width: 86%; }
+.bubble__avatar { width: 24px; height: 24px; flex: none; }
+.bubble__text {
+  padding: 8px 12px; border-radius: 14px; font-size: 14px; line-height: 1.4;
+  white-space: pre-wrap; word-wrap: break-word;
+}
+.bubble--them .bubble__text { background: var(--surface-2); color: var(--text); border-bottom-left-radius: 4px; }
+.bubble--me { align-self: flex-end; }
+.bubble--me .bubble__text { background: rgba(79, 168, 224, 0.14); color: var(--operator); border-bottom-right-radius: 4px; }
+.bubble--typing .bubble__text { color: var(--text-faint); letter-spacing: 0.2em; }
+.messages__day { align-self: center; font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; color: var(--text-faint); text-transform: uppercase; margin: 6px 0; }
+
+.messages__compose { display: flex; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid var(--hairline); }
+.messages__input {
+  flex: 1; background: var(--surface-2); border: 1px solid var(--hairline-2); color: var(--text);
+  font: inherit; font-size: 14px; padding: 9px 12px; border-radius: 18px; outline: none;
+}
+.messages__input:focus { border-color: var(--contact-accent, var(--primary-dim)); }
+.messages__send {
+  background: transparent; border: 1px solid var(--contact-accent, var(--primary-dim));
+  color: var(--contact-accent, var(--primary)); border-radius: 18px; padding: 0 14px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; cursor: pointer;
+}
+
+/* One line per role, however long: a wrapped role made every row a different
+   height. The full text is on the row's tooltip. */
+.book__open { min-width: 0; }
+.book__role {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.12em;
+  max-width: 100%;
+}

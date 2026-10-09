@@ -116,8 +116,9 @@ class History:
         messages = [
             {
                 "role": m["role"],
-                "content": (m["content"] + " " + m["aside"]).strip()
-                           if m.get("aside") else m["content"],
+                "content": ("(by text) " if m.get("via") == "text" and m["role"] == "user" else "")
+                           + ((m["content"] + " " + m["aside"]).strip()
+                              if m.get("aside") else m["content"]),
             }
             for m in self.messages
         ]
@@ -236,11 +237,21 @@ class History:
             self.append("assistant", text)
         self.save()
 
-    def record_exchange(self, prompt, reply):
-        """Store only the raw exchange — never the injected reference context."""
+    def record_exchange(self, prompt, reply, via=None):
+        """
+        Store only the raw exchange — never the injected reference context.
+        `via="text"` marks a text conversation, so a later call knows what was
+        texted rather than said, and the message thread can show it.
+        """
         self.append("user", prompt)
         self.append("assistant", reply)
+        if via:
+            self.messages[-1]["via"] = self.messages[-2]["via"] = via
         self.save()
+
+    def texts(self, limit=60):
+        """The text thread: messages sent by text, oldest first."""
+        return [m for m in self.messages if m.get("via") == "text"][-limit:]
 
     def recent_assistant(self, turns=6):
         return [m["content"] for m in self.messages[-turns:] if m["role"] == "assistant"]

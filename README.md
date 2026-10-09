@@ -93,26 +93,23 @@ their own memory on disk.
    > and the Rust build fails. A bare `python3` may well point at something
    > newer, so name the version explicitly.
 
-2. **Tell him who you are**
-
-   Alfred's character is committed in
-   [`wayne/contacts/profiles/alfred.json`](wayne/contacts/profiles/alfred.json).
-   What he knows about *you* — name, work, where you live — goes in `Modelfile`,
-   which is gitignored so your details never leave your machine:
-
-   ```bash
-   cp Modelfile.example Modelfile
-   ```
-
-   Fill in its `SYSTEM` block, then pull the model:
+2. **Pull the model — and decide who you are**
 
    ```bash
    ollama pull gemma4:26b-a4b-it-qat     # or gemma4:e4b on a 16 GB Mac
    ```
 
-   There is no `ollama create`: the profile's character and your `Modelfile`
-   are read at startup and sent to the base model together, so an edit to
-   either takes effect on the next launch.
+   You are Bruce Wayne. The console is a roleplay of Gotham, and who you are
+   lives in an **operator profile**,
+   [`wayne/operators/bruce.json`](wayne/operators/bruce.json): who Bruce is,
+   what each contact calls him ("Master Bruce", "Mr. Wayne", "old man"), and the
+   world — with every fact tagged by who knows it, so Selina can't let slip who
+   is under the Batwing mask because she was never told.
+
+   To be someone else, copy that file somewhere private, rewrite it about
+   yourself, and point `WAYNE_OPERATOR` at it in `.env`. Every contact follows,
+   because what they call you is part of your profile, not theirs. There is no
+   `ollama create`: profiles are read at startup and sent with each character.
 
 3. **Configure secrets and identity**
 
@@ -172,7 +169,7 @@ their own memory on disk.
    > project — so Python changes take effect when you quit and reopen it, and
    > front-end changes on a reload (asset URLs are stamped with a version that
    > follows the files, so the browser cannot serve you a stale `app.js`).
-   > Editing your `Modelfile` likewise just needs a restart. Re-run the script
+   > Editing a profile likewise just needs a restart. Re-run the script
    > only if you **move the project**, since the path is baked into the launcher.
 
    [`scripts/launch.command`](scripts/launch.command) still works if you'd
@@ -342,23 +339,28 @@ The console is a phone book, not a single assistant. Three contacts ship:
 | Contact | Who | Voice variable |
 |---|---|---|
 | **Alfred Pennyworth** | The butler who raised him — dry, British, warm underneath | `ALFRED_VOICE_ID` |
-| **Lucius Fox** | Wayne Enterprises' engineer-CEO — calm, wry, a mentor with an ethical line | `LUCIUS_VOICE_ID` |
-| **Selina Kyle** | Catwoman — a self-made thief from the East End; teasing, guarded, loyal | `CATWOMAN_VOICE_ID` |
+| **Dick Grayson** | Nightwing — the first Robin; warm, quick, the one everyone calls | `NIGHTWING_VOICE_ID` |
+| **Tim Drake** | Robin — the detective; methodical, dry, won't let him spiral | `ROBIN_VOICE_ID` |
+| **Barbara Gordon** | Batgirl and Oracle — a peer who commands; won't be pushed | `BATGIRL_VOICE_ID` |
+| **Jason Todd** | Red Hood — came back angry, reads everything, protects kids | `REDHOOD_VOICE_ID` |
+| **Lucius Fox** | Wayne Enterprises' engineer-CEO — calm, wry, a firm ethical line | `LUCIUS_VOICE_ID` |
+| **Selina Kyle** | Catwoman — a self-made thief from the East End; Randy's mother | `CATWOMAN_VOICE_ID` |
 
 Each is a JSON profile in [`wayne/contacts/profiles/`](wayne/contacts/profiles/)
 with its own memory under `data/<id>/`. A contact without a voice ID still
-works, in text. All three share the same model, so switching does not load a
-second one.
+works, in text. All of them share one model, so switching does not load a
+second. Call them, put up to three on one call, or text them — texts land in the
+same memory as calls. What one hears may reach another, as hearsay, with who
+said it (see `wayne/engine/grapevine.py`).
 
 Adding one is a file, not a code change. The fields that matter:
 
 - **`system`** — the character, as a list of paragraphs: who they are, their
   temperament, what the operator is to them, their own life, their lines. Written
   as a person, not a list of prohibitions.
-- **`system_file`** — one or more gitignored files read at startup: `Modelfile`
-  holds facts about the operator every contact shares; `Modelfile.<id>` holds
-  what is private to one contact (what they call him, say). Real names never go
-  in a committed profile.
+- **`system_file`** — optional extra files read at startup and appended to the
+  character, for anything you'd rather keep out of the committed profile. Who the
+  user is — and what each contact calls him — lives in the operator profile.
 - **`primer`** — worked examples, sent as a labelled script inside the system
   prompt, never as turns (a model cannot tell a sample turn from a real one).
   Varied in length and register; never the same as an evaluation scenario.
@@ -368,7 +370,8 @@ Adding one is a file, not a code change. The fields that matter:
 - **`forbidden_address`** — enforced in code, because one "lad" undoes a great
   deal of careful prompting.
 - **`availability`** — `always`, or `hours` (which may run past midnight).
-- **`order`** — position in the console's directory.
+- **`order`** and **`group`** — position and heading in the console's directory.
+- **`texting`** — how they write a text message.
 
 The relationship in the operator's own words — the bio in the console's personnel
 file — rides in the prompt too, so editing it there changes how they treat him.

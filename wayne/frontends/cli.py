@@ -15,6 +15,7 @@ import time
 from pynput import keyboard as pynput_keyboard
 
 from .. import config, events
+from .. import operator as wayne_operator
 from ..audio import stt
 from ..audio.tts import get_voice_engine
 from ..contacts import directory
@@ -118,7 +119,7 @@ class TerminalConsole:
         print(f"{Colors.DIM}{'─' * 67}{Colors.RESET}\n")
 
     def prompt(self):
-        print(f"\r\033[K{Colors.OPERATOR}{Colors.BOLD}[{config.USER_NAME.upper()}]:"
+        print(f"\r\033[K{Colors.OPERATOR}{Colors.BOLD}[{wayne_operator.name().upper()}]:"
               f"{Colors.RESET} ", end="", flush=True)
 
     def render(self, generator):
@@ -136,7 +137,7 @@ class TerminalConsole:
             elif kind == "message":
                 if event["role"] == "user":
                     print(f"\r\033[K{Colors.OPERATOR}{Colors.BOLD}"
-                          f"[{config.USER_NAME.upper()}]:{Colors.RESET} {event['text']}")
+                          f"[{wayne_operator.name().upper()}]:{Colors.RESET} {event['text']}")
 
             elif kind == "sentence":
                 # Sentences are printed as they are spoken, one per line-start,
