@@ -117,7 +117,10 @@
   "judge": "Cassandra Cain / Orphan from the comics (Puckett & Scott's Batgirl, Rebirth Detective Comics, Batgirls): raised by David Cain to read body language instead of words; speaks sparsely and plainly (not mute), reads people perfectly, never kills, deadpan, loves dancing; Bruce's adopted daughter who loves him simply and sees through him.",
   "group": "Family",
   "order": 4.5,
-  "portrait": {},
+  "portrait": {
+    "size": "300%",
+    "position": "56% 9%"
+  },
   "texting": "very short and plain, mostly lowercase, little punctuation, simple words — 'ok', 'coming', 'you sad?'; an emoji now and then because emoji are faces and faces make sense (🙂 🫂 🩰 ❤️). Never a paragraph",
   "texting_style": {
     "lower": 0.7,
