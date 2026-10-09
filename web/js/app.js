@@ -734,7 +734,7 @@
     return li;
   }
 
-  /* Double-click someone's message in a group to tap a reaction on it. */
+  /* Double-click someone's message — in a group or a DM — to tap a reaction on it. */
   var TAPBACKS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
 
   function wireTapbacks() {
@@ -749,10 +749,12 @@
       b.className = 'tapbar__btn';
       b.textContent = emoji;
       b.addEventListener('click', function () {
-        if (!target || !state.groupOpen) return;
+        if (!target || !state.thread) return;
         var m = (state.thread.messages || []).filter(function (x) { return x.id === target; })[0];
         var mine = m && (m.reactions || {}).me;
-        send({ type: 'group_react', id: state.groupOpen, message: target, emoji: mine === emoji ? '' : emoji });
+        var emojiOut = mine === emoji ? '' : emoji;
+        if (state.groupOpen) send({ type: 'group_react', id: state.groupOpen, message: target, emoji: emojiOut });
+        else send({ type: 'text_react', id: state.thread.id, message: target, emoji: emojiOut });
         ConsoleTones.sent();
         bar.hidden = true;
       });
@@ -760,7 +762,7 @@
     });
     el['messages-thread'].addEventListener('dblclick', function (e) {
       var bubble = e.target.closest && e.target.closest('.bubble--them[data-id]');
-      if (!bubble || !state.groupOpen) return;
+      if (!bubble || !state.thread) return;
       e.preventDefault();
       window.getSelection && window.getSelection().removeAllRanges();
       target = bubble.dataset.id;
@@ -1082,6 +1084,7 @@
       .filter(Boolean);
     where.textContent = p.where ? p.where + (company.length ? ' · with ' + company.join(', ') : '') : '';
     where.hidden = !p.where;
+    drawMap($('hovercard-map'), id, p);
     var r = anchor.getBoundingClientRect();
     card.hidden = false;
     var w = card.offsetWidth;
@@ -1093,9 +1096,63 @@
       card.style.left = (r.right + 12) + 'px';
       card.style.top = (r.top + r.height / 2 - 22) + 'px';
     }
+    // Taller with a map: kept on screen near the bottom of the list.
+    var over = card.getBoundingClientRect().bottom - (window.innerHeight - 8);
+    if (over > 0) card.style.top = (parseFloat(card.style.top) - over) + 'px';
   }
 
   function hideHovercard() { $('hovercard').hidden = true; }
+
+  /* Gotham, small: the three islands, the outer ones, Blüdhaven up the coast —
+     and a dot where they are, with anyone they're with. Drawn in the card's
+     own palette; nothing here is a picture, so it scales and themes. */
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function svgEl(name, attrs) {
+    var node = document.createElementNS(SVG_NS, name);
+    Object.keys(attrs).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+    return node;
+  }
+
+  function drawMap(svg, id, p) {
+    var map = state.map;
+    svg.innerHTML = '';
+    // An <svg> has no .hidden of its own: the attribute is what CSS sees.
+    if (!map || !p.spot) { svg.setAttribute('hidden', ''); return; }
+    var Y = 0.7;   // the map is drawn 100 × 70
+    svg.appendChild(svgEl('rect', { x: 0, y: 0, width: 100, height: 70, class: 'map__water' }));
+    // The mainland west of the Gotham River, and Gotham County to the north-west.
+    svg.appendChild(svgEl('path', { d: 'M0 0 H24 V' + (26 * Y) + ' H19 V70 H0 Z', class: 'map__land' }));
+    svg.appendChild(svgEl('rect', { x: 86, y: 50 * Y, width: 14, height: 18 * Y, class: 'map__land' }));
+    (map.islands || []).forEach(function (isle) {
+      svg.appendChild(svgEl('rect', { x: isle.x, y: isle.y * Y, width: isle.w, height: isle.h * Y,
+                                      rx: 2.5, class: 'map__island' }));
+      var label = svgEl('text', { x: isle.x + 1.8, y: isle.y * Y + 3.6, class: 'map__label' });
+      label.textContent = isle.name.toUpperCase();
+      svg.appendChild(label);
+    });
+    ['Arkham Asylum', 'The Narrows', 'Tricorner', 'Blackgate'].forEach(function (name) {
+      var place = (map.places || []).filter(function (q) { return q.name === name; })[0];
+      if (place) svg.appendChild(svgEl('circle', { cx: place.x, cy: place.y * Y, r: 2.6, class: 'map__island' }));
+    });
+    (map.regions || []).forEach(function (region) {
+      svg.appendChild(svgEl('rect', { x: region.x - 16, y: 0.5, width: 27, height: 11, rx: 2, class: 'map__island' }));
+      var label = svgEl('text', { x: region.x - 14.5, y: 8.8, class: 'map__label' });
+      label.textContent = region.name.toUpperCase();
+      svg.appendChild(label);
+    });
+    // Whoever's with them, then them.
+    (p['with'] || []).forEach(function (cid) {
+      var other = state.contacts[cid];
+      var spot = other && (other.presence || {}).spot;
+      if (spot) svg.appendChild(svgEl('circle', { cx: spot.x, cy: spot.y * Y, r: 1.6, class: 'map__friend',
+                                                  style: 'fill:' + other.accent }));
+    });
+    var accent = state.contacts[id].accent;
+    svg.appendChild(svgEl('circle', { cx: p.spot.x, cy: p.spot.y * Y, r: 4, class: 'map__ping', style: 'stroke:' + accent }));
+    svg.appendChild(svgEl('circle', { cx: p.spot.x, cy: p.spot.y * Y, r: 1.9, style: 'fill:' + accent }));
+    svg.removeAttribute('hidden');
+  }
 
   function sendMessage(e) {
     e.preventDefault();
@@ -2079,7 +2136,7 @@
     // mid-reply leaves the rest of the turn still arriving: sentences queue,
     // audio plays, and a contact you just cut off keeps talking.
     // Texts arrive whether or not anyone is on a call.
-    var conversational = ['notice', 'text_sent', 'text_read', 'text_typing', 'text_idle',
+    var conversational = ['notice', 'text_sent', 'text_read', 'text_typing', 'text_idle', 'text_reaction',
                           'text_reply', 'presence', 'call_incoming', 'call_unanswered',
                           'call_refused', 'group_created', 'group_deleted', 'group_sent',
                           'group_message', 'group_read', 'group_typing', 'group_idle',
@@ -2158,6 +2215,15 @@
 
       case 'text_reply':
         onTextReply(event);
+        break;
+
+      case 'text_reaction':
+        if (threadOpenFor(event.speaker)) {
+          state.thread.messages = state.thread.messages.map(function (x) {
+            return x.id === event.message.id ? event.message : x;
+          });
+          renderThread();
+        }
         break;
 
       case 'presence':
@@ -2483,6 +2549,7 @@
 
   function loadSession() {
     return fetch('/api/session').then(function (r) { return r.json(); }).then(function (info) {
+      state.map = info.map || null;
       (info.contacts || []).forEach(function (contact) {
         state.contacts[contact.id] = contact;
         state.order.push(contact.id);

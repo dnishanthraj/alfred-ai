@@ -286,8 +286,19 @@ none in your quiet hours, none from someone already waiting on you — so it rea
 as people rather than notifications.
 
 Hover a portrait for their status line, what they're doing and — for those who
-share it — where they are and who with, from the day they planned (Jason,
-Selina and Randy don't share).
+share it — where they are, who with, and their dot on a small map of Gotham
+(`wayne/engine/gotham.json`, `places.py`): their plan's place, a spot on their
+beat while they patrol, or home. Jason, Selina and Randy don't share.
+
+### Lives of their own
+
+Each profile has `interests` — hobbies, games, viewing, music, reading, opinions
+— and the topics they `follows`. Idle, the console searches those topics as of
+today and keeps what each would have seen (`wayne/engine/culture.py`), so they
+stay current without anything being written in. It feeds what they text about,
+the days they plan, their statuses, and conversations about films, games, music,
+books or sport. Asked something factual away from a screen, they get the answer
+quietly, as something they might know.
 
 ### Group chats
 

@@ -40,6 +40,7 @@ import uuid
 
 from .. import paths
 from ..memory.store import atomic_write, read_text
+from . import places
 
 ONLINE, IDLE, BUSY, OFFLINE = "online", "idle", "busy", "offline"
 STATUSES = (ONLINE, IDLE, BUSY, OFFLINE)
@@ -258,14 +259,34 @@ class Presence:
 
     def whereabouts(self, t=None):
         """
-        (place, [contact ids with them]) — from their own plan for now, or home
-        when nothing in their day puts them elsewhere. ("", []) if unknown.
+        (place, [contact ids with them]) for right now — always from what
+        they're actually doing: somewhere a conversation sent them, the place in
+        their plan, a spot on their beat while they patrol (moving every
+        quarter hour or so), or home when nothing puts them elsewhere.
         """
         t = t or time.time()
+        activity = self._state.get("activity")
+        if activity and activity.get("until", 0) > t:
+            if places.is_patrol(activity.get("doing")) and places.on_beat(self.contact, t):
+                return places.on_beat(self.contact, t), []
+            if activity.get("where"):
+                return activity["where"], []
         block = self._routine(t) or self._whim(t) or {}
+        company = list(block.get("with") or [])
+        if places.is_patrol(block.get("doing")):
+            # A patrol moves: along their beat, inside wherever the plan put
+            # them — "the rooftops" or "Blüdhaven" is a beat to walk, and Tim
+            # checking Blüdhaven's borders stays in Blüdhaven, off his own.
+            spot = places.patrol_spot(self.contact, block.get("where") or "", t)
+            if spot:
+                return spot, company
         if block.get("where"):
-            return block["where"], list(block.get("with") or [])
-        return getattr(self.contact, "home", "") or "", []
+            return block["where"], company
+        return getattr(self.contact, "home", "") or "", company
+
+    def spot(self, t=None):
+        """Their dot on the map, or None if where they are isn't on it."""
+        return places.resolve(self.whereabouts(t)[0])
 
     def public(self, t=None):
         """
@@ -281,6 +302,7 @@ class Presence:
                  "last_active": state["last_active"] or None, "line": self.line(t)}
         if getattr(self.contact, "shares_location", True):
             shown["where"], shown["with"] = self.whereabouts(t)
+            shown["spot"] = places.resolve(shown["where"])
         return shown
 
     def note(self, t=None):
@@ -316,13 +338,14 @@ class Presence:
             self._state["last_active"] = t or time.time()
             self.save()
 
-    def set_activity(self, doing, status, minutes, t=None):
+    def set_activity(self, doing, status, minutes, t=None, where=""):
         with self._lock:
             t = t or time.time()
             status = status if status in STATUSES else BUSY
             minutes = max(5, min(int(minutes or 60), 14 * 60))
             self._state["activity"] = {"doing": doing.strip()[:80], "status": status,
-                                       "since": t, "until": t + minutes * 60}
+                                       "since": t, "until": t + minutes * 60,
+                                       "where": (where or "").strip()[:60]}
             self.save()
 
     def clear_activity(self):

@@ -1393,3 +1393,15 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .hovercard__where[hidden] { display: none; }
 .hovercard__where::before { content: ""; width: 8px; height: 8px; flex: none; border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg); border: 1.5px solid var(--contact-accent, var(--primary)); margin: 0 2px 2px 1px; }
+
+/* The little map of Gotham on a status card. */
+.hovercard__map { width: 216px; height: 151px; margin-top: 6px; display: block; border: 1px solid var(--hairline); }
+.hovercard__map[hidden] { display: none; }
+.map__water { fill: var(--bg, #07090c); }
+.map__land { fill: var(--surface-2); opacity: 0.55; }
+.map__island { fill: var(--surface-2); stroke: var(--hairline-2); stroke-width: 0.3; }
+.map__label { font-family: var(--mono); font-size: 2.8px; letter-spacing: 0.3px; fill: var(--text-faint); }
+.map__friend { opacity: 0.9; }
+.map__ping { fill: none; stroke-width: 0.5; transform-box: fill-box; transform-origin: center;
+  animation: map-ping 2.2s ease-out infinite; }
+@keyframes map-ping { from { transform: scale(0.5); opacity: 0.9; } to { transform: scale(1.6); opacity: 0; } }

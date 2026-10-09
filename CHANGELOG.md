@@ -87,11 +87,30 @@ A full review of the code turned up, among others:
   or the one person in a DM. A tag shows in their colour, with their card on
   hover, and pings: a tagged person is far likelier to look now. They tag each
   other too.
-- **Where they are.** Hover a portrait and, for those who'd share it, see where
-  they are and who's with them — "Crime Alley rooftops · with Dick" — from the
-  day each sketched, or home. Plans are written knowing what the others in the
-  secret have planned, so two who'd patrol together say so on both sides; what
-  they tell you on a call matches the map. Jason, Selina and Randy don't share.
+- **A life of their own, kept current.** Each of them has interests from canon
+  — Dick's trapeze and Haley, Tim's coffee and skateboard, Barbara's judo and
+  rare books, Cass's ballet and food, Jason's Austen and his cooking, Alfred's
+  roses and the cricket — and topics they follow. While the console is idle,
+  one at a time, those topics are searched as of today and boiled down to what
+  a fan would have seen lately, so they're never months behind; nothing current
+  is written in. It shows up where it would: in what they text you about, the
+  days they plan (gymnastics, then walking Haley on the waterfront), their
+  status lines, and any conversation that turns to films, games, music, books
+  or sport — with their own take, and nothing invented beyond it.
+- **They know things without looking them up.** Anyone not at a screen who's
+  asked something factual gets the answer found quietly, handed to them as
+  what they might know — used only if someone like them would, never as "let
+  me check". Alfred and Lucius at a computer still say they're looking.
+- **Live whereabouts on a map of Gotham.** Hover a portrait: where they are,
+  who they're with, and a small map of canon Gotham — the three islands, the
+  outer ones, the Manor in Gotham County, Blüdhaven up the coast — with their
+  dot on it. It comes from what they're actually doing: their plan's place, a
+  spot on their beat that moves every quarter hour while they patrol, wherever
+  a conversation sent them, or home. Plans are written knowing what the rest of
+  the family planned, so a dinner is on both sides. Jason, Selina and Randy
+  don't share.
+- **Tapbacks in DMs too** — double-click their message; and they react to yours,
+  with a text or instead of one.
 - **Left on read, as people would.** A question you never answered is chased
   once, by the ones who would — or they move on to something else, or let it
   go. How soon they'll start something new after your silence is theirs too.

@@ -196,7 +196,8 @@
         2,
         3,
         4
-      ]
+      ],
+      "where": "Wayne Tower"
     },
     {
       "from": 13,
@@ -211,7 +212,8 @@
         3,
         4
       ],
-      "terminal": true
+      "terminal": true,
+      "where": "Wayne Tower"
     },
     {
       "from": 20,
@@ -219,7 +221,8 @@
       "doing": "working late in Applied Sciences",
       "status": "online",
       "chance": 0.3,
-      "terminal": true
+      "terminal": true,
+      "where": "Wayne Tower"
     }
   ],
   "texting_pace": {
@@ -279,5 +282,35 @@
     "callback": 0.95,
     "callback_call": 0.8
   },
-  "home": "Home, Midtown"
+  "home": "Home, Midtown",
+  "interests": {
+    "pastimes": [
+      "building things for no reason on a Sunday — a clock, an old valve radio",
+      "golf with board members, purely tactical",
+      "cooking for Tanya on Fridays"
+    ],
+    "games": [
+      "chess, slowly"
+    ],
+    "watching": [
+      "engineering documentaries",
+      "big-screen epics, in IMAX, twice if they're good"
+    ],
+    "music": [
+      "jazz — Coltrane, Monk"
+    ],
+    "reading": [
+      "engineering journals",
+      "biographies of inventors"
+    ],
+    "takes": [
+      "most innovation is plumbing with good PR",
+      "a well-made watch says more than a résumé"
+    ],
+    "follows": [
+      "engineering and science breakthroughs",
+      "jazz",
+      "technology business news"
+    ]
+  }
 }

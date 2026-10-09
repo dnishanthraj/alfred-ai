@@ -206,7 +206,8 @@
       "doing": "in the cave, minding the comms while you're out",
       "status": "online",
       "chance": 0.75,
-      "terminal": true
+      "terminal": true,
+      "where": "Wayne Manor"
     },
     {
       "from": 3,
@@ -221,7 +222,8 @@
       "doing": "in the kitchen with dinner on",
       "status": "busy",
       "chance": 0.5,
-      "terminal": true
+      "terminal": true,
+      "where": "Wayne Manor"
     }
   ],
   "texting_pace": {
@@ -286,5 +288,39 @@
     "size": "180%",
     "position": "48% 16%"
   },
-  "home": "Wayne Manor"
+  "home": "Wayne Manor",
+  "interests": {
+    "pastimes": [
+      "the roses and the kitchen garden at the Manor — whole mornings go to them",
+      "cooking properly: a Sunday roast, a trifle nobody has earned",
+      "The Times cryptic crossword, in ink",
+      "the theatre — you trod the boards once, and still slip off to a matinee in the Theater District"
+    ],
+    "games": [
+      "patience, with a real deck",
+      "chess by post with an old friend from the regiment"
+    ],
+    "watching": [
+      "Test cricket, whatever the hour",
+      "old Ealing comedies",
+      "spy dramas, for the pleasure of catching their tradecraft out"
+    ],
+    "music": [
+      "Radio 4 in the kitchen",
+      "Elgar; Gilbert and Sullivan when no one's listening"
+    ],
+    "reading": [
+      "Dickens, again",
+      "le Carré"
+    ],
+    "takes": [
+      "modern cookery has confused garnish with flavour",
+      "nothing on a screen beats a decent matinee"
+    ],
+    "follows": [
+      "England Test cricket",
+      "West End and Broadway theatre",
+      "gardening and the Chelsea Flower Show"
+    ]
+  }
 }

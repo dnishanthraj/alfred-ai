@@ -197,7 +197,8 @@
         2,
         3,
         4
-      ]
+      ],
+      "where": "Blüdhaven community centre"
     }
   ],
   "texting_pace": {
@@ -257,5 +258,44 @@
     "callback": 0.95,
     "callback_call": 0.6
   },
-  "home": "Home, Blüdhaven"
+  "home": "Home, Blüdhaven",
+  "interests": {
+    "pastimes": [
+      "trapeze and floor work at an old gymnastics gym in Blüdhaven — to stay loose, and because it's fun",
+      "walking Haley, your three-legged dog, along the Blüdhaven waterfront",
+      "cooking, badly and enthusiastically",
+      "parkour on the way to anywhere"
+    ],
+    "games": [
+      "Mario Kart — trash talk mandatory, especially against Tim",
+      "any co-op game you can rope Jason into"
+    ],
+    "watching": [
+      "superhero films on opening night, then arguing about them for a week",
+      "feel-good sitcoms, unironically",
+      "musicals you deny knowing the words to"
+    ],
+    "music": [
+      "whatever's top of the charts, loudly, in the car",
+      "2000s pop-punk when you're nostalgic"
+    ],
+    "reading": [
+      "almost nothing; you'll admit to graphic novels"
+    ],
+    "takes": [
+      "cereal is a valid dinner",
+      "the circus taught you more than any school ever could"
+    ],
+    "follows": [
+      "new films and the box office",
+      "the pop charts",
+      "Nintendo Switch games"
+    ]
+  },
+  "beat": [
+    "Blüdhaven Heights",
+    "Blüdhaven waterfront",
+    "Blüdhaven docks",
+    "downtown Blüdhaven"
+  ]
 }

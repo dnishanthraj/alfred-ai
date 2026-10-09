@@ -28,7 +28,7 @@ import time
 import ollama
 
 from .. import operator
-from . import grapevine, presence, world
+from . import culture, grapevine, places, presence, world
 
 
 def afterthought(session, exchanges, by="text"):
@@ -65,6 +65,7 @@ def afterthought(session, exchanges, by="text"):
         f"only said 'maybe' or 'if it matters', the answer is no.\n\n"
         "Reply with JSON only, in this shape:\n"
         '{"doing": "a few words, e.g. checking the docks" or null, '
+        '"where": "the place it puts them, as it would show on a map (e.g. Gotham Docks)" or null, '
         '"status": "busy" or "offline" or null, "minutes": how long it will take or null, '
         '"free": true if they said they are now free/back/done, '
         '"contact": {"by": "text" or "call", "in_minutes": number or null if it is "when done", '
@@ -93,7 +94,9 @@ def apply(session, found):
         status = found.get("status") if found.get("status") in (presence.BUSY, presence.OFFLINE) \
             else presence.BUSY
         minutes = _number(found.get("minutes"), 60)
-        state.set_activity(doing, status, minutes)
+        where = found.get("where") if isinstance(found.get("where"), str) else ""
+        state.set_activity(doing, status, minutes,
+                           where="" if where.strip().lower() in ("null", "none") else where)
     reach = found.get("contact")
     if isinstance(reach, dict) and isinstance(reach.get("about"), str) and reach["about"].strip():
         minutes = _number(reach.get("in_minutes"), None)
@@ -130,6 +133,10 @@ def status_line(contact, state):
         situation = f"Right now you're {state['doing']}."
     else:
         situation = "Nothing in particular going on — whatever's on your mind, or nothing at all."
+        lately = culture.pick(contact)
+        if lately:
+            # Free time is when a status is about the things you're into.
+            situation += f" (Something you've seen lately, if it's on your mind: {lately}.)"
     now = time.strftime("%A %-I%p", time.localtime()).replace("AM", "am").replace("PM", "pm")
     instruction = (
         f"It's {now}. Write the status line you'd set on your phone right now, the one people see "
@@ -167,9 +174,13 @@ def day_plan(contact, when=None, others="", people=()):
         "things that are yours today: errands, people, plans, a whim. Times are approximate and "
         "needn't fill the day. Each block's status: online (phone in hand, on comms), idle "
         "(around, phone down), busy (occupied — a glance at most), offline (asleep or "
-        "unreachable). Where: the actual place, a few words — a street, a district, a building "
-        "in your city — as it would show on a map to someone else (\"Home, Blüdhaven\", not "
-        "\"my flat\"). With: anyone from your circle you'd be with (first names), usually nobody."
+        "unreachable). Where: the actual place, as it would show on a map to someone else "
+        "(\"Home, Blüdhaven\", not \"my flat\") — in Gotham, by its district or landmark where "
+        f"you can ({', '.join(places.names())}). With: anyone from your circle you'd be with "
+        "(first names), usually nobody."
+        + (f" Things you've seen lately in what you follow — if any of it would shape your day "
+           f"(a film to catch, a match to watch, a release to queue for), it can: "
+           f"{' | '.join(culture.seen(contact)[:6])}." if culture.seen(contact) else "")
         + (f" What others in your circle have planned so far today — if one of them is meeting "
            f"you, keep it at their time and place, unless you'd really not:\n{others}\n"
            if others else " ")
@@ -269,6 +280,15 @@ def impulse(session):
                                "you — a follow-up, a thought you had after, a question")] * 2
     if contact.own_life:
         options.append(("own", f"something from your own day: {random.choice(contact.own_life)}"))
+    pastimes = (contact.interests or {}).get("pastimes") or []
+    if pastimes:
+        options.append(("hobby", f"something to do with what you do for fun: {random.choice(pastimes)}"))
+    lately = culture.pick(contact)
+    if lately:
+        # What they've seen in the things they follow: a take, an argument
+        # starter, an "are you watching this" — theirs to make of it.
+        options.append(("culture", f"something you just saw about what you follow — {lately} — "
+                                   "with your own take on it, the way you'd text a friend about it"))
     items = [item.strip() for line in world.snapshot(contact)
              for item in line.split(": ", 1)[-1].split(" | ") if item.strip()]
     if items:

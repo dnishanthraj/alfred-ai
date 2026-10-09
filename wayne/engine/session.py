@@ -33,7 +33,7 @@ import ollama
 
 from .. import config, delivery, events
 from ..memory import History, Story, Vault
-from . import grapevine, groupchat, guards, initiative, presence, prompting, world
+from . import culture, grapevine, groupchat, guards, initiative, presence, prompting, world
 from .search import format_search_results, google_search, is_factual_lookup
 
 # Searches run on a worker so the holding line can be written meanwhile.
@@ -215,6 +215,8 @@ _GROUP_TASK = re.compile(r"\[\s*group\s*:\s*([^|\]]+)\|([^\]]+)\]", re.I)
 
 # A text they've chosen not to answer yet, or at all.
 _REPLY_CHOICE = re.compile(r"\[\s*(later|no reply)\s*\]", re.I)
+# A tapback on his text, with or instead of a reply.
+_TEXT_REACT = re.compile(r"\[\s*react\s*:\s*([^\]]{1,8})\]", re.I)
 
 # Someone on a call ringing someone else in: [add: Jason].
 _CALL_ADD = re.compile(r"\[\s*add\s*:\s*([^\]]+)\]", re.I)
@@ -415,6 +417,12 @@ class ContactSession:
                 buffer = _GROUP_TASK.sub("", buffer)
             elif "[group" in buffer.lower() and "]" not in buffer[buffer.lower().rfind("[group"):]:
                 continue        # half a marker so far; wait for the rest
+            tapback = _TEXT_REACT.search(buffer)
+            if tapback:
+                self._text_react = tapback.group(1).strip()
+                buffer = _TEXT_REACT.sub("", buffer)
+            elif "[react" in buffer.lower() and "]" not in buffer[buffer.lower().rfind("[react"):]:
+                continue        # half a tapback so far
             choice = _REPLY_CHOICE.search(buffer)
             if choice:
                 self._reply_choice = "none" if "no" in choice.group(1).lower() else "later"
@@ -1066,6 +1074,9 @@ class ContactSession:
                            "seeing them now" + (f" — you've been {state['doing']}." if state["doing"] else "."))
         elif state["doing"]:
             context.append(f"Right now you're {state['doing']}.")
+        lately = culture.note(self.contact, " ".join(m["text"] for m in unread[-4:]) if unread else (opening or ""))
+        if lately:
+            context.append(lately)
         style = f" ({self.contact.texting})" if self.contact.texting else ""
         if task:
             ask = (f"Bruce asked you privately to do this in the group: {task}. Do it now, in your own "
@@ -1285,6 +1296,7 @@ class ContactSession:
         awareness = self._awareness(prompt, interrupted, confidence)
         texting = via == "text"
         self._reply_choice, self._deferred, self._group_task = None, None, None
+        self._text_react = None
         length, self._turn_cap = None, None
         if via is None:
             # A call: this turn's length, from their own spread (see
@@ -1319,6 +1331,13 @@ class ContactSession:
                     "to say or do something in one, don't write it here — answer him here (asking which "
                     "chat if it isn't clear), and end with [group: exact chat name | what you'll do there]; "
                     "you'll then go and do it in the chat yourself.")
+            tapped = getattr(self, "tapbacks_seen", [])
+            if tapped:
+                awareness.append("Since you last texted: " + "; ".join(tapped) + ".")
+                self.tapbacks_seen = []
+            awareness.append(
+                "If you'd react to his text instead of writing back, or as well — the way you do, "
+                "if you do — include [react: emoji], usually one of ❤️ 👍 👎 😂 ‼️ ❓.")
             awareness.append(
                 "You've read it. If you'd genuinely leave him on read for a while right now — mood, "
                 "pride, busy, making a point — begin with [later] and write what you'd eventually send; "
@@ -1356,15 +1375,31 @@ class ContactSession:
             awareness.append(
                 f"You're away from any screen right now ({state['doing'] or 'out'}) — you can't "
                 "look anything up. Answer from what you know, or say you'll check when you can.")
+        lately = culture.note(self.contact, prompt)
+        if lately:
+            awareness.append(lately)
+        known = ""
         if (self._can_look() and is_factual_lookup(prompt) and not covered
                 and not placeless and not follow_up):
             yield events.state(events.SEARCHING)
             search_context = yield from self._run_search(
                 prompt, hold_for=None if via == "text" or not self.contact.search_aloud else prompt)
+        elif is_factual_lookup(prompt) and not covered and not placeless and not follow_up:
+            # Nobody at a screen still knows things. The answer is found quietly
+            # and handed over as what they might know — theirs to use if someone
+            # like them would, never as a lookup: Dick knows the score, Jason
+            # doesn't know the charts, and nobody says "let me check".
+            found = yield from self._run_search(prompt, hold_for=None, silent=True)
+            if found:
+                known = ("What's true here, if you happen to know it — you'd have heard, read or "
+                         "seen it the way someone like you would. Use only what you'd plausibly "
+                         "know, said as you'd say it; never as though you'd just looked it up. If "
+                         "you honestly wouldn't know, say so your way:\n" + found)
 
+        hearsay = "\n\n".join(part for part in (self._background(), known) if part)
         user_turn = prompting.compose_user_turn(
             prompt, vault_block, search_context, awareness, spoken=said,
-            hearsay=self._background(), contact=self.contact, length=length)
+            hearsay=hearsay, contact=self.contact, length=length)
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn,
                                           texting=texting)
 
@@ -1543,7 +1578,7 @@ class ContactSession:
         self._last_deflection = choice
         return choice
 
-    def _run_search(self, prompt, hold_for=None):
+    def _run_search(self, prompt, hold_for=None, silent=False):
         """
         Look something up, saying a holding line meanwhile when `hold_for` is
         the question being looked up for.
@@ -1572,12 +1607,15 @@ class ContactSession:
             yield events.sentence(0, holding)
             yield events.reply_end(holding, interim=True)
         try:
-            results = pending.result(timeout=15)
+            results = pending.result(timeout=8 if silent else 15)
         except Exception as exc:
-            yield events.notice(f"Search failed: {exc}", "warn")
+            if not silent:
+                yield events.notice(f"Search failed: {exc}", "warn")
             return None    # looked, and came back empty-handed
         if not results:
             return None
+        if silent:
+            return format_search_results(results)     # nobody saw a search happen
         yield events.sources([
             {"title": r.get("title", ""), "url": r.get("url", "")} for r in results
         ])

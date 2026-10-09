@@ -257,3 +257,49 @@ def test_nobody_sees_where_someone_who_doesnt_share_is(private_data):
                             shares_status=False, shares_location=False, hidden_as="unknown",
                             home="", texting_pace={})
     assert "where" not in presence.of(jason).public()
+
+
+def test_on_patrol_they_are_somewhere_on_their_beat_not_at_home(private_data, monkeypatch):
+    from wayne.engine import places
+    tim = SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake", shares_status=True,
+                          shares_location=True, home="Wayne Manor", texting_pace={},
+                          beat=("Diamond District", "Gotham Docks"),
+                          routine=({"from": 0, "to": 24, "doing": "on patrol", "status": "online"},))
+    whereabouts = presence.of(tim)
+    where, _ = whereabouts.whereabouts()
+    assert where in tim.beat
+    spots = {whereabouts.whereabouts(t)[0] for t in range(0, 6 * 3600, places.BEAT_STEP)}
+    assert len(spots) == 2                      # they move along it
+    assert whereabouts.public()["spot"]["name"] in tim.beat
+
+
+def test_places_people_write_land_on_the_map():
+    from wayne.engine import places
+    assert places.resolve("Little Italy, Blüdhaven")["name"] == "Blüdhaven"
+    assert places.resolve("the clock tower")["name"] == "The Clocktower"
+    assert places.resolve("Wayne Enterprises R&D Labs")["name"] == "Wayne Tower"
+    assert places.resolve("somewhere vague") is None
+
+
+def test_what_they_follow_reaches_a_conversation_about_it(private_data, monkeypatch):
+    from wayne.engine import culture
+    dick = SimpleNamespace(id="nightwing", name="Dick", interests={"follows": ["films"]}, model="m",
+                           options={})
+    monkeypatch.setattr(culture, "google_search",
+                        lambda q, n: [{"title": "Box office", "snippet": "Verity opened at number one."}])
+    monkeypatch.setattr(culture.ollama, "chat", lambda **kw: {
+        "message": {"content": '{"items": ["Verity opened at number one this weekend"]}'}})
+    assert culture.stale(dick)
+    assert culture.refresh(dick) == ["Verity opened at number one this weekend"]
+    assert not culture.stale(dick)
+    assert "Verity" in culture.note(dick, "seen any good films?")
+    assert culture.note(dick, "where are you?") == ""
+
+
+def test_a_tapback_in_a_dm_lands_on_the_message_and_can_be_taken_back(private_data):
+    from wayne.memory.texts import TextLog
+    log = TextLog("nightwing")
+    mine = log.add("me", "home in 10")
+    assert log.react(mine["id"], "them", "👍")["reactions"] == {"them": "👍"}
+    log.react(mine["id"], "them", None)
+    assert log.page()[-1]["reactions"] == {}

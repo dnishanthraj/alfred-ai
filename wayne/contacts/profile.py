@@ -133,6 +133,11 @@ class Contact:
     # whether he can see where they are at all (Find My, between family).
     home: str = ""
     shares_location: bool = True
+    # Hobbies, games, viewing, music, reading, takes — and the topics they keep
+    # up with, which engine.culture searches for what's new.
+    interests: dict = field(default_factory=dict)
+    # Where they patrol, as places on the map; they move through it on a patrol.
+    beat: tuple = ()
 
     @property
     def has_voice(self):
@@ -200,7 +205,30 @@ def _system_prompt(raw):
     files = raw.get("system_file") or []
     files = [files] if isinstance(files, str) else files
     private = [text for text in (_read_system_file(name) for name in files) if text]
-    return "\n\n".join(part for part in (character.strip(), *private) if part)
+    return "\n\n".join(part for part in (character.strip(), _interests(raw.get("interests")), *private)
+                       if part)
+
+
+def _interests(interests):
+    """
+    A life outside the work — hobbies, games, what's on, what they'll argue
+    about — in the system prompt, so it colours how they talk, the days they
+    plan, the statuses they write, and what's on their mind when they text.
+    What's new in the things they follow arrives separately (engine.culture).
+    """
+    if not interests:
+        return ""
+    parts = []
+    if interests.get("pastimes"):
+        parts.append("Your time off: " + "; ".join(interests["pastimes"]) + ".")
+    for key, label in (("games", "Playing"), ("watching", "Watching"), ("music", "Listening to"),
+                       ("reading", "Reading")):
+        if interests.get(key):
+            parts.append(f"{label}: " + "; ".join(interests[key]) + ".")
+    if interests.get("takes"):
+        parts.append("Opinions you'll defend: " + "; ".join(interests["takes"]) + ".")
+    return ("What you're into — a life outside all this. It's there in how you talk and what you "
+            "do with your days; bring it up when it fits, never as a list. " + " ".join(parts))
 
 
 def _load_profile(path):
@@ -251,6 +279,8 @@ def _load_profile(path):
         silence=raw.get("silence", ""),
         hidden_as=raw.get("hidden_as", "unknown"),
         home=raw.get("home", ""),
+        interests=raw.get("interests", {}),
+        beat=tuple(raw.get("beat", [])),
         shares_location=bool(raw.get("shares_location", raw.get("shares_status", True))),
     )
 

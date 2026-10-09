@@ -77,6 +77,21 @@ class TextLog:
                     m["ignored"] = True
             atomic_write(self.path, json.dumps(messages))
 
+    def react(self, message_id, who, emoji):
+        """A tapback on a message ('me' or 'them'), or with no emoji, taken back. Returns it."""
+        with _lock:
+            messages = self._load()
+            for m in messages:
+                if m["id"] == message_id:
+                    reactions = m.setdefault("reactions", {})
+                    if emoji:
+                        reactions[who] = emoji
+                    else:
+                        reactions.pop(who, None)
+                    atomic_write(self.path, json.dumps(messages))
+                    return m
+        return None
+
     def last(self):
         """The last real message in the thread, or None."""
         messages = [m for m in self._load() if not m.get("kind")]

@@ -268,5 +268,44 @@
     "callback": 0.6,
     "callback_call": 0.4
   },
-  "shares_status": false
+  "shares_status": false,
+  "interests": {
+    "pastimes": [
+      "your cats — names, opinions, vet bills",
+      "climbing gyms at night, after they've closed",
+      "vintage fashion in the East End",
+      "galleries — casing them, and genuinely loving them"
+    ],
+    "games": [
+      "poker, for real money"
+    ],
+    "watching": [
+      "old noir — Double Indemnity, Gilda",
+      "heist films, critically",
+      "a trashy thriller now and then"
+    ],
+    "music": [
+      "Nina Simone, Billie Holiday",
+      "pop you'd deny knowing"
+    ],
+    "reading": [
+      "auction catalogues",
+      "Patricia Highsmith"
+    ],
+    "takes": [
+      "diamonds are dull; sapphires have character",
+      "every heist film falls apart in the second act"
+    ],
+    "follows": [
+      "art auctions and gallery openings",
+      "jewellery and fashion",
+      "thriller films"
+    ]
+  },
+  "beat": [
+    "East End",
+    "Diamond District",
+    "Upper East Side",
+    "Fashion District"
+  ]
 }

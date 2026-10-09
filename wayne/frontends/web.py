@@ -34,7 +34,7 @@ from .. import operator as wayne_operator
 from ..audio import stt, system_voice
 from ..audio.tts import get_voice_engine
 from ..contacts import directory
-from ..engine import ContactSession, grapevine, guards, initiative, presence, world
+from ..engine import ContactSession, culture, grapevine, guards, initiative, places, presence, world
 from ..engine.party import MAX_CONTACTS, Call
 from ..memory import groups as group_store
 from ..memory import migrate_legacy
@@ -1024,6 +1024,12 @@ class Console(GroupChats):
                 session._deferred = None
                 logging.getLogger("wayne").info("%s answered later", contact.id)
             group_task = getattr(session, "_group_task", None)
+            tapback = getattr(session, "_text_react", None)
+            if tapback:
+                session._text_react = None
+                if reply.strip(" .").lower() in ("", "mm"):
+                    reply = ""          # the reaction was the reply
+                await self._tapback_text(contact, batch[-1]["id"], "them", tapback)
             if reply:
                 await self._deliver(contact, reply, loop.time())
                 whereabouts.drop("callback")     # back in touch; no need to ring him back
@@ -1142,6 +1148,25 @@ class Console(GroupChats):
                 self._release.cancel()
             self._release = asyncio.create_task(self._release_after(contact))
 
+    async def _tapback_text(self, contact, message_id, who, emoji):
+        """A reaction on a message in a DM — theirs on his, or his on theirs."""
+        if who == "them":
+            await asyncio.sleep(random.uniform(0.6, 2.5))
+        message = TextLog(contact.id).react(message_id, who, (emoji or "")[:8] or None)
+        if message is None:
+            return
+        await self.broadcast({"type": "text_reaction", "speaker": contact.id, "message": message})
+        if who == "me" and emoji:
+            # They'll see it next time they look at the thread.
+            session = self.session_for(contact.id)
+            session.tapbacks_seen = (getattr(session, "tapbacks_seen", []) +
+                                     [f"he reacted {emoji} to your text “{message['text'][:60]}”"])[-3:]
+
+    async def text_react(self, contact_id, message_id, emoji):
+        contact = self.directory.get(contact_id)
+        if contact:
+            await self._tapback_text(contact, message_id, "me", emoji)
+
     async def _write_text(self, contact, body):
         """The contact writes a text reply. Held to the same lock as call turns."""
         session = self.session_for(contact.id)
@@ -1226,6 +1251,7 @@ class Console(GroupChats):
         for contact in self.directory:
             await self._presence_changed(contact)
         await self._write_status_lines()
+        await self._keep_up()
         await self._write_day_plans()
         if not self.clients:
             return      # nobody at the console to hear about it
@@ -1261,6 +1287,31 @@ class Console(GroupChats):
                 if line:
                     whereabouts.set_line(key, line)
                     await self._presence_changed(contact)
+        finally:
+            self._writing_lines = False
+
+    async def _keep_up(self):
+        """
+        One contact catches up on what they follow — searched as of today, read
+        by the model — while it's loaded and nothing else is happening. A day
+        later they catch up again, so they're never months behind.
+        """
+        if (self._writing_lines or not self.clients or self.current_id or self._texters
+                or self.turn_lock.locked()):
+            return
+        behind = [c for c in self.directory if culture.stale(c)]
+        if not behind or not await asyncio.to_thread(_model_loaded, behind[0].model):
+            return
+        self._writing_lines = True
+        try:
+            contact = random.choice(behind)
+            items = await asyncio.to_thread(culture.refresh, contact)
+            if items:
+                log.info("%s caught up on what they follow: %d things", contact.id, len(items))
+            else:
+                # Nothing came back (offline, rate-limited): try someone else
+                # next time rather than hammering the same searches.
+                culture.mark_tried(contact)
         finally:
             self._writing_lines = False
 
@@ -1310,7 +1361,8 @@ class Console(GroupChats):
 
     async def _presence_changed(self, contact):
         shown = presence.of(contact).public()
-        key = (shown["status"], shown["doing"], shown.get("line", ""))
+        # Where they are counts: a patrol moving along its beat is news to the map.
+        key = (shown["status"], shown["doing"], shown.get("line", ""), shown.get("where"))
         if self._shown_presence.get(contact.id) != key:
             self._shown_presence[contact.id] = key
             await self.broadcast({"type": "presence", "speaker": contact.id, "presence": shown})
@@ -1760,6 +1812,8 @@ async def session_info():
         "contacts": [_contact_payload(c) for c in console.directory],
         "current": console.current_id,
         "default": config.DEFAULT_CONTACT,
+        # Gotham, for the little map on a status card.
+        "map": {k: v for k, v in places.gazetteer().items() if not k.startswith("_")},
     })
 
 
@@ -1962,6 +2016,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(console.decline(payload.get("id", "")))
             elif kind == "group_text":
                 asyncio.create_task(console.group_text(payload.get("id", ""), payload.get("text", "")))
+            elif kind == "text_react":
+                asyncio.create_task(console.text_react(payload.get("id", ""), payload.get("message", ""),
+                                                       payload.get("emoji", "")))
             elif kind == "group_react":
                 asyncio.create_task(console.group_react(payload.get("id", ""), payload.get("message", ""),
                                                         payload.get("emoji", "")))

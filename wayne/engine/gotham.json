@@ -1,0 +1,42 @@
+{
+  "_doc": "Gotham as the console maps it: Eliot R. Brown's canon map (three islands — Uptown, Midtown, Downtown — split by the Sprang and Finger rivers, the mainland across the Gotham River, Wayne Manor out in Gotham County, Blüdhaven a short train ride north), with the Narrows, Burnside and the East End from later canon. x/y are 0–100 on a stylised map, north up. 'match' lists other ways people name a place.",
+  "islands": [
+    {"name": "Uptown", "x": 30, "y": 13, "w": 52, "h": 19},
+    {"name": "Midtown", "x": 30, "y": 36, "w": 50, "h": 19},
+    {"name": "Downtown", "x": 28, "y": 59, "w": 56, "h": 34}
+  ],
+  "places": [
+    {"name": "Wayne Manor", "x": 9, "y": 9, "area": "Gotham County", "match": ["the manor", "batcave", "the cave", "manor"]},
+    {"name": "Bristol", "x": 17, "y": 21, "area": "Gotham County", "match": ["bristol"]},
+    {"name": "Crime Alley", "x": 41, "y": 24, "area": "Uptown", "match": ["crime alley", "park row"]},
+    {"name": "Burnley", "x": 57, "y": 18, "area": "Uptown", "match": ["burnley"]},
+    {"name": "Amusement Mile", "x": 72, "y": 22, "area": "Uptown", "match": ["amusement mile", "funfair", "the pier"]},
+    {"name": "Arkham Asylum", "x": 22, "y": 34, "area": "Arkham Island", "match": ["arkham"]},
+    {"name": "The Narrows", "x": 22, "y": 47, "area": "The Narrows", "match": ["narrows"]},
+    {"name": "Gotham University", "x": 36, "y": 41, "area": "Midtown", "match": ["gotham university", "gotham u", "campus"]},
+    {"name": "Robinson Park", "x": 49, "y": 45, "area": "Midtown", "match": ["robinson park", "the park"]},
+    {"name": "Upper East Side", "x": 65, "y": 41, "area": "Midtown", "match": ["upper east side"]},
+    {"name": "Upper West Side", "x": 37, "y": 50, "area": "Midtown", "match": ["upper west side"]},
+    {"name": "Wayne Tower", "x": 59, "y": 49, "area": "Midtown", "match": ["wayne tower", "wayne enterprises", "applied sciences", "r&d", "board meeting"]},
+    {"name": "Otisburg", "x": 73, "y": 50, "area": "Midtown", "match": ["otisburg"]},
+    {"name": "Theater District", "x": 50, "y": 64, "area": "Downtown", "match": ["theater district", "theatre district", "theatre", "theater", "matinee", "ballet", "opera"]},
+    {"name": "Diamond District", "x": 61, "y": 64, "area": "Downtown", "match": ["diamond district"]},
+    {"name": "City Hall", "x": 44, "y": 70, "area": "Downtown", "match": ["city hall", "gcpd", "precinct"]},
+    {"name": "Fashion District", "x": 69, "y": 70, "area": "Downtown", "match": ["fashion district"]},
+    {"name": "The Clocktower", "x": 48, "y": 76, "area": "Old Gotham", "match": ["clocktower", "clock tower"]},
+    {"name": "Old Gotham", "x": 42, "y": 79, "area": "Downtown", "match": ["old gotham"]},
+    {"name": "Financial District", "x": 61, "y": 77, "area": "Downtown", "match": ["financial district"]},
+    {"name": "Chinatown", "x": 54, "y": 84, "area": "Downtown", "match": ["chinatown"]},
+    {"name": "East End", "x": 72, "y": 84, "area": "Downtown", "match": ["east end"]},
+    {"name": "The Bowery", "x": 40, "y": 87, "area": "Downtown", "match": ["bowery"]},
+    {"name": "Gotham Docks", "x": 34, "y": 93, "area": "Downtown", "match": ["docks", "harbor", "harbour", "pier", "waterfront", "shipyard"]},
+    {"name": "Gotham Marina", "x": 26, "y": 86, "area": "Downtown", "match": ["marina", "houseboat"]},
+    {"name": "Ace Chemicals", "x": 12, "y": 66, "area": "mainland", "match": ["ace chemicals"]},
+    {"name": "Burnside", "x": 91, "y": 58, "area": "Burnside", "match": ["burnside"]},
+    {"name": "Tricorner", "x": 89, "y": 40, "area": "Tricorner Island", "match": ["tricorner"]},
+    {"name": "Blackgate", "x": 89, "y": 86, "area": "Blackgate Island", "match": ["blackgate"]}
+  ],
+  "regions": [
+    {"name": "Blüdhaven", "x": 88, "y": 7, "spread": 6, "match": ["blüdhaven", "bludhaven", "bludhaven"]}
+  ]
+}
