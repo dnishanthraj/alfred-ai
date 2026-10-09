@@ -353,8 +353,9 @@ def test_a_patrol_goes_where_the_trouble_is_on_its_beat(private_data, monkeypatc
 
 
 def test_the_scanner_never_calls_from_inside_blackgate():
-    from wayne.engine import incidents
     import time as _time
+
+    from wayne.engine import incidents
     reports = [r for t in range(0, 48 * 3600, 3 * 3600) for r in incidents.at(_time.time() - t)]
     assert reports
     assert not any(r["place"] in ("Blackgate Penitentiary", "Arkham Asylum", "Statue of Justice") for r in reports)
