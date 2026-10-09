@@ -100,6 +100,17 @@ cd "\$DIR"
 # plain \`ollama serve\` failed silently and the console came up with nothing to
 # answer it. The symptom was Alfred simply never replying.
 export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
+
+# Memory, before Ollama starts. Gemma's sliding-window attention makes Ollama
+# keep context checkpoints — 200 MB each, up to 32 — per parallel slot, and with
+# the default slots a 15 GB model grew to 25 GB on a 24 GB Mac and everything
+# crawled through swap. One slot (the console is one conversation), and a q8 KV
+# cache with flash attention halves what's left. Measured: 25 GB to ~5 GB
+# resident, first words 1.1–1.5s to 0.6–1.0s.
+launchctl setenv OLLAMA_NUM_PARALLEL 1
+launchctl setenv OLLAMA_FLASH_ATTENTION 1
+launchctl setenv OLLAMA_KV_CACHE_TYPE q8_0
+
 if ! curl -sf -o /dev/null http://127.0.0.1:11434/api/version; then
   if [ -d "/Applications/Ollama.app" ]; then
     open -ga Ollama

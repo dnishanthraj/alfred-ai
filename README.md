@@ -493,6 +493,22 @@ If you use a **reasoning model** (the qwen3 family, deepseek-r1, gpt-oss), set
 `"think": false` in that contact's profile. Left on, they spend their whole
 budget on reasoning tokens, emit no speakable content, and appear to hang.
 
+### Memory
+
+A 15 GB model on a 24 GB Mac leaves little room. Gemma's sliding-window
+attention makes Ollama keep context checkpoints (200 MB each, up to 32) for
+every parallel request slot, and with the defaults the model server grew to
+25 GB and everything slowed to a crawl in swap. Run Ollama with:
+
+    launchctl setenv OLLAMA_NUM_PARALLEL 1
+    launchctl setenv OLLAMA_FLASH_ATTENTION 1
+    launchctl setenv OLLAMA_KV_CACHE_TYPE q8_0
+
+then restart Ollama. The app built by `scripts/make_app.command` sets these
+before it starts Ollama. Don't run the evaluation while you're using the
+console: two processes on one model on this much memory is what made replies
+take twenty seconds.
+
 ## Evaluation
 
 Changes to the character, the prompt or the engine are measured, not eyeballed.
