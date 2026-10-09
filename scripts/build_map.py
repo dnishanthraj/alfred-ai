@@ -329,7 +329,7 @@ def terrain_tiles(land):
     for z in (9, 10, 11):
         n = 2 ** z
         tx0, tx1 = int((lon0 + 180) / 360 * n), int((lon1 + 180) / 360 * n)
-        def ty(lat):
+        def ty(lat, n=n):
             r = math.radians(lat)
             return int((1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * n)
         for tx in range(tx0, tx1 + 1):

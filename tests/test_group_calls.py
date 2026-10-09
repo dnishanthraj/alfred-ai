@@ -283,7 +283,8 @@ def test_nobody_sees_where_someone_who_doesnt_share_is(private_data):
 
 
 def test_on_patrol_they_are_somewhere_on_their_beat_not_at_home(private_data, monkeypatch):
-    from wayne.engine import places
+    from wayne.engine import incidents, places
+    monkeypatch.setattr(incidents, "near", lambda areas, t=None: None)    # a quiet night
     tim = SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake", shares_status=True,
                           shares_location=True, home="Wayne Manor", texting_pace={},
                           beat=("Diamond District", "Gotham Docks"),
@@ -328,8 +329,9 @@ def test_a_tapback_in_a_dm_lands_on_the_message_and_can_be_taken_back(private_da
     assert log.page()[-1]["reactions"] == {}
 
 
-def test_the_map_traces_where_a_patrol_has_been(private_data):
-    from wayne.engine import places
+def test_the_map_traces_where_a_patrol_has_been(private_data, monkeypatch):
+    from wayne.engine import incidents, places
+    monkeypatch.setattr(incidents, "near", lambda areas, t=None: None)
     tim = SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake", shares_status=True,
                           shares_location=True, home="Wayne Manor", texting_pace={},
                           beat=("Diamond District", "Gotham Docks", "Old Gotham"),
@@ -340,3 +342,19 @@ def test_the_map_traces_where_a_patrol_has_been(private_data):
     assert all(a["where"] != b["where"] for a, b in zip(trail, trail[1:], strict=False))
     assert places.resolve("Waterloo Docks, Blüdhaven")["area"] == "Blüdhaven"
     assert places.resolve("the docks")["name"] == "Gotham Docks"     # Gotham's, without Blüdhaven named
+
+
+def test_a_patrol_goes_where_the_trouble_is_on_its_beat(private_data, monkeypatch):
+    from wayne.engine import incidents, places
+    tim = SimpleNamespace(id="robin", beat=("Diamond District", "Old Gotham"))
+    monkeypatch.setattr(incidents, "near", lambda areas, t=None: {"place": "GCPD Central", "area": "Diamond District"})
+    spots = {places.patrol_spot(tim, "", t) for t in range(0, 6 * 3600, places.BEAT_STEP)}
+    assert "GCPD Central" in spots
+
+
+def test_the_scanner_never_calls_from_inside_blackgate():
+    from wayne.engine import incidents
+    import time as _time
+    reports = [r for t in range(0, 48 * 3600, 3 * 3600) for r in incidents.at(_time.time() - t)]
+    assert reports
+    assert not any(r["place"] in ("Blackgate Penitentiary", "Arkham Asylum", "Statue of Justice") for r in reports)
