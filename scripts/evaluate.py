@@ -5,6 +5,7 @@ Score the cast against the marking scheme in eval/rubric.md.
     venv/bin/python scripts/evaluate.py --cast --compare cast-base        # after a change: A/B
     venv/bin/python scripts/evaluate.py --contact alfred --tier full      # one contact, everything
     venv/bin/python scripts/evaluate.py --cast --voice                    # also check the voices
+    venv/bin/python scripts/evaluate.py --cast --tier full --only culture,variety   # just their lives
 
 Every scenario runs through the real engine — persona, primer, guards, search,
 silences, texting — from an empty history, with nothing written to anyone's
@@ -24,11 +25,20 @@ With --cast it also runs one shared call through every contact and measures,
 without a judge, how long each one talks against how long they should, and how
 alike they sound — listing the lines two characters both said.
 
+Across each contact's whole run it also lists their habits, again without a
+judge: the openers they keep reaching for, phrases that turn up in three or
+more conversations, how often they end on a question, and what they call him.
+A scenario marked "varied" fails outright if a reply repeats an opener three
+times or a five-word run twice. Culture and knowledge turns are judged against
+what the contact could actually know — their culture feed, or what a quiet
+search found — so a release, score or title they made up is caught.
+
 The judge is the local model unless --judge says otherwise. A model marking its
 own work leans towards it, which is why the automatic checks exist, why the
 head-to-head swaps positions, and why the transcripts are written out.
 """
 import argparse
+import collections
 import dataclasses
 import difflib
 import itertools
@@ -46,9 +56,11 @@ sys.path.insert(0, str(ROOT))
 import ollama  # noqa: E402
 
 from wayne import delivery  # noqa: E402
+from wayne import operator as operator_profile  # noqa: E402
 from wayne.contacts import directory  # noqa: E402
 from wayne.engine import (  # noqa: E402
     ContactSession,
+    culture,
     grapevine,
     guards,
     initiative,
@@ -59,6 +71,14 @@ from wayne.memory import History, Story, Vault  # noqa: E402
 SCENARIOS = ROOT / "eval" / "scenarios"
 RESULTS = ROOT / "eval" / "results"
 SILENCE, HANG_UP = "…", "<rings off>"
+# Everyone's sets, in order, before the contact's own file.
+SHARED_SETS = ("common", "texts", "life")
+# Scenarios where knowing the facts is the point: the judge's "invented" is
+# reported only here (elsewhere — grief that happened to say "lost" — the feed
+# rode along, and its guess is noise). Reported, never failed: the local judge
+# flagged eight in one run and two were real. The figures check is the failure;
+# "invented" says which transcripts to read.
+FACT_TRAITS = ("culture", "knowledge", "looking things up")
 
 DIMENSIONS = ("persona", "human", "register", "substance")
 WEIGHTS = {"persona": 0.25, "human": 0.20, "register": 0.20, "substance": 0.15,
@@ -84,15 +104,19 @@ The user plays Bruce Wayne. The character is {who}.
 This is {channel}. Mark only what {name} says.
 
 How {name} talks: {voice}
+What {name} calls him: {address}
 
 Be severe: 5 is rare and means you could not tell it from the character played
 superbly; 3 is passable; 1 is a failure.
 
-persona   — Unmistakably {name}: their history, opinions and voice — not a generic
-            character who could be anyone in the family, and never an assistant.
+persona   — Unmistakably {name}: their history, opinions and voice, what they call
+            him, and a life of their own — interests, tastes, the people in it —
+            showing when it fits, never recited as a list. Not a generic character
+            who could be anyone in the family, and never an assistant.
 human     — Sounds like a real person {medium}. {length_rule} Low for padding,
-            speeches, therapy-speak, written-sounding lines, stock phrases, or a
-            thought cut off half-way.
+            speeches, therapy-speak, written-sounding lines, stock phrases, a
+            thought cut off half-way, or saying the same thing the same way twice —
+            a recycled opener, joke, tic or shape from one reply to the next.
 register  — Meets him where he is: teasing with teasing, gravity with gravity,
             tenderness when it matters, brevity when he's brief.
 substance — Engages with what was actually said. Brief is fine if it lands; low only
@@ -107,10 +131,24 @@ What a good reply looks like here: {good}
 
 Mark against that description first. If it calls for a refusal, wit without one
 fails however clever; if it calls for something tender, saying it plainly is right.
-
+{facts}
 Return JSON only:
 {{"persona": 1-5, "human": 1-5, "register": 1-5, "substance": 1-5,
-  "grounded": true|false, "note": "one short sentence on the weakest point"}}"""
+  "grounded": true|false,{invented} "note": "one short sentence on the weakest point"}}"""
+
+# Added to the judge's brief when the contact had real, current facts to hand —
+# their culture feed, or what a quiet search found — so a made-up release,
+# score or title shows up as one rather than as a confident, in-character line.
+FACTS_BRIEF = """
+What {name} could actually know here — real and current:
+{facts}
+
+invented  — true if {name} states as fact a specific current result, score, chart
+            position, release, date or new title that is neither in that list nor
+            a long-established real work; false if they keep to it, talk about
+            well-known older things, or say they don't know. Their taste and
+            opinions are theirs and never count.
+"""
 
 PAIR_PROMPT = """Two versions of {name} — {who} — answered the same {channel} with Bruce Wayne.
 
@@ -124,9 +162,9 @@ Return JSON only: {{"better": "A" | "B" | "same", "why": "one short sentence"}}"
 
 
 def load_scenarios(contact, tier):
-    """Everyone's scenarios, the texting set, then this contact's own — fitted to them."""
+    """Everyone's scenarios, the texting set, a life of their own, then this contact's own — fitted to them."""
     scenarios = []
-    for name in ("common", "texts", contact.id):
+    for name in (*SHARED_SETS, contact.id):
         path = SCENARIOS / f"{name}.json"
         if path.exists():
             scenarios += json.loads(path.read_text())["scenarios"]
@@ -140,6 +178,14 @@ def load_scenarios(contact, tier):
             continue
         fitted.append(s)
     return fitted
+
+
+def wanted(scenario, only):
+    """--only: any of its comma-separated words in the scenario's id or trait."""
+    if not only:
+        return True
+    return any(w and (w in scenario["id"] or w in scenario["trait"])
+               for w in (part.strip() for part in only.split(",")))
 
 
 # --- running --------------------------------------------------------------
@@ -161,21 +207,62 @@ def _quiet_memory():
     Story.entries = lambda self: []
     Story.clear = lambda self: None
     # What they're doing depends on the hour; scenarios are judged at any hour,
-    # so they're always met in their free time.
-    presence.Presence.note = lambda self, t=None: ""
-    presence.Presence.now = lambda self, t=None: {
-        "status": presence.IDLE, "doing": "", "until": 0, "source": "free", "last_active": 0}
+    # so they're met in their free time — unless the scenario puts them
+    # somewhere ("away"), away from any screen.
+    presence.Presence.note = lambda self, t=None: (
+        f"Right now you're {_AWAY['doing']}." if _AWAY.get("doing") else "")
+    presence.Presence.now = lambda self, t=None: (
+        {"status": presence.BUSY, "doing": _AWAY["doing"], "until": 0, "source": "routine",
+         "last_active": 0} if _AWAY.get("doing") else
+        {"status": presence.IDLE, "doing": "", "until": 0, "source": "free", "last_active": 0})
     presence.Presence.save = lambda self: None
+
+
+# Where the current scenario has put them, if anywhere.
+_AWAY = {}
+# What reached them this turn: a search's results (seen or quiet), and whether
+# their culture feed was handed over.
+_HEARD = {"found": [], "culture": False}
+
+
+def _listen():
+    """Note what each turn was given to know, so a judge can check they kept to it."""
+    real_search, real_note = ContactSession._run_search, culture.note
+
+    def run_search(self, *args, **kwargs):
+        found = yield from real_search(self, *args, **kwargs)
+        if found:
+            _HEARD["found"].append(str(found))
+        return found
+
+    def note(contact, text):
+        said = real_note(contact, text)
+        if said:
+            _HEARD["culture"] = True
+        return said
+    ContactSession._run_search = run_search
+    culture.note = note
 
 
 def run_scenario(contact, scenario):
     """One scripted conversation. Returns its turns with timings."""
+    _AWAY.clear()
+    if scenario.get("away"):
+        _AWAY["doing"] = scenario["away"]
+    try:
+        return _converse(contact, scenario)
+    finally:
+        _AWAY.clear()
+
+
+def _converse(contact, scenario):
     session = ContactSession(contact)
     session.history.messages = []
     session.already_greeted = True
     channel = scenario.get("channel", "call")
     turns = []
     for said in scenario["turns"]:
+        _HEARD["found"], _HEARD["culture"] = [], False
         if said == SILENCE:
             events = session.check_in()
         elif said == HANG_UP:
@@ -205,7 +292,12 @@ def run_scenario(contact, scenario):
             shown = " / ".join(initiative.bubbles(contact, reply)) if reply else ""
         else:
             shown = " ".join(voiced)
-        turns.append({"him": said, "alfred": shown, "first_s": first, "searched": searched})
+        turn = {"him": said, "alfred": shown, "first_s": first, "searched": searched}
+        if _HEARD["found"]:
+            turn["found"] = "\n".join(_HEARD["found"])[:1500]
+        if _HEARD["culture"]:
+            turn["culture"] = True
+        turns.append(turn)
     return turns
 
 
@@ -222,6 +314,103 @@ was we were what when which who will with would you you'd you'll you're your""".
 
 _ASSISTANT = re.compile(r"(?i)\b(how can i (help|assist)|is there anything else|as an ai|"
                         r"i'?m here to help|let me know if)\b")
+
+# What they might call him, counted across a run. "B" only on its own, between
+# punctuation: "B." or ", B?" — not the letter in a word.
+ADDRESS_FORMS = {
+    "sir": r"(?i)\bsir\b", "Master Bruce": r"(?i)\bmaster bruce\b",
+    "Master Wayne": r"(?i)\bmaster wayne\b", "Mr. Wayne": r"(?i)\bmr\.? wayne\b",
+    "Bruce": r"(?i)(?<!master )(?<!mr\. )(?<!mr )\bbruce\b", "B": r"(?:^|[,.!?…—]\s*)B(?=\s*[,.!?…—]|$)",
+    "old man": r"(?i)\bold man\b", "Bats": r"(?i)\bbats\b", "handsome": r"(?i)\bhandsome\b",
+    "Batman": r"(?i)\bbatman\b", "Dad": r"(?:^|[,.!?…—]\s*)Dad(?=\s*[,.!?…—]|$)",
+}
+
+# Who's under which mask, for anyone the operator's world doesn't tell.
+_FAMILY_NAMES = r"\b(dick|grayson|jason|todd|tim|drake|barbara|babs|randy|cass|cassandra)\b"
+_MASKS = r"\b(nightwing|red hood|robin|batgirl|batwing|orphan|oracle)\b"
+
+
+def mask_blind(contact_id):
+    """Whether this contact isn't told who's under the masks (operators/bruce.json)."""
+    facts = [f for f in operator_profile.profile().get("world", [])
+             if "under the masks" in f.get("text", "").lower()]
+    return bool(facts) and all(f.get("known_by", "*") != "*" and contact_id not in f["known_by"]
+                               for f in facts)
+
+
+def leaks_mask(text):
+    """A sentence that puts a family name and a mask together."""
+    return next((s for s in guards.split_sentences(delivery.clean(text))
+                 if re.search(f"(?i){_FAMILY_NAMES}", s) and re.search(f"(?i){_MASKS}", s)), None)
+
+
+def vocative(text, terms):
+    """A forbidden name used to his face — ", son." or "Dad?" — not "the boy" in passing."""
+    for term in terms:
+        if re.search(rf"(?i)(?:^|[,.!?…—]\s*)(?:my\s+)?{re.escape(term)}(?=\s*(?:[,.!?…—]|$))", text):
+            return term
+    return None
+
+
+def _opener(text):
+    return " ".join(_words(text)[:2])
+
+
+def repetition(replies, said=()):
+    """
+    Within one conversation, what came back: an opener used three times, a
+    five-word run said twice (that he didn't say first), or every reply ending
+    on a question. Returns {kind: example} — empty when it varied.
+    """
+    texts = [delivery.clean(r) for r in replies if r and r.strip()]
+    found = {}
+    openers = collections.Counter(_opener(t) for t in texts if len(_words(t)) >= 2)
+    top = openers.most_common(1)
+    if top and top[0][1] >= 3:
+        found["opener"] = f"{top[0][1]}× “{top[0][0]} …”"
+    # A run counts only on words of their own: saying back what he said isn't a tic.
+    heard = set(_STOP).union(*(_words(line) for line in said))
+    runs = collections.Counter(g for t in texts for g in _grams(t, 5) if len(set(g) - heard) >= 2)
+    again = [" ".join(g) for g, n in runs.most_common() if n >= 2]
+    if again:
+        found["phrase"] = f"“{again[0]}” twice"
+    if len(texts) >= 4 and all(t.rstrip(' "”').endswith("?") for t in texts):
+        found["questions"] = f"all {len(texts)} replies end on a question"
+    return found
+
+
+_NUMBER_WORDS = {w: str(i) for i, w in enumerate(
+    "zero one two three four five six seven eight nine ten eleven twelve".split())} | {"nil": "0"}
+_N = r"(\d+|" + "|".join(_NUMBER_WORDS) + r")"
+_SCORE = re.compile(rf"(?i)\b{_N}\s*(?:-|–|to)\s*{_N}\b")
+
+
+def _digits(token):
+    return _NUMBER_WORDS.get(token.lower(), token)
+
+
+def unsupported_figures(reply, facts, said=""):
+    """
+    Figures said as fact that nothing they were given contains: a score
+    ("two to one", "3-1") or a number of two or more digits. A judge reading
+    in character waves "Arsenal beat Chelsea two to one" through; a count can't.
+    """
+    known = re.sub(r"\s+", " ", f"{facts} {said}")
+    plain = known.replace("–", "-")
+    odd = []
+    for a, b in _SCORE.findall(delivery.clean(reply)):
+        a, b = _digits(a), _digits(b)
+        if a == b == "0" or f"{a}-{b}" in plain or f"{b}-{a}" in plain:
+            continue
+        odd.append(f"{a}-{b}")
+    # A year gone by — "back in '98", "a heist in 1974" — is a memory, not news.
+    past = time.localtime().tm_year - 1
+    for number in re.findall(r"(?<![\d.,'’])\d+(?:,\d{3})*(?:\.\d+)?", delivery.clean(reply)):
+        if re.fullmatch(r"1\d{3}|20\d\d", number) and int(number) < past:
+            continue
+        if len(re.sub(r"\D", "", number)) >= 2 and number not in known:
+            odd.append(number)
+    return odd
 
 
 def check(contact, scenario, turns, primer_lines):
@@ -252,6 +441,28 @@ def check(contact, scenario, turns, primer_lines):
     for t, text in zip(turns, replies, strict=True):
         if guards.remarks_on_brevity(delivery.clean(text).split(" / ")[0], t["him"]):
             failures["brevity remark"] = text[:80]
+
+    forbidden = getattr(contact, "forbidden_address", None) or []
+    blind = mask_blind(contact.id)
+    for text in replies:
+        clean = delivery.clean(text)
+        term = vocative(clean, forbidden)
+        if term:
+            failures["address"] = f"“{term}”: {clean[:80]}"
+        leak = blind and leaks_mask(clean)
+        if leak:
+            failures["mask leak"] = leak[:100]
+
+    for t, text in zip(turns, replies, strict=True):
+        if t.get("found") or t.get("culture"):
+            odd = unsupported_figures(text, facts_for(contact, [t]), t["him"])
+            if odd:
+                failures["unsupported figure"] = f"{', '.join(odd)}: {delivery.clean(text)[:80]}"
+
+    if rules.get("varied"):
+        repeats = repetition(replies, [t["him"] for t in turns])
+        if repeats:
+            failures["repetition"] = "; ".join(repeats.values())
 
     last = delivery.clean(replies[-1]) if replies else ""
     for pattern in rules.get("must", []):
@@ -294,8 +505,24 @@ def _transcript(contact, turns, label=None):
         f"{name}: {delivery.clean(t['alfred'])}" for t in turns)
 
 
+def _address(contact):
+    profile = operator_profile.profile()
+    return (profile.get("address", {}).get(contact.id) or profile.get("default_address")
+            or "whatever they'd naturally call him")
+
+
+def facts_for(contact, turns):
+    """What the contact could actually know in this conversation, or ""."""
+    lines = []
+    if any(t.get("culture") for t in turns):
+        lines += [f"- {item}" for item in culture.seen(contact)]
+    lines += [t["found"] for t in turns if t.get("found")]
+    return "\n".join(lines)
+
+
 def judge(model, contact, scenario, turns):
     channel, medium, length_rule = _framing(scenario.get("channel", "call"))
+    facts = facts_for(contact, turns)
     try:
         response = ollama.chat(
             model=model, format="json", think=False,
@@ -305,12 +532,19 @@ def judge(model, contact, scenario, turns):
             messages=[{"role": "system", "content": JUDGE_PROMPT.format(
                 good=scenario["good"], name=contact.name, channel=channel, medium=medium,
                 length_rule=length_rule, voice=_voice(contact, scenario.get("channel")),
+                address=_address(contact),
+                facts=FACTS_BRIEF.format(name=contact.name, facts=facts) if facts else "",
+                invented=' "invented": true|false,' if facts else "",
                 who=contact.judge or f"{contact.full_name}, {contact.role}")},
                       {"role": "user", "content": _transcript(contact, turns)}])
         marks = json.loads(response["message"]["content"])
         for dim in DIMENSIONS:
             marks[dim] = max(1, min(5, int(marks.get(dim, 1))))
         marks["grounded"] = bool(marks.get("grounded", True))
+        if facts:
+            marks["invented"] = marks.get("invented") in (True, "true")
+        else:
+            marks.pop("invented", None)
         return marks
     except Exception as exc:
         return {"error": str(exc)}
@@ -411,6 +645,76 @@ def likeness(calls):
     return matrix, sorted(shared, reverse=True)[:12]
 
 
+def echoes(per_contact):
+    """
+    The shared call's test, over every scenario two characters both ran: the
+    same line to the same prompt from two different people. "That sounds like
+    an understatement. What happened?" from three of them is a stock line.
+    """
+    replies = collections.defaultdict(dict)
+    for cid, info in per_contact.items():
+        for r in info["results"]:
+            for i, t in enumerate(r["turns"]):
+                text = delivery.clean(t["alfred"].replace("(looking)", ""))
+                if text.strip():
+                    replies[(r["id"], i, t["him"])][cid] = text
+    found = []
+    for (sid, _, him), said in replies.items():
+        for a, b in itertools.combinations(sorted(said), 2):
+            ga, gb = _grams(said[a]), _grams(said[b])
+            if ga and gb:
+                overlap = len(ga & gb) / min(len(ga), len(gb))
+                if overlap >= 0.5:
+                    found.append((round(overlap, 2), sid, him, a, said[a], b, said[b]))
+    return sorted(found, reverse=True)
+
+
+# --- habits: what one character keeps doing across a whole run ----------------
+
+def habits(results):
+    """
+    Across every conversation in a contact's run: the openers they keep
+    reaching for, the stage cues they lean on, four-word phrases of their own that turn up in three or more
+    different conversations, how often a reply ends on a
+    question, and what they called him. No judge: a tic is a count.
+    """
+    replies, cues = [], collections.Counter()
+    for r in results:
+        for t in r["turns"]:
+            cues.update(re.findall(r"\[[a-z ]+\]", t["alfred"]))
+            text = delivery.clean(t["alfred"].replace("(looking)", ""))
+            if text.strip():
+                replies.append((r["id"], text, t["him"]))
+    n = len(replies) or 1
+    openers = collections.Counter(_opener(text) for _, text, _ in replies if len(_words(text)) >= 2)
+    # One word they keep starting on ("Riveting.", "What.") — not "I" or "the".
+    firsts = collections.Counter(w[0] for _, text, _ in replies if (w := _words(text)) and w[0] not in _STOP)
+    where = collections.defaultdict(set)
+    for sid, text, him in replies:
+        heard = _STOP | set(_words(him))
+        for g in _grams(text, 4):
+            if len(set(g) - heard) >= 2:
+                where[g].add(sid)
+    tics = sorted(((len(ids), " ".join(g)) for g, ids in where.items() if len(ids) >= 3), reverse=True)
+    address = collections.Counter()
+    named = 0
+    for _, text, _ in replies:
+        used = [form for form, pattern in ADDRESS_FORMS.items() if re.search(pattern, text)]
+        address.update(used)
+        named += bool(used)
+    return {
+        "replies": len(replies),
+        "openers": [(o, c) for o, c in openers.most_common(5) if c >= 3]
+        + [(w, c) for w, c in firsts.most_common(3)
+           if c >= 4 and not any(o.split()[0] == w for o, n in openers.most_common(5) if n >= 3)],
+        "tics": [(c, phrase) for c, phrase in tics[:8]],
+        "questions": round(sum(text.rstrip(' "”').endswith("?") for _, text, _ in replies) / n, 2),
+        "named": round(named / n, 2),
+        "address": dict(address.most_common()),
+        "cues": [(cue, c) for cue, c in cues.most_common(3) if c >= 3],
+    }
+
+
 # --- the voices ------------------------------------------------------------
 
 VOICE_LINES = [
@@ -481,6 +785,8 @@ def summarise(results):
     dims = {d: statistics.mean(r["marks"][d] for r in marked) for d in DIMENSIONS} if marked else {}
     grounded = statistics.mean(r["marks"]["grounded"] for r in marked) if marked else 0
     checks = statistics.mean(not r["failures"] for r in results) if results else 0
+    factual = [r for r in marked if "invented" in r["marks"] and r.get("trait") in FACT_TRAITS]
+    varied = [r for r in results if r.get("varied")]
     firsts = [t["first_s"] for r in results for t in r["turns"]
               if t["first_s"] is not None and not t["searched"]]
     words = [len(_words(t["alfred"])) for r in results if r.get("channel", "call") == "call"
@@ -492,6 +798,10 @@ def summarise(results):
         **{d: round(v, 2) for d, v in dims.items()},
         "grounded_pass": round(grounded, 3),
         "checks_pass": round(checks, 3),
+        "factual_pass": round(statistics.mean(not r["marks"]["invented"] for r in factual), 3)
+        if factual else None,
+        "varied_pass": round(statistics.mean("repetition" not in r["failures"] for r in varied), 3)
+        if varied else None,
         "median_words": statistics.median(words) if words else None,
         "latency_p50": round(statistics.median(firsts), 2) if firsts else None,
         "latency_p90": round(sorted(firsts)[int(0.9 * (len(firsts) - 1))], 2) if firsts else None,
@@ -509,8 +819,7 @@ def evaluate_contact(contact, judge_model, tier, samples, baseline=None, only=No
     """Run, check, mark and — given a baseline — compare one contact."""
     primer_lines = [ex["assistant"] for ex in contact.primer]
     scenarios = load_scenarios(contact, tier)
-    if only:
-        scenarios = [s for s in scenarios if only in s["id"] or only in s["trait"]]
+    scenarios = [s for s in scenarios if wanted(s, only)]
     old = {}
     for r in (baseline or {}).get("results", []):
         old.setdefault(r["id"], r["turns"])
@@ -522,6 +831,10 @@ def evaluate_contact(contact, judge_model, tier, samples, baseline=None, only=No
                  "channel": scenario.get("channel", "call"), "turns": turns,
                  "failures": check(contact, scenario, turns, primer_lines),
                  "marks": judge(judge_model, contact, scenario, turns)}
+            if scenario.get("away"):
+                r["away"] = scenario["away"]
+            if scenario.get("checks", {}).get("varied"):
+                r["varied"] = True
             if scenario["id"] in old:
                 r["versus"] = pair(judge_model, contact, scenario, turns, old[scenario["id"]])
             results.append(r)
@@ -531,6 +844,7 @@ def evaluate_contact(contact, judge_model, tier, samples, baseline=None, only=No
                 + (f"  ✗ {', '.join(r['failures'])}" if r["failures"] else "")
                 + (f"  [{r['versus']}]" if "versus" in r else ""), flush=True)
     summary = summarise(results)
+    summary["habits"] = habits(results)
     versus = [r["versus"] for r in results if "versus" in r]
     if versus:
         wins, losses = versus.count("win"), versus.count("loss")
@@ -549,6 +863,10 @@ def verdict(versus):
     return f"no clear change ({w}–{lo}, {versus['tie']} tied, p={p})"
 
 
+def _pct(value):
+    return "—" if value is None else f"{value:.0%}"
+
+
 def report(name, contacts, per_contact, cast=None, voices=None):
     lines = [f"# Evaluation `{name}`", "", f"{time.strftime('%Y-%m-%d %H:%M')}", "",
              "| contact | score | persona | human | register | substance | grounded | checks "
@@ -560,6 +878,26 @@ def report(name, contacts, per_contact, cast=None, voices=None):
             f"| {c.name} | {s['score']} | {s.get('persona')} | {s.get('human')} | {s.get('register')} "
             f"| {s.get('substance')} | {s['grounded_pass']:.0%} | {s['checks_pass']:.0%} "
             f"| {s.get('median_words')} | {s.get('latency_p50')}s | {verdict(s.get('versus'))} |")
+    if any(per_contact[c.id]["summary"].get("habits") for c in contacts):
+        lines += ["", "## Habits", "",
+                  "Across each contact's whole run, no judge. *Openers* used three times or more; "
+                  "*phrases* (four words) heard in three or more different conversations; how often a "
+                  "reply ends on a question; how often it names him, and with what. *Varied* is the "
+                  "multi-turn scenarios with no repeated opener or five-word run; *factual* the "
+                  "culture and knowledge turns the judge didn't suspect of inventing — a pointer "
+                  "to the transcripts, not a failure.", "",
+                  "| contact | openers | cues | phrases | ends on ? | names him | address | varied | factual |",
+                  "|---|---|---|---|---|---|---|---|---|"]
+        for c in contacts:
+            s = per_contact[c.id]["summary"]
+            h = s.get("habits") or {}
+            lines.append(
+                f"| {c.name} | " + (", ".join(f"“{o}…” ×{n}" for o, n in h.get("openers", [])) or "—")
+                + " | " + (", ".join(f"{cue} ×{n}" for cue, n in h.get("cues", [])) or "—")
+                + " | " + ("; ".join(f"“{p}” ×{n}" for n, p in h.get("tics", [])[:4]) or "—")
+                + f" | {_pct(h.get('questions'))} | {_pct(h.get('named'))} | "
+                + (", ".join(f"{k} {v}" for k, v in (h.get("address") or {}).items()) or "—")
+                + f" | {_pct(s.get('varied_pass'))} | {_pct(s.get('factual_pass'))} |")
     if cast:
         lines += ["", "## The shared call", "",
                   "Same twelve lines to everyone. Length against what each profile says; then "
@@ -574,6 +912,12 @@ def report(name, contacts, per_contact, cast=None, voices=None):
             lines += ["Lines two characters both said:", ""]
             for _overlap, said, a, ra, b, rb in cast["shared"]:
                 lines.append(f"- to *“{said[:40]}”* — **{a}**: “{ra[:90]}” · **{b}**: “{rb[:90]}”")
+    same = echoes(per_contact) if len(contacts) > 1 else []
+    if same:
+        lines += ["", "## Echoes", "",
+                  "The same line from two characters to the same prompt, anywhere in the scenarios.", ""]
+        for _overlap, sid, said, a, ra, b, rb in same[:15]:
+            lines.append(f"- {sid}, to *“{said[:40]}”* — **{a}**: “{ra[:90]}” · **{b}**: “{rb[:90]}”")
     if voices:
         lines += ["", "## Voices", ""]
         for cid, info in voices.items():
@@ -587,20 +931,30 @@ def report(name, contacts, per_contact, cast=None, voices=None):
     for c in contacts:
         results = per_contact[c.id]["results"]
         lines += ["", f"# {c.full_name}", ""]
+        seen = culture.seen(c)
+        if seen:
+            lines += ["What their culture feed said during this run:", ""] + [f"- {i}" for i in seen] + [""]
         for r in sorted(results, key=_total):
             m = r["marks"]
             marks = " ".join(f"{d[0].upper()}{m.get(d, '?')}" for d in DIMENSIONS)
             flag = "" if m.get("grounded", True) else " **UNGROUNDED**"
             vs = f" · vs baseline: {r['versus']}" if "versus" in r else ""
-            lines += [f"## {r['id']} ({r['channel']}) — {marks}{flag}{vs}", f"*{r['good']}*", ""]
+            away = f" · away: {r['away']}" if r.get("away") else ""
+            lines += [f"## {r['id']} ({r['channel']}) — {marks}{flag}{vs}{away}", f"*{r['good']}*", ""]
             if r["failures"]:
                 lines += [f"- ✗ **{k}**: {v}" for k, v in r["failures"].items()] + [""]
+            if m.get("invented") and r.get("trait") in FACT_TRAITS:
+                lines += ["- ? **judge suspects something invented** — check it against the feed", ""]
             if m.get("note"):
                 lines += [f"> judge: {m['note']}", ""]
             for t in r["turns"]:
                 him = "*(silence)*" if t["him"] == SILENCE else "*(still nothing)*" if t["him"] == HANG_UP else t["him"]
                 timing = "search" if t["searched"] else f"{t['first_s']:.2f}s" if t["first_s"] else "—"
                 lines += [f"- **bruce:** {him}", f"- **{c.name.lower()}** ({timing}): {t['alfred']}"]
+                if t.get("culture"):
+                    lines.append("  - *(culture feed in play)*")
+                if t.get("found"):
+                    lines.append("  - *(knew: " + " ".join(t["found"].replace("[Search Results]:", "").split())[:700] + "…)*")
             lines.append("")
     return "\n".join(lines)
 
@@ -614,7 +968,8 @@ def main():
                         help="quick: the core scenarios (default); full: all of them")
     parser.add_argument("--model", help="model playing the contacts (default: profile)")
     parser.add_argument("--judge", help="model marking (default: same as the contact's)")
-    parser.add_argument("--only", help="only scenarios whose id or trait contains this")
+    parser.add_argument("--only", help="only scenarios whose id or trait contains this "
+                                         "(comma-separate several: culture,variety)")
     parser.add_argument("--samples", type=int, default=1)
     parser.add_argument("--save", help="name for this run (default: a timestamp)")
     parser.add_argument("--compare", help="an earlier run to judge this one against, head to head")
@@ -622,6 +977,7 @@ def main():
     args = parser.parse_args()
 
     _quiet_memory()
+    _listen()
     book = directory()
     contacts = list(book) if args.cast else [book.get(args.contact)]
     if contacts[0] is None:
