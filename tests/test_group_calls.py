@@ -62,6 +62,29 @@ def _said(out):
     return [(e["speaker"], e["text"]) for e in out if e["type"] == "reply_end" and e.get("text")]
 
 
+@pytest.fixture(autouse=True)
+def no_jumping_in(monkeypatch):
+    monkeypatch.setattr(party, "CHIME", 0)
+
+
+def test_someone_jumps_in_unasked_and_whoever_they_name_answers(monkeypatch):
+    monkeypatch.setattr(party, "CHIME", 1.0)
+    monkeypatch.setattr(party.random, "random", lambda: 0.0)
+    dick = Member("nightwing", "Dick", replies=["Docks it is."])
+    tim = Member("robin", "Tim", asides=["Dick, you said that last week."], replies=["And I was right."])
+    call = _call(dick, tim)
+    said = _said(list(call.turn("Dick, where tonight?")))
+    assert said[0] == ("nightwing", "Docks it is.")
+    assert ("robin", "Dick, you said that last week.") in said
+    assert any("What's been said on the call" in i for i in tim.instructions)   # it heard him
+
+
+def test_while_a_line_rings_someone_may_say_so():
+    dick = Member("nightwing", "Dick", asides=["Ugh. Really? Him?"])
+    call = _call(dick, Member("robin", "Tim"))
+    assert _said(list(call.ringing(dick, "Jason"))) == [("nightwing", "Ugh. Really? Him?")]
+
+
 def test_a_call_holds_four_besides_him():
     members = [Member(f"c{i}", f"N{i}") for i in range(5)]
     call = _call(*members)

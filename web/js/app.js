@@ -92,8 +92,8 @@
   var MAX_NUDGES = IDLE_WINDOWS.length - 1;
   // On a call with company a pause is shorter before somebody fills it — or
   // lets it sit; the server decides which, and who.
-  var GROUP_LULL = [8000, 10000];
-  var MAX_LULLS = 3;
+  var GROUP_LULL = [4000, 5000];
+  var MAX_LULLS = 4;
 
   // When he says he needs a moment, he takes one — and comes back on his own.
   var HE_ASKED_FOR_TIME = /\b(give me|just|hold on|hang on|one|bear with)\s*(a\s*)?(moment|minute|second|sec|mo)\b|\blet me (think|check|see)\b/i;
@@ -473,6 +473,9 @@
 
   function setLink(value) {
     document.documentElement.dataset.link = value;
+    // One button to end any call — ringing, one-to-one, or with company.
+    var end = $('end-call');
+    if (end) end.hidden = !(value === 'on' || value === 'ringing');
     renderDirectory();
   }
 
@@ -2205,6 +2208,14 @@
         onParty(event);
         break;
 
+      case 'picked_up':
+        // They've picked up, whether or not their first words survived.
+        answered(event.speaker);
+        if (state.ringingId === event.speaker) { state.ringingId = null; ConsoleTones.stopRinging(); }
+        renderSeats();
+        renderDirectory();
+        break;
+
       case 'call_ending':
         // He said goodbye and was answered: ring off once the voice stops.
         state.hangUpWhenQuiet = true;
@@ -2347,6 +2358,7 @@
 
     el['dossier-close'].addEventListener('click', function () { el.dossier.hidden = true; });
     el['messages-close'].addEventListener('click', closeMessages);
+    $('end-call').addEventListener('click', function () { if (state.connectedId) hangUp(); });
     el['messages-compose'].addEventListener('submit', sendMessage);
     el['dossier-save'].addEventListener('click', saveDossier);
     el.dossier.addEventListener('click', function (e) {

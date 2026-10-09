@@ -52,6 +52,8 @@ _MAX_CACHED_CLIPS = 64
 log = logging.getLogger("wayne")
 # How often two people on a group call start into the same pause together.
 TALK_OVER = 0.12
+# How often someone on a call remarks on a line ringing in.
+RING_REMARK = 0.55
 if not log.handlers:
     paths.DATA_DIR.mkdir(parents=True, exist_ok=True)
     _handler = logging.FileHandler(paths.DATA_DIR / "console.log")
@@ -520,6 +522,7 @@ class Console(GroupChats):
                 self.migrated = []
             await self.drive(session.boot(incoming, rung, also_ringing), contact, self.interrupt(),
                              release_at=pickup)
+            await self.broadcast({"type": "picked_up", "speaker": contact_id})
             self._call_attempts.pop(contact_id, None)
             presence.of(contact).touch()
             # Talking now: any plan to get back to him about a missed call is moot.
@@ -698,7 +701,7 @@ class Console(GroupChats):
     def _members(self):
         return [m.contact.id for m in self.call.members] if self.call else []
 
-    async def add(self, contact_id, ensure=False, note="", willing=False):
+    async def add(self, contact_id, ensure=False, note="", willing=False, by_him=False, remark=True):
         """
         Patch another contact into the call. They ring, pick up already knowing
         who is on the line and the last few things said, and greet the call.
@@ -718,7 +721,10 @@ class Console(GroupChats):
         if how and not ensure:
             # Patched in, it rings — and they don't take it. The call goes on.
             await self.broadcast(events.party(self._members() + [contact_id], added=contact_id))
-            await asyncio.sleep(random.uniform(*(DECLINE_AFTER if how == "declined" else NO_ANSWER_AFTER)))
+            rang = asyncio.get_running_loop().time()
+            await self._while_it_rings(contact)
+            wait = random.uniform(*(DECLINE_AFTER if how == "declined" else NO_ANSWER_AFTER))
+            await asyncio.sleep(max(0.0, wait - (asyncio.get_running_loop().time() - rang)))
             self._refused_at[contact_id] = time.time()
             await self.broadcast({"type": "call_refused", "speaker": contact_id, "how": how})
             await self.broadcast(events.party(self._members()))
@@ -728,16 +734,24 @@ class Console(GroupChats):
             await self._react(f"{contact.name} {missed} when he tried to add them to the call.",
                               absent=contact)
             return
-        epoch = self.interrupt()
+        # He asked for it: whoever's mid-sentence stops. Rung in by someone else
+        # — a chase, a call back, the rest of a group ring — it waits its turn.
+        epoch = self.interrupt() if by_him else self.turn_epoch
+        loop = asyncio.get_running_loop()
+        await self.broadcast(events.party(self._members() + [contact_id], added=contact_id))
+        rang = loop.time()
+        if remark:
+            await self._while_it_rings(contact)
         async with self.turn_lock:
             newcomer = self.session_for(contact_id)
             if not self.call or not self.call.join(newcomer):
                 return
-            await self.broadcast(events.party(self._members(), added=contact_id))
-            # The console announces it and the line rings; the greeting is made
-            # meanwhile and released when they "pick up".
-            pickup = asyncio.get_running_loop().time() + 2.6 + random.uniform(0.3, 1.6)
-            await self.drive(self.call.greet(newcomer, note, willing), contact, epoch, release_at=pickup)
+            # The greeting is made while it rings and released when they "pick up".
+            pickup = max(rang + 2.6 + random.uniform(0.3, 1.6), loop.time() + 0.5)
+            await self.drive(self.call.greet(newcomer, note, willing), contact,
+                             self.turn_epoch if epoch != self.turn_epoch else epoch, release_at=pickup)
+        # Whatever happened to the greeting, they've picked up.
+        await self.broadcast({"type": "picked_up", "speaker": contact_id})
         if getattr(newcomer, "_hanging_up", False):
             # Picked up only to say no, and gone: the others may say something.
             await self._hang_ups(reason="said their piece on joining and hung up")
@@ -774,6 +788,20 @@ class Console(GroupChats):
         if self.call and self.call.is_group and random.random() < 0.5:
             await self._react(f"{member.contact.name} has just dropped off the call.")
 
+    async def _while_it_rings(self, contact):
+        """
+        While a line rings, someone already on the call may say something about
+        it — "ugh, why are you ringing him?" — their way, or nothing.
+        """
+        if not self.call or not self.call.members or random.random() >= RING_REMARK:
+            return
+        member = random.choice(self.call.members)
+        epoch = self.turn_epoch
+        async with self.turn_lock:
+            if epoch != self.turn_epoch or not self.call or member not in self.call.members:
+                return
+            await self.drive(self.call.ringing(member, contact.name), member.contact, epoch)
+
     async def _react(self, what_happened, but=None, absent=None, who=None):
         """
         One person on the call, picked at random, reacts to it — or doesn't. If
@@ -787,7 +815,9 @@ class Console(GroupChats):
         if not candidates:
             return
         member = random.choice(candidates)
-        epoch = self.interrupt()
+        # Waits for whoever's speaking — a greeting, a reply — rather than
+        # cutting them off; anything he says first makes it moot.
+        epoch = self.turn_epoch
         async with self.turn_lock:
             if epoch != self.turn_epoch or not self.call or member not in self.call.members:
                 return
@@ -892,7 +922,8 @@ class Console(GroupChats):
         for contact in rest:
             if self.call and self.current_id:
                 together = [c.name for c in contacts if c is not contact]
-                await self.add(contact.id, ensure=True,
+                # Rung together, so nobody remarks on the ringing — they're all being rung.
+                await self.add(contact.id, ensure=True, remark=False,
                                note=f"he rang you along with {' and '.join(together)}, all at once")
 
     async def _refuse_group_ring(self, contact, how):
@@ -1573,7 +1604,7 @@ class Console(GroupChats):
         rest = [(m, w) for m, w in zip(members, weights, strict=True) if m is not member]
         second = (random.choices([m for m, _ in rest], weights=[w for _, w in rest])[0]
                   if rest and random.random() < TALK_OVER else None)
-        epoch = self.interrupt()
+        epoch = self.turn_epoch
         async with self.turn_lock:
             if epoch != self.turn_epoch or not self.call or member not in self.call.members:
                 return
@@ -1609,7 +1640,7 @@ class Console(GroupChats):
         if self.call:
             wanted = self._asked_to_add(text)
             if wanted:
-                return await self.add(wanted)
+                return await self.add(wanted, by_him=True)
             leaving = self._asked_to_drop(text)
             if leaving:
                 return await self.drop(leaving)
@@ -2073,7 +2104,7 @@ async def websocket_endpoint(websocket: WebSocket):
             elif kind == "call_group":
                 asyncio.create_task(console.call_many(payload.get("ids") or []))
             elif kind == "add":
-                asyncio.create_task(console.add(payload.get("id", "")))
+                asyncio.create_task(console.add(payload.get("id", ""), by_him=True))
             elif kind == "drop":
                 asyncio.create_task(console.drop(payload.get("id", "")))
             elif kind == "resume":

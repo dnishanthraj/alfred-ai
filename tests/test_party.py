@@ -1,8 +1,17 @@
 """Calls with more than one contact: who answers, who hears what."""
 from types import SimpleNamespace
 
+import pytest
+
 from wayne import events
+from wayne.engine import party
 from wayne.engine.party import Call
+
+
+@pytest.fixture(autouse=True)
+def no_jumping_in(monkeypatch):
+    """These are about who answers him; the room chiming in is tested on its own."""
+    monkeypatch.setattr(party, "CHIME", 0)
 
 
 class FakeMember:

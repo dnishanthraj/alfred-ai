@@ -62,6 +62,15 @@ A full review of the code turned up, among others:
 
 ### Added
 
+- **Group calls, livelier and fixed.** After the people you spoke to answer,
+  someone else may jump in unasked — agree, argue, rib someone — and whoever
+  they name answers back; pauses are filled after four to nine seconds, and
+  "is he even still there?" comes sooner. While you ring someone in, someone
+  already on may say what they think of it. Reactions and remarks wait their
+  turn instead of cutting in, and they now hear what was just said. Fixed: a
+  reaction could cut off someone's greeting as they picked up, leaving their
+  seat on "ringing" for the rest of the call — every pickup is now signalled.
+  An End call button sits beside the message box for any call.
 - **Group calls that behave like a room.** Ring a group from its chat — you and
   up to four, each with their own ring, colour, name and subtitle; for a bigger
   group, pick who. People pick up in their own time or don't; whoever misses it

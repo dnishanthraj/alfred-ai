@@ -29,6 +29,8 @@ from .. import operator as wayne_operator
 MAX_CONTACTS = 4
 # Contact turns per operator turn: the people he addressed, plus one follow-up.
 MAX_TURNS = 3
+# How often, after the people he spoke to have answered, someone else jumps in.
+CHIME = 0.5
 
 _THE_ROOM = re.compile(
     r"\b(both of you|you both|you two|the two of you|all of you|you all|everyone|"
@@ -213,6 +215,22 @@ class Call:
                     if other is not member and other not in spoken:
                         queue.append((other, True))
                         break
+        # Then the room: nobody asked them, but they heard it. One may jump in
+        # — agree, argue, rib someone — and whoever they name answers back.
+        # Likelier the more of them there are, less likely each time.
+        chance = CHIME * min(1.0, 0.55 + 0.25 * (len(self.members) - 1))
+        extra = 0
+        while extra < 2 and len(self.members) > 1 and random.random() < chance:
+            others = [m for m in self.members if m is not self.last_speaker]
+            weights = [(0.3 + (getattr(m.contact, "initiative", None) or {}).get("per_day", 0.5) * 0.5)
+                       * (1.6 if m not in spoken else 1.0) for m in others]
+            member = random.choices(others, weights=weights)[0]
+            line = yield from self.chime(member)
+            if not line:
+                break
+            spoken.add(member)
+            extra += 1
+            chance *= 0.5
 
     def text_turn(self, member, body):
         """
@@ -288,6 +306,32 @@ class Call:
             yield from self.answered(member, line)
         return line
 
+    def chime(self, member):
+        """Jumping in on what's just been said, unasked — or staying out of it."""
+        instruction = (
+            "[REFERENCE — context only]\n" + self.note_for(member) + "\n[END REFERENCE]\n\n"
+            "Nobody asked you anything, but you're on this call and you heard that. If you'd "
+            "jump in — agree, argue, rib someone, add what you know, ask someone something — "
+            "say it in a line, to whoever it's for. If you'd stay out of it, reply with exactly SKIP.")
+        line = yield from self._speak_aside(member, instruction)
+        if line:
+            self.last_speaker = member
+            self._heard_by_all(member, line)
+            yield from self.answered(member, line)
+        return line
+
+    def ringing(self, member, name):
+        """He's ringing someone into the call; while it rings, someone may say so."""
+        instruction = (
+            "[REFERENCE — context only]\n" + self.note_for(member) + "\n[END REFERENCE]\n\n"
+            f"He's ringing {name} into this call right now — it's still ringing. If you'd say "
+            f"something about that — about {name}, or about him bringing them in — say it in a "
+            "few words, your way. If you wouldn't, reply with exactly SKIP.")
+        line = yield from self._speak_aside(member, instruction)
+        if line:
+            self._heard_by_all(member, line)
+        return line
+
     def lull(self, member, quiet_for=1):
         """
         Nobody's said anything for a moment. On a call with company somebody
@@ -309,8 +353,8 @@ class Call:
             "fill it, say what you'd actually say: to one of them by name, about what's been said "
             "or what's going on with you, or a question for him. A line or two. If you'd let the "
             "quiet sit, reply with exactly SKIP."
-            + (" He's said nothing for a while now; you might ask if he's still there." if quiet_for >= 3
-               else ""))
+            + (" He's said nothing for a while now; you might wonder aloud if he's even still there."
+               if quiet_for >= 2 else ""))
 
     def collide(self, first, second, quiet_for=1):
         """
@@ -393,10 +437,22 @@ class Call:
             other.heard.append(f"{member.contact.full_name}: {line}")
 
     def _speak_aside(self, member, instruction, prompted_by=None, greeting=False, farewell=False):
+        # What's been said since they last spoke — or a reaction, a remark into a
+        # pause, a jump-in, answers something it never heard.
+        heard = member.heard[-8:]
+        heard_all = "\n".join(member.heard)
+        if heard:
+            instruction = ("What's been said on the call since you last spoke:\n" + "\n".join(heard)
+                           + "\n\n" + instruction)
+        member.heard = []
+        # What they say is remembered against what they'd heard, as one exchange.
+        prompted_by = "\n".join(p for p in (heard_all, prompted_by) if p) or None
         text = ""
         for event in member.say(instruction, prompted_by, greeting=greeting, farewell=farewell):
             event = {**event, "speaker": member.contact.id}
             if event["type"] == "reply_end":
                 text = event["text"]
             yield event
+        if not text and heard_all and hasattr(member.history, "record_exchange"):
+            member.history.record_exchange(heard_all, "Mm.")     # heard, said nothing
         return text
