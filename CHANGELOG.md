@@ -9,6 +9,10 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 A full review of the code turned up, among others:
 
+- **The first words of every push-to-talk take were lost** while the microphone
+  started up: it was opened on each press and shut on each release. It now opens
+  while a call rings and stays open until hang-up, so a press records at once —
+  with the moment just before the key kept, so an early first word survives.
 - **The voice link degrading** under load: the console's own voice lines skipped
   the concurrency cap and took slots from the contacts' speech, and audio for a
   reply you'd talked over kept synthesising, so the next reply was refused.

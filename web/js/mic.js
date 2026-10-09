@@ -29,6 +29,9 @@
   // Frames of ~128 samples arrive continuously; these are in frames, resolved
   // against the real sample rate at capture time.
   var PREROLL_MS = 320;
+  // Push-to-talk keeps the last moment too: a word begun a beat before the key
+  // went down still makes it into the take.
+  var PTT_PREROLL_MS = 300;
   var SILENCE_HANGOVER_MS = 1100;  // silence before an utterance is considered over
   var MIN_SPEECH_MS = 320;         // shorter than this is a cough, not a sentence
   var MAX_UTTERANCE_MS = 30000;
@@ -76,6 +79,8 @@
     sink: null,
     running: false,
     mode: 'ptt',
+    // Held open for the length of a call, so pressing to talk is instant.
+    held: false,
     // push mode
     pushing: false,
     chunks: [],
@@ -141,6 +146,8 @@
   // stream arrived and the mic stayed live; a double tap opened two.
   var openToken = 0;
   var opening = null;
+  // The capture worklet is registered once per audio context, not per press.
+  var workletReady = null;
 
   function open() {
     if (state.running) return Promise.resolve();
@@ -168,8 +175,12 @@
         return;
       }
       state.stream = stream;
-      var blob = new Blob([WORKLET], { type: 'application/javascript' });
-      return ctx.audioWorklet.addModule(URL.createObjectURL(blob)).then(function () {
+      if (!workletReady) {
+        var blob = new Blob([WORKLET], { type: 'application/javascript' });
+        workletReady = ctx.audioWorklet.addModule(URL.createObjectURL(blob))
+          .catch(function (err) { workletReady = null; throw err; });
+      }
+      return workletReady.then(function () {
         if (token !== openToken) {
           stream.getTracks().forEach(function (t) { t.stop(); });
           state.stream = null;
@@ -199,6 +210,7 @@
   function close() {
     openToken++;
     opening = null;
+    state.held = false;
     if (state.node) { try { state.node.port.onmessage = null; state.node.disconnect(); } catch (e) {} }
     if (state.source) { try { state.source.disconnect(); } catch (e) {} }
     if (state.sink) { try { state.sink.disconnect(); } catch (e) {} }
@@ -230,12 +242,30 @@
     // the gaps. The visualizer still gets the unsmoothed level.
     state.envelope += (level - state.envelope) * (level > state.envelope ? 0.5 : 0.012);
 
-    if (handlers.onLevel) handlers.onLevel(Math.min(level * 5, 1));
-
     if (state.mode === 'ptt') {
-      if (state.pushing) state.chunks.push(frame);
+      if (state.pushing) {
+        state.chunks.push(frame);
+        if (handlers.onLevel) handlers.onLevel(Math.min(level * 5, 1));
+        return;
+      }
+      // Held open between presses: keep a short rolling history, and keep the
+      // visualizer still — the room isn't talking to anyone. Not while the
+      // contact is speaking, or the take would open on their own last words.
+      if (global.ConsoleAudio.isPlaying) {
+        state.preroll = [];
+        state.prerollFrames = 0;
+        return;
+      }
+      state.preroll.push(frame);
+      state.prerollFrames += frame.length;
+      var keep = (PTT_PREROLL_MS / 1000) * rate();
+      while (state.preroll.length > 1 && state.prerollFrames - state.preroll[0].length > keep) {
+        state.prerollFrames -= state.preroll.shift().length;
+      }
       return;
     }
+
+    if (handlers.onLevel) handlers.onLevel(Math.min(level * 5, 1));
 
     ambientFrame(frame, state.envelope, frameMs);
   }
@@ -320,16 +350,30 @@
     if (state.mode === mode) return Promise.resolve();
     state.mode = mode;
     if (mode === 'ambient') return open().then(resetAmbient);
-    close();
+    resetAmbient();
+    if (!state.held) close();
     return Promise.resolve();
+  }
+
+  /**
+   * Open the mic now and keep it open — called as a call starts ringing, so
+   * the first press has nothing to wait for. Opening on every press cost the
+   * permission check, the worklet and the hardware's wake-up each time, and
+   * the first half-second of whatever was said went with them.
+   */
+  function warm() {
+    state.held = true;
+    return open().catch(function () {});
   }
 
   function pushStart() {
     if (state.mode !== 'ptt') return Promise.resolve();
     state.pushing = true;
-    state.chunks = [];
+    state.chunks = state.preroll.slice();     // the moment just before the key
+    state.preroll = [];
+    state.prerollFrames = 0;
     state.startedAt = Date.now();
-    return open();
+    return state.running ? Promise.resolve() : open();
   }
 
   function pushStop() {
@@ -339,7 +383,7 @@
     var chunks = state.chunks;
     state.chunks = [];
     var captureRate = rate();
-    close();
+    if (!state.held) close();      // on a call it stays open for the next press
     if (handlers.onLevel) handlers.onLevel(0);
     if (tooShort || !chunks.length) return;
     if (handlers.onUtterance) handlers.onUtterance(resample(merge(chunks), captureRate));
@@ -360,11 +404,13 @@
     setMode: setMode,
     pushStart: pushStart,
     pushStop: pushStop,
+    warm: warm,
     cut: cut,
     close: close,
     on: function (name, fn) { handlers[name] = fn; },
     get mode() { return state.mode; },
     get isPushing() { return state.pushing; },
+    get isOpen() { return state.running; },
     get isSpeaking() { return state.speaking; },
     // The detector is a handful of thresholds against a room that varies; being
     // able to read what it currently believes is the difference between tuning

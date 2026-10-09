@@ -818,6 +818,7 @@
     state.hangUpWhenQuiet = false;
     state.quietUntil = 0;
     el['ringing-label'].textContent = contact.name + ' on the line…';
+    if (state.mode === 'ptt') ConsoleMic.warm();
     setLink('ringing');
     setState('idle');
     send({ type: 'answer', id: id });
@@ -1069,6 +1070,8 @@
     // seconds the model spends loading, so the wait reads as a call connecting
     // rather than as software thinking about it.
     el['ringing-label'].textContent = 'Connecting to ' + contact.name + '…';
+    // The mic opens while it rings, so the first press is instant.
+    if (state.mode === 'ptt') ConsoleMic.warm();
     setLink('ringing');
     setState('idle');
     // Connect first, so the model loads while the console announces the call;
