@@ -41,6 +41,15 @@ LINES = {
         "Channel terminated.",
         "Connection ended.",
     ],
+    "add": [
+        "Adding {name} to the call.",
+        "Patching {name} in.",
+        "Bringing {name} onto the line.",
+    ],
+    "drop": [
+        "{name} has left the call.",
+        "{name} is off the line.",
+    ],
     "unavailable": [
         "{name} is not available.",
         "No answer from {name}'s line.",

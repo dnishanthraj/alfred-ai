@@ -330,14 +330,20 @@ def reference_block(vault_block, prompt, search_context="", awareness=()):
     return "\n\n".join(parts)
 
 
-def compose_user_turn(prompt, vault_block, search_context="", awareness=()):
-    """Wrap the prompt with fenced context. The actual message comes last."""
+def compose_user_turn(prompt, vault_block, search_context="", awareness=(), spoken=None):
+    """
+    Wrap the prompt with fenced context. The actual message comes last.
+
+    `spoken` is what the model reads as the turn when it differs from what the
+    operator said — on a call, the lines heard from everyone, labelled. The
+    register hint is still taken from the operator's own words.
+    """
     context = reference_block(vault_block, prompt, search_context, awareness)
     return (
         "[REFERENCE — context only, do not speak any of this aloud]\n"
         f"{context}\n"
         "[END REFERENCE]\n\n"
-        f"{prompt}"
+        f"{spoken if spoken is not None else prompt}"
     )
 
 

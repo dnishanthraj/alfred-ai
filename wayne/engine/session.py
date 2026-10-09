@@ -231,6 +231,10 @@ class ContactSession:
         self._recent_asides = deque(maxlen=6)
         self._looked = False   # a search has run this turn
         self._last_call = None  # how the previous call ended (see call_ended)
+        # On a call with others (see wayne.engine.party): the call, and what
+        # this contact has heard said since they last spoke.
+        self.call = None
+        self.heard = []
         # Silences broken since he last spoke, and the last way one was broken.
         self._silences = 0
         self._last_silence_move = None
@@ -317,6 +321,12 @@ class ContactSession:
             sentence = _SEARCH_MARKER.sub("", sentence).strip()
             text = guards.strip_forbidden_address(
                 sentence.strip(), self.contact.forbidden_address)
+            # On a call, a line written for somebody else ("Lucius: Indeed.")
+            # is dropped, and his own name as a speaker label is stripped.
+            if self.call:
+                text = self.call.own_words(self, text)
+                if not text:
+                    return False, None
             # A cue with no words after it — "Of course. [sighs]" — has
             # nothing to say on screen and nothing to attach to in the voice.
             if not delivery.clean(text):
@@ -825,6 +835,35 @@ class ContactSession:
         )
         yield from self._speak_aside(instruction, temperature=0.85, cap=3)
 
+    def say(self, instruction, prompted_by=None):
+        """
+        One line the contact says because of something on the call — joining
+        it, leaving it — rather than in answer to anything. Remembered, like
+        any aside, against their last turn.
+        """
+        yield events.reply_start()
+        payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
+        try:
+            text = self._chat_once(payload, temperature=0.85, num_predict=80)
+        except Exception:
+            text = ""
+        text = guards.apply(text, "", 2, True, self.contact.forbidden_address) if text else ""
+        if self.call:
+            text = " ".join(s for s in (self.call.own_words(self, x)
+                                        for x in guards.split_sentences(text)) if s)
+        for i, sentence in enumerate(guards.split_sentences(text)):
+            if sentence.strip():
+                yield events.sentence(i, sentence.strip())
+        if text:
+            # Joining or leaving a call is its own exchange, saved as one —
+            # attached as an aside, it overwrote whatever aside the last turn
+            # of an older call already carried.
+            if prompted_by:
+                self.history.record_exchange(prompted_by, text)
+            else:
+                self.history.record_aside(text)
+        yield events.reply_end(text)
+
     def _speak_aside(self, instruction, temperature, cap):
         """
         A turn the contact initiates rather than answers.
@@ -857,7 +896,7 @@ class ContactSession:
         yield events.reply_end(text)
         yield events.state(events.IDLE)
 
-    def ask(self, prompt, interrupted=False, confidence=1.0):
+    def ask(self, prompt, interrupted=False, confidence=1.0, follow_up=False):
         """
         Run one full turn.
 
@@ -867,26 +906,34 @@ class ContactSession:
         """
         self._spoken = []
         try:
-            yield from self._ask(prompt, interrupted, confidence)
+            yield from self._ask(prompt, interrupted, confidence, follow_up)
         except GeneratorExit:
             if self._spoken:
                 self.history.record_exchange((prompt or "").strip(), " ".join(self._spoken))
             raise
 
-    def _ask(self, prompt, interrupted, confidence):
+    def _ask(self, prompt, interrupted, confidence, follow_up=False):
         self._silences = 0
         self._looked = False
         prompt = (prompt or "").strip()
         if not prompt:
             return
 
-        yield events.message("user", prompt)
+        # On a call with others the model reads the conversation as it was
+        # heard — who said what since this contact last spoke — and the
+        # operator's line is announced once by the call, not by each contact.
+        said = self._heard_turn(prompt, follow_up) if self.call else prompt
+        if not self.call:
+            yield events.message("user", prompt)
 
-        handled = yield from self._handle_command(prompt)
-        if handled:
-            return
+        if not follow_up:
+            handled = yield from self._handle_command(prompt)
+            if handled:
+                return
 
         awareness = self._awareness(prompt, interrupted, confidence)
+        if self.call:
+            awareness.append(self.call.note_for(self, follow_up))
         vault_block = self.vault.as_block(prompt)
 
         # A plainly factual question is looked up before he is asked anything,
@@ -900,12 +947,12 @@ class ContactSession:
         placeless = (_WEATHERISH.search(prompt) and not config.LOCATION
                      and not re.search(r"\b(in|at|for) [A-Z]", prompt))
         if (self.contact.can_search and is_factual_lookup(prompt) and not covered
-                and not placeless):
+                and not placeless and not follow_up):
             yield events.state(events.SEARCHING)
             search_context = yield from self._run_search(prompt, hold_for=prompt)
 
         user_turn = prompting.compose_user_turn(
-            prompt, vault_block, search_context, awareness)
+            prompt, vault_block, search_context, awareness, spoken=said)
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn)
 
         yield events.state(events.THINKING)
@@ -931,7 +978,7 @@ class ContactSession:
                 query, hold_for=None if spoke else prompt)
 
             user_turn = prompting.compose_user_turn(
-                prompt, vault_block, search_context, awareness)
+                prompt, vault_block, search_context, awareness, spoken=said)
             payload = prompting.build_payload(
                 self.contact, self.history.for_model(), user_turn)
             yield events.state(events.THINKING)
@@ -943,11 +990,24 @@ class ContactSession:
                 yield events.state(events.IDLE)
                 return
 
-        self.history.record_exchange(prompt, reply)
+        self.history.record_exchange(said, reply)
+        self.heard = []
         yield events.reply_end(reply)
-        if guards.user_is_leaving(prompt):
+        if guards.user_is_leaving(prompt) and not self.call:
             yield events.call_ending()
         yield events.state(events.IDLE)
+
+    def _heard_turn(self, prompt, follow_up):
+        """
+        What this contact hears as one turn on a call: everything said since
+        they last spoke, each line labelled with who said it, then — unless
+        they are answering someone else — the operator's own line.
+        """
+        lines = list(self.heard)
+        if not follow_up:
+            lines.append(f"{self.call.operator}: {prompt}")
+        self.heard = []
+        return "\n".join(lines)
 
     def _consider_search(self, prompt):
         """

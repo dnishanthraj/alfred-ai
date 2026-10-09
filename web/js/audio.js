@@ -24,7 +24,7 @@
   var generation = 0;
 
   var handlers = {
-    onSentenceStart: null,   // (text, key, durationMs, words)
+    onSentenceStart: null,   // (text, key, durationMs, words, speaker)
     onIdle: null,
     onBusy: null
   };
@@ -54,11 +54,11 @@
       .then(function (buf) { return context().decodeAudioData(buf); });
   }
 
-  function enqueue(clipId, text, key, words) {
+  function enqueue(clipId, text, key, words, speaker) {
     var decoded = load(clipId);
     decoded.catch(function () { /* handled when its turn comes */ });
     queue.push({ decoded: decoded, text: text, key: key, words: words || [],
-                 generation: generation });
+                 speaker: speaker, generation: generation });
     if (!playing) next();
   }
 
@@ -85,7 +85,8 @@
         };
         current = source;
         if (handlers.onSentenceStart) {
-          handlers.onSentenceStart(item.text, item.key, decoded.duration * 1000, item.words);
+          handlers.onSentenceStart(item.text, item.key, decoded.duration * 1000, item.words,
+                                   item.speaker);
         }
         source.start();
       })

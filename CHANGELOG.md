@@ -7,6 +7,24 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Added
 
+- **Group calls.** Up to three contacts on one line. Add someone from the
+  directory or by asking ("Alfred, get Lucius on the line"); the console
+  announces them, the line rings, and they join knowing who is on and the last
+  few things said. Let someone go by button or by telling them; they say
+  goodbye and the call goes on. Whoever is named first answers ("Lucius, Alfred
+  says…" is for Lucius); "both of you" gets everyone; otherwise the last person
+  he spoke to carries on. A reply that names another contact brings them in —
+  once a turn, never a ping-pong. Everyone hears everything, labelled by name,
+  and keeps it in their own memory, so the next shared call remembers the last
+  one; private calls stay private. A line written for someone else is dropped.
+  Each contact knows the others (Alfred and Lucius keep the same secret; Lucius
+  has watched his pockets around Selina ever since the prototype). Each sentence
+  is spoken in its speaker's voice, labelled and coloured as theirs on screen.
+  `scripts/eval_group.py` runs scripted group calls in-process, writing nothing.
+- **Portraits in the directory**, cropped by each contact's framing, with the
+  status on the rim and one button that rings, adds, drops or ends as the call
+  requires.
+
 - **A story that persists, kept apart from real life.** "For our story, remember
   that Selina and I have a son" adds to a per-contact story store; "forget from
   our story…" and "reset our story" edit it. It reaches the model labelled as the

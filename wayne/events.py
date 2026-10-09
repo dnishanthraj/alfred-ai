@@ -67,6 +67,14 @@ def speak(audio_id, text, index=0, words=None):
     return {"type": "speak", "words": words or [], "audio_id": audio_id, "text": text, "index": index}
 
 
+def party(members, added=None, removed=None):
+    """
+    Who is on the call now, in order of joining — and who just arrived or left,
+    so the page can announce it and redraw the directory.
+    """
+    return {"type": "party", "members": list(members), "added": added, "removed": removed}
+
+
 def call_ending():
     """
     He said goodbye and the contact has answered it: the contact hangs up once

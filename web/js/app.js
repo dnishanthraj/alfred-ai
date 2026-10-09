@@ -31,6 +31,7 @@
     connectedId: null,   // who is actually on the line
     ringingId: null,     // who is being reached, not yet answered
     pending: {},         // sentences awaiting audio, by key
+    pendingSpeaker: {},  // who said each of them, on a call with company
     rendered: {},        // sentence keys already shown
     fresh: true,         // next sentence starts a new utterance
     socket: null,
@@ -46,7 +47,9 @@
     closing: false,   // he is signing off; hang up once he has finished
     hangUpWhenQuiet: false,  // sign-off written; waiting on the voice to stop
     quietUntil: 0,    // he was asked for time; don't chase until then
-    askedLast: false  // his last reply ended on a question
+    askedLast: false, // his last reply ended on a question
+    party: [],        // who is on the call, in order of joining
+    lastSpeaker: null // who said the line on screen, on a call with company
   };
 
   // Held keys that count as push-to-talk. Space is the obvious one; Right
@@ -68,6 +71,9 @@
   //
   // The old windows (26–48s, then 17–29s, then hang up) closed the call after
   // about a minute and a half of quiet, and every nudge was the same question.
+  // Contacts on one call at once: whoever was rung, and two more.
+  var MAX_PARTY = 3;
+
   var IDLE_WINDOWS = [
     [30000, 30000],   // first lull: he says something of his own
     [75000, 60000],   // a long second silence: now he asks if you're there
@@ -114,6 +120,7 @@
     clearWordTimers();
     el.utterance.textContent = '';
     state.pending = {};
+    state.pendingSpeaker = {};
     state.rendered = {};
   }
 
@@ -162,15 +169,31 @@
    * reply. Positions restart at 0 for every reply, so the first sentence of an
    * answer that followed "One moment." looked already shown and never was.
    */
-  function revealSentence(text, key, durationMs, timings) {
+  function revealSentence(text, key, durationMs, timings, speaker) {
     if (state.rendered[key]) return;
     state.rendered[key] = true;
     delete state.pending[key];
+
+    // On a call with company, a new voice starts a new line, labelled with who
+    // it is, and the instrument takes their colour.
+    var group = state.party.length > 1;
+    if (speaker && state.contacts[speaker]) {
+      document.documentElement.style.setProperty('--contact-accent', state.contacts[speaker].accent);
+    }
+    if (group && speaker && speaker !== state.lastSpeaker) state.fresh = true;
+    state.lastSpeaker = speaker || state.lastSpeaker;
 
     // The first sentence of a reply replaces whatever was said before it.
     if (state.fresh) {
       el.utterance.textContent = '';
       state.fresh = false;
+      if (group && speaker && state.contacts[speaker]) {
+        var label = document.createElement('span');
+        label.className = 'speaker';
+        label.textContent = state.contacts[speaker].name;
+        label.style.color = state.contacts[speaker].accent;
+        el.utterance.appendChild(label);
+      }
     }
 
     var span = document.createElement('span');
@@ -229,7 +252,9 @@
     Object.keys(state.pending)
       .map(Number)
       .sort(function (a, b) { return a - b; })
-      .forEach(function (key) { revealSentence(state.pending[key], key, 0); });
+      .forEach(function (key) {
+        revealSentence(state.pending[key], key, 0, null, state.pendingSpeaker[key]);
+      });
   }
 
   /* --- presence -------------------------------------------------------------
@@ -306,11 +331,30 @@
 
   /* --- directory ---------------------------------------------------------- */
 
+  /* A contact's portrait, as a background stack: the supplied image if there
+     is one, the silhouette if not, cropped by the profile's framing. Shared by
+     the directory and the personnel file. */
+  function portraitStyle(node, contact, fallbackPosition) {
+    var base = '/static/portraits/' + contact.id;
+    node.style.backgroundImage =
+      "url('" + base + ".png'), url('" + base + ".jpg'), url('" + base + ".webp'), " +
+      "url('/static/portraits/_silhouette.svg')";
+    var frame = contact.portrait || {};
+    node.style.backgroundSize = frame.size
+      ? [frame.size, frame.size, frame.size, 'cover'].join(', ') : '';
+    node.style.backgroundPosition = frame.position
+      ? [frame.position, frame.position, frame.position, fallbackPosition].join(', ') : '';
+  }
+
+  function onCall(id) { return state.party.indexOf(id) !== -1; }
+
   function renderDirectory() {
     el.book.innerHTML = '';
+    var inCall = state.party.length > 0;
+    var group = state.party.length > 1;
     state.order.forEach(function (id) {
       var contact = state.contacts[id];
-      var live = state.connectedId === id;
+      var live = onCall(id) && state.ringingId !== id;
       var ringing = state.ringingId === id;
 
       var li = document.createElement('li');
@@ -322,8 +366,13 @@
       var row = document.createElement('div');
       row.className = 'book__row';
 
+      // Portrait, with the status dot sitting on its edge.
+      var avatar = document.createElement('span');
+      avatar.className = 'book__avatar';
+      portraitStyle(avatar, contact, 'center 22%');
       var dot = document.createElement('span');
       dot.className = 'book__dot';
+      avatar.appendChild(dot);
 
       var text = document.createElement('button');
       text.type = 'button';
@@ -335,7 +384,7 @@
       var role = document.createElement('span');
       role.className = 'book__role';
       role.textContent = ringing ? 'Connecting'
-                       : live ? 'Connected'
+                       : live ? (group ? 'On the call' : 'Connected')
                        : (contact.available ? contact.role : 'Unavailable');
       text.appendChild(name);
       text.appendChild(role);
@@ -344,23 +393,42 @@
         openDossier(id);
       });
 
-      row.appendChild(dot);
+      row.appendChild(avatar);
       row.appendChild(text);
 
+      // One button, whose job depends on the call: ring them, add them to the
+      // call in progress, let them off it, or end it.
       var call = document.createElement('button');
       call.type = 'button';
       call.className = 'book__call';
-      call.dataset.live = (live || ringing) ? '1' : '0';
-      call.textContent = ringing ? 'Cancel' : live ? 'End' : 'Call';
-      call.disabled = !contact.available && !live && !ringing;
+      var action;
+      if (!inCall) action = 'call';
+      else if (onCall(id)) action = group ? 'drop' : 'end';
+      else action = 'add';
+      call.dataset.live = (action === 'end' || action === 'drop') ? '1' : '0';
+      call.textContent = ringing ? 'Cancel'
+                       : { call: 'Call', add: 'Add to call', drop: 'Drop', end: 'End' }[action];
+      call.disabled = (action === 'call' || action === 'add')
+        && (!contact.available || (action === 'add' && state.party.length >= MAX_PARTY));
       call.addEventListener('click', function () {
-        if (live || ringing) hangUp(); else placeCall(id);
+        if (action === 'call') placeCall(id);
+        else if (action === 'add') addToCall(id);
+        else if (action === 'drop') send({ type: 'drop', id: id });
+        else hangUp();
       });
 
       li.appendChild(row);
       li.appendChild(call);
       el.book.appendChild(li);
     });
+  }
+
+  /* Patch someone into the call in progress. The console announces it and
+     the line rings while they're reached; the server does the rest. */
+  function addToCall(id) {
+    if (!state.connectedId || onCall(id)) return;
+    noteActivity();
+    send({ type: 'add', id: id });
   }
 
   function placeCall(contactId) {
@@ -376,6 +444,8 @@
     state.currentId = contactId;
     state.ringingId = contactId;
     state.connectedId = contactId;   // input is accepted while it rings
+    state.party = [contactId];
+    state.lastSpeaker = null;
     el['bar-title'].textContent = contact.full_name;
     document.title = contact.name + ' · WayneTech Console';
 
@@ -403,7 +473,15 @@
   }
 
   /** He has picked up: stop the ring, mark the link live, go blue. */
-  function answered() {
+  function answered(speaker) {
+    // Someone added to a call in progress has picked up.
+    if (speaker && state.ringingId === speaker && document.documentElement.dataset.link === 'on') {
+      ConsoleSystem.stop();
+      ConsoleTones.connected();
+      state.ringingId = null;
+      renderDirectory();
+      return;
+    }
     if (document.documentElement.dataset.link === 'on') return;
     ConsoleSystem.stop();   // he's picked up; the machine stops talking
     ConsoleTones.connected();
@@ -414,6 +492,29 @@
     }
     setLink('on');
     armIdleCheck();
+  }
+
+  /* The line-up changed: someone was added, or let go. */
+  function onParty(event) {
+    state.party = event.members || [];
+    var names = state.party.map(function (id) {
+      return (state.contacts[id] || {}).name || id;
+    });
+    if (state.party.length) el['bar-title'].textContent = state.party.length > 1
+      ? names.join(' · ')
+      : (state.contacts[state.party[0]] || {}).full_name || '';
+    if (event.added) {
+      state.ringingId = event.added;
+      ConsoleSystem.say('add', event.added).then(function () {
+        if (state.ringingId === event.added) ConsoleTones.startRinging();
+      });
+    }
+    if (event.removed) {
+      if (state.ringingId === event.removed) { state.ringingId = null; ConsoleTones.stopRinging(); }
+      if (state.connectedId === event.removed) state.connectedId = state.party[0] || null;
+      ConsoleSystem.say('drop', event.removed);
+    }
+    renderDirectory();
   }
 
   function hangUp(opts) {
@@ -432,6 +533,8 @@
     if (!(opts && opts.switching)) send({ type: 'disconnect' });
     state.connectedId = null;
     state.ringingId = null;
+    state.party = [];
+    state.lastSpeaker = null;
     el['bar-title'].textContent = '';
     document.title = 'WayneTech Console';
     setState('idle');
@@ -495,11 +598,12 @@
         cancelFlush();
         state.generationDone = false;
         state.pending[event.key] = event.text;
-        answered();
+        state.pendingSpeaker[event.key] = event.speaker;
+        answered(event.speaker);
         break;
 
       case 'speak':
-        ConsoleAudio.enqueue(event.audio_id, event.text, event.index, event.words);
+        ConsoleAudio.enqueue(event.audio_id, event.text, event.index, event.words, event.speaker);
         break;
 
       case 'reply_end':
@@ -513,6 +617,10 @@
             if (state.connectedId) send({ type: 'resume' });
           }, RESUME_MIN_MS + Math.random() * RESUME_SPREAD_MS);
         }
+        break;
+
+      case 'party':
+        onParty(event);
         break;
 
       case 'call_ending':
@@ -679,9 +787,9 @@
   }
 
   function wireAudio() {
-    ConsoleAudio.on('onSentenceStart', function (text, key, durationMs, words) {
+    ConsoleAudio.on('onSentenceStart', function (text, key, durationMs, words, speaker) {
       setState('speaking');
-      revealSentence(text, key, durationMs, words);
+      revealSentence(text, key, durationMs, words, speaker);
     });
     ConsoleAudio.on('onIdle', function () {
       if (document.documentElement.dataset.state === 'speaking') setState('idle');
@@ -733,23 +841,9 @@
     document.documentElement.style.setProperty('--contact-accent', contact.accent);
 
     // A supplied portrait wins; otherwise the generated silhouette stands in.
-    //
-    // Several formats are listed rather than just .png, because "put a picture
-    // here" should not also mean "and convert it first". Stacked backgrounds
-    // make this work without any load handlers: layers paint front to back, a
-    // layer whose URL 404s simply paints nothing, and the first one that exists
-    // covers the rest. The silhouette is last, so it shows only if none do.
-    // Keep this list in step with the per-layer sizes in `.dossier__portrait`.
-    var base = "/static/portraits/" + contactId;
-    // Each contact's crop, if the profile gives one; otherwise the stylesheet's.
-    var frame = contact.portrait || {};
-    el['dossier-portrait'].style.backgroundSize = frame.size
-      ? [frame.size, frame.size, frame.size, 'cover'].join(', ') : '';
-    el['dossier-portrait'].style.backgroundPosition = frame.position
-      ? [frame.position, frame.position, frame.position, 'center 22%'].join(', ') : '';
-    el['dossier-portrait'].style.backgroundImage =
-      "url('" + base + ".png'), url('" + base + ".jpg'), url('" + base + ".webp'), " +
-      "url('/static/portraits/_silhouette.svg')";
+    // Stacked backgrounds need no load handlers: a layer whose URL 404s paints
+    // nothing, and the silhouette is last. Cropped by the profile's framing.
+    portraitStyle(el['dossier-portrait'], contact, 'center 22%');
 
     el['dossier-text'].value = 'Loading…';
     fetch('/api/contacts/' + contactId + '/bio')

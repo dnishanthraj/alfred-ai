@@ -33,6 +33,8 @@ def _console():
     console.recent_speech = deque(maxlen=12)
     console.turn_epoch = 0
     console.voice_busy = False
+    console.call = None
+    console.directory = SimpleNamespace(get=lambda _id: None, __iter__=lambda self: iter(()))
     sent = []
 
     async def broadcast(event):

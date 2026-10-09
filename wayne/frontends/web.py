@@ -33,6 +33,7 @@ from ..audio import stt, system_voice
 from ..audio.tts import get_voice_engine
 from ..contacts import directory
 from ..engine import ContactSession, guards, world
+from ..engine.party import MAX_CONTACTS, Call
 from ..memory import migrate_legacy
 from ..memory.store import atomic_write, read_text
 from ..paths import WEB_DIR
@@ -97,6 +98,7 @@ class Console:
         self.voice_busy = False
         self.boot_task = None
         self._release = None   # pending model release after a hang-up
+        self.call = None       # the call in progress (see wayne.engine.party)
         self.migrated = migrate_legacy(config.DEFAULT_CONTACT)
 
     # --- contacts ---------------------------------------------------------
@@ -242,12 +244,14 @@ class Console:
                 if event.get("type") == "sentence" and first_at is None:
                     first_at = time.monotonic()
                     log.info("%s first sentence after %.2fs", contact.id, first_at - began)
-                if event.get("type") == "sentence" and self._can_speak(contact):
+                # On a call with company, each sentence in its speaker's voice.
+                speaker = self.directory.get(event.get("speaker") or "") or contact
+                if event.get("type") == "sentence" and self._can_speak(speaker):
                     spoken = event.get("voice") or event["text"]
                     task = asyncio.create_task(
-                        asyncio.to_thread(self._timed_synthesis, spoken, contact)
+                        asyncio.to_thread(self._timed_synthesis, spoken, speaker)
                     )
-                    speech.put_nowait((event["key"], event["text"], task))
+                    speech.put_nowait((event["key"], event["text"], task, speaker.id))
                 await hold()
                 await self.broadcast(event)
         finally:
@@ -292,7 +296,7 @@ class Console:
             item = await speech.get()
             if item is None:
                 return
-            key, text, task = item
+            key, text, task, speaker = item
             try:
                 audio, words = await task
             except Exception:
@@ -304,7 +308,8 @@ class Console:
             if audio:
                 await hold()
                 self.recent_speech.append((time.monotonic(), text))
-                await self.broadcast(events.speak(self._store_clip(audio), text, key, words))
+                await self.broadcast({**events.speak(self._store_clip(audio), text, key, words),
+                                      "speaker": speaker})
 
     # --- turns ------------------------------------------------------------
 
@@ -318,12 +323,17 @@ class Console:
             self._release = None
         if self.current_id and self.current_id != contact_id:
             # Switching lines mid-call: whoever was on it notices next time.
-            self.sessions[self.current_id].call_ended("switched")
+            for member in (self.call.members if self.call else [self.sessions[self.current_id]]):
+                member.call_ended("switched")
+            self._end_call()
             self.interrupt()
         async with self.turn_lock:
             self.current_id = contact_id
             session = self.session_for(contact_id)
+            self.call = Call()
+            self.call.join(session)
             await self.broadcast(events.contact_changed(contact_id))
+            await self.broadcast(events.party([contact_id]))
 
             if not contact.availability.is_available():
                 await self.broadcast(events.notice(
@@ -367,9 +377,55 @@ class Console:
         async with self.turn_lock:
             contact = self.contact
             self.current_id = None
+            self._end_call()
             self.recent_speech.clear()
         if contact:
             self._release = asyncio.create_task(self._release_after(contact))
+
+    def _end_call(self):
+        if self.call:
+            for member in list(self.call.members):
+                self.call.leave(member)
+        self.call = None
+
+    def _members(self):
+        return [m.contact.id for m in self.call.members] if self.call else []
+
+    async def add(self, contact_id):
+        """
+        Patch another contact into the call. They ring, pick up already knowing
+        who is on the line and the last few things said, and greet the call.
+        """
+        contact = self.directory.get(contact_id)
+        if (contact is None or not self.call or contact_id in self._members()
+                or len(self.call.members) >= MAX_CONTACTS
+                or not contact.availability.is_available()):
+            return
+        epoch = self.interrupt()
+        async with self.turn_lock:
+            newcomer = self.session_for(contact_id)
+            if not self.call.join(newcomer):
+                return
+            await self.broadcast(events.party(self._members(), added=contact_id))
+            # The console announces it and the line rings; the greeting is made
+            # meanwhile and released when they "pick up".
+            pickup = asyncio.get_running_loop().time() + 2.6 + random.uniform(0.3, 1.6)
+            await self.drive(self.call.greet(newcomer), contact, epoch, release_at=pickup)
+
+    async def drop(self, contact_id):
+        """Let one contact off the call. They say goodbye; the call goes on."""
+        if not self.call or contact_id not in self._members():
+            return
+        if len(self.call.members) == 1:
+            return await self.disconnect()
+        epoch = self.interrupt()
+        async with self.turn_lock:
+            member = self.sessions[contact_id]
+            await self.drive(self.call.farewell(member), member.contact, epoch)
+            self.call.leave(member)
+            if self.current_id == contact_id:
+                self.current_id = self.call.members[0].contact.id
+            await self.broadcast(events.party(self._members(), removed=contact_id))
 
     async def _release_after(self, contact):
         """
@@ -409,6 +465,13 @@ class Console:
             return
         if spoken and self._is_own_echo(text):
             return
+        if self.call:
+            wanted = self._asked_to_add(text)
+            if wanted:
+                return await self.add(wanted)
+            leaving = self._asked_to_drop(text)
+            if leaving:
+                return await self.drop(leaving)
 
         # Supersede first, then queue: the running turn sees a stale epoch,
         # stops, and releases the lock instead of making the new input wait for
@@ -419,10 +482,34 @@ class Console:
             if epoch != self.turn_epoch:
                 return             # something newer arrived while we waited
             contact = self.contact
-            session = self.session_for(self.current_id)
-            await self.drive(
-                session.ask(text, interrupted=was_speaking, confidence=confidence),
-                contact, epoch)
+            if self.call and self.call.is_group:
+                turn = self.call.turn(text, interrupted=was_speaking, confidence=confidence)
+            else:
+                session = self.session_for(self.current_id)
+                turn = session.ask(text, interrupted=was_speaking, confidence=confidence)
+            await self.drive(turn, contact, epoch)
+
+    def _asked_to_add(self, text):
+        """'Alfred, get Lucius on the line' — a contact not on the call, asked for."""
+        if not re.search(r"\b(get|bring|add|patch|loop|call|ring|grab|put)\b", text, re.I):
+            return None
+        for contact in self.directory:
+            if contact.id in self._members():
+                continue
+            if any(re.search(rf"\b{re.escape(n)}\b", text, re.I)
+                   for n in {contact.name, contact.full_name}):
+                return contact.id
+        return None
+
+    def _asked_to_drop(self, text):
+        """'Selina, you can drop off' — someone on the call, let go."""
+        if not self.call or not self.call.is_group:
+            return None
+        if not re.search(r"\b(drop (off|out)|you can go|hang up|leave the call|"
+                         r"let (her|him) go|sign off|head off)\b", text, re.I):
+            return None
+        named = self.call.addressed(text)
+        return named[0].contact.id if len(named) == 1 else None
 
 
 console = Console()
@@ -693,6 +780,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(console.nudge())
             elif kind == "signoff":
                 asyncio.create_task(console.nudge("sign_off"))
+            elif kind == "add":
+                asyncio.create_task(console.add(payload.get("id", "")))
+            elif kind == "drop":
+                asyncio.create_task(console.drop(payload.get("id", "")))
             elif kind == "resume":
                 asyncio.create_task(console.nudge("resume"))
     except WebSocketDisconnect:
