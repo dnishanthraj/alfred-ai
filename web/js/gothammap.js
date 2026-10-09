@@ -150,7 +150,7 @@
       group.forEach(function (c, i) {
         var s = c.presence.spot;
         var angle = (i / group.length) * Math.PI * 2;
-        var r = group.length > 1 ? 1.1 : 0;
+        var r = group.length > 1 ? 2.4 : 0;
         var at = ll(s.x + Math.cos(angle) * r, s.y + Math.sin(angle) * r);
         seen[c.id] = true;
         var marker = people[c.id];

@@ -34,6 +34,7 @@ pulse carries them out (see `Console.pulse`).
 import hashlib
 import json
 import random
+import re
 import threading
 import time
 import uuid
@@ -281,8 +282,15 @@ class Presence:
             if spot:
                 return spot, company
         if block.get("where"):
-            return block["where"], company
+            return self._home_is_home(block["where"]), company
         return getattr(self.contact, "home", "") or "", company
+
+    def _home_is_home(self, where):
+        """'Home, Bristol' in Alfred's plan is the Manor: home is where they live."""
+        home = getattr(self.contact, "home", "") or ""
+        if home and re.match(r"(?i)\s*(at\s+)?home\b", where or ""):
+            return home
+        return where
 
     def trail(self, hours=2.0, step=300, t=None):
         """

@@ -1473,7 +1473,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm[data-zoom="mid"] .gm-place--landmark:hover b { display: inline; }
 
 /* People, in their own colour. */
-.gm-person { position: relative; }
+/* Leaflet places the marker (position: absolute); its insides hang off it. */
 .gm-person.is-moving { transition: transform 1.2s var(--ease); }
 .gm-person__face { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--accent);
   background-color: var(--surface-2); background-size: cover; background-repeat: no-repeat;

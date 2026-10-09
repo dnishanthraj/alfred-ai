@@ -2507,7 +2507,29 @@
   /* The map of Gotham (gothammap.js), in the console's hands: its people are
      our contacts, its portraits ours, its Message and Call ours. */
   function wireMap() {
-    if (!window.GothamMap || !state.map) return;
+    var button = $('map-open');
+    if (!window.GothamMap || button.dataset.wired) return;
+    button.dataset.wired = '1';
+    var ready = false;
+    function start() {
+      if (ready || !state.map) return ready;
+      ready = true;
+      initMap();
+      return true;
+    }
+    button.addEventListener('click', function () {
+      if (GothamMap.isOpen()) return GothamMap.close();
+      if (start()) return GothamMap.open();
+      // No map in the session (an older server): ask for it once more.
+      fetch('/api/session').then(function (r) { return r.json(); }).then(function (info) {
+        state.map = info.map || null;
+        if (start()) GothamMap.open();
+        else el.status.textContent = 'The map isn\u2019t available — restart the console.';
+      });
+    });
+  }
+
+  function initMap() {
     GothamMap.init({
       root: $('map-view'),
       data: state.map,
@@ -2518,9 +2540,6 @@
       message: function (id) { GothamMap.close(); openMessages(id); },
       call: function (id) { GothamMap.close(); placeCall(id); },
       toggled: function (open) { $('map-open').classList.toggle('is-on', open); }
-    });
-    $('map-open').addEventListener('click', function () {
-      if (GothamMap.isOpen()) GothamMap.close(); else GothamMap.open();
     });
   }
 
