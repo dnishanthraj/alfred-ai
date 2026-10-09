@@ -15,6 +15,7 @@ model finishes writing it, several in flight at once, but the resulting clips
 are released to the page strictly in order.
 """
 import asyncio
+import logging
 import random
 import re
 import threading
@@ -39,6 +40,16 @@ from ..paths import WEB_DIR
 # Synthesized clips waiting to be fetched. Bounded — a long session would
 # otherwise hold every reply's audio in memory for the whole run.
 _MAX_CACHED_CLIPS = 64
+
+# What happened, when, and how long it took — for the times a reply goes quiet
+# and there is otherwise nothing to look at. data/ is gitignored.
+log = logging.getLogger("wayne")
+if not log.handlers:
+    paths.DATA_DIR.mkdir(exist_ok=True)
+    _handler = logging.FileHandler(paths.DATA_DIR / "console.log")
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
+    log.addHandler(_handler)
+    log.setLevel(logging.INFO)
 
 # How long a spoken line stays eligible to be recognised as an echo of itself.
 # Long enough to cover a reply playing out plus the transcription round trip,
@@ -182,6 +193,7 @@ class Console:
         picking up and then thinking about what to say.
         """
         loop = asyncio.get_running_loop()
+        began, first_at = time.monotonic(), None
 
         async def hold():
             if release_at is not None:
@@ -227,10 +239,13 @@ class Console:
                 if event.get("type") == "sentence":
                     self._said += 1
                     event = {**event, "key": self._said}
+                if event.get("type") == "sentence" and first_at is None:
+                    first_at = time.monotonic()
+                    log.info("%s first sentence after %.2fs", contact.id, first_at - began)
                 if event.get("type") == "sentence" and self._can_speak(contact):
                     spoken = event.get("voice") or event["text"]
                     task = asyncio.create_task(
-                        asyncio.to_thread(self.voice.synthesize_timed, spoken, contact.voice_id)
+                        asyncio.to_thread(self._timed_synthesis, spoken, contact)
                     )
                     speech.put_nowait((event["key"], event["text"], task))
                 await hold()
@@ -243,6 +258,18 @@ class Console:
                 # Only now is the turn genuinely finished: the model has stopped
                 # writing and every sentence has been synthesized and released.
                 await self.broadcast(events.turn_complete())
+
+    def _timed_synthesis(self, text, contact):
+        started = time.monotonic()
+        try:
+            audio, words = self.voice.synthesize_timed(text, contact.voice_id)
+        except Exception as exc:
+            log.warning("%s synthesis FAILED after %.2fs: %s", contact.id,
+                        time.monotonic() - started, str(exc)[:160])
+            raise
+        log.info("%s synthesis %.2fs, %d chars%s", contact.id, time.monotonic() - started,
+                 len(text), "" if words else " (no timings)")
+        return audio, words
 
     def _can_speak(self, contact):
         return self.voice.available and contact.has_voice
@@ -614,7 +641,9 @@ def _speech_hint():
     Capitalised words survive because a name is what Whisper actually gets wrong
     and what a hint genuinely fixes. Prose is what does the damage.
     """
-    parts = [config.USER_NAME]
+    # The configured hints too. Building this list per request used to replace
+    # them entirely, so names added to WAYNE_WHISPER_HINTS were never used.
+    parts = [config.USER_NAME] + [h.strip() for h in config.WHISPER_HINT_PROMPT.split(",")]
     contact = console.contact
     if contact:
         parts += [contact.name, contact.full_name]

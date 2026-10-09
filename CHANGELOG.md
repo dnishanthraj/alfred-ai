@@ -18,6 +18,9 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
   him in real trouble. Both play along when he plays Bruce, knowing it's him. Each
   has their own examples, life, backup lines, judge brief and evaluation
   scenarios; first marks 78.8 (Lucius) and 75.5 (Selina) against Alfred's 81.
+- **Selina is adult.** Openly flirtatious, sensual and frank about attraction
+  when it suits her — always from character, witty and in control, never crude
+  for its own sake or one-note.
 - **What each contact calls him is private to that contact** — a gitignored
   `Modelfile.<id>` per contact beside the shared `Modelfile` of facts — and used
   sparingly: the first pass put a name in nearly every reply.
@@ -61,6 +64,23 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Fixed
 
+- **Replies sometimes went silent, or the console seemed to freeze.** Two causes.
+  One slow ElevenLabs request held every later sentence behind it for up to 30
+  seconds, then the reply arrived as text; each sentence now gives up after 3s
+  to connect or 6s of silence, retries once on the lighter endpoint, and only
+  then falls back to text. And on a 24 GB Mac the 15 GB model gets paged out
+  under pressure, so a reply can stall while it pages back in. A smaller model
+  was measured as the cure and rejected: gemma4:e4b scored 67.5 against 80.7
+  with the same judge (its own self-marked 92.4 was judge bias). The model is
+  released between calls instead, and the console now logs every reply's
+  first-sentence time, every synthesis and every failure to `data/console.log`.
+- **Names added to the Whisper hints were ignored.** The console built its own
+  hint list per request and dropped `WAYNE_WHISPER_HINTS`; it now includes them.
+  Measured on the operator's own sentences: `small.en` 4.0% WER clean / 7.6% in
+  noise at 0.13s, `large-v3-turbo` 5.0% / 5.0% at 0.48s — the small model stays,
+  with names hinted; turbo is a setting away for noisy rooms.
+- **"I'm not in the mood for games" got more games.** Saying you aren't playing
+  now stops the teasing for every contact.
 - **The model sat in memory all evening.** A 15 GB model on a 24 GB Mac held
   for an hour after every use pushed the rest of the machine into swap and kept
   it hot. It is now released five minutes after hang-up (unless you ring back),

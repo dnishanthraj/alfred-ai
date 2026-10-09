@@ -174,6 +174,10 @@ _SINCERE = re.compile(
     re.I,
 )
 
+_NOT_PLAYING = re.compile(
+    r"\b(not in the mood|no games|stop (it|joking|messing)|i'?m (being )?serious|"
+    r"seriously though|not now|not funny|i mean it|cut it out|drop it)\b", re.I)
+
 _WEIGHT = re.compile(
     r"\b(died|death|funeral|cancer|diagnos\w+|divorce|fired|redundan\w+|"
     r"broke up|breakup|hospital|scared|terrified|panic|failed|failing|"
@@ -200,7 +204,12 @@ def register_hint(prompt):
     text = prompt or ""
     words = len(text.split())
 
-    if _WEIGHT.search(text):
+    if _NOT_PLAYING.search(text):
+        # "I'm not in the mood for games, Selina" got more teasing. When he
+        # says he isn't playing, the game stops — for every contact.
+        tone = (" He's telling you he isn't playing right now. Drop the act and the "
+                "teasing and meet him straight, in your own voice.")
+    elif _WEIGHT.search(text):
         # "No cleverness" alone produced melodrama instead — "a heavy thing to
         # carry all by yourself in the dark". Plain is the instruction.
         # "In your own voice": without it every contact answered a bad day

@@ -20,6 +20,11 @@ from ..config import ELEVENLABS_API_KEY, ELEVENLABS_MODEL
 
 PLAYBACK_SPEED = 1.0
 _REQUEST_TIMEOUT = 30
+# Per sentence, in the live console: (connect, silence between bytes). The flat
+# 30 seconds meant one slow request held every sentence queued behind it — the
+# voice went quiet for half a minute and then the reply arrived as text. A
+# sentence that has not started arriving in a few seconds is not coming.
+_SENTENCE_TIMEOUT = (3.05, 6)
 
 # One pooled connection for every sentence. A bare `requests.post` opened a new
 # TLS connection each time — a handshake to ElevenLabs on every line, paid
@@ -49,7 +54,7 @@ class AlfredVoiceService:
 
     # --- synthesis --------------------------------------------------------
 
-    def synthesize(self, text, voice_id):
+    def synthesize(self, text, voice_id, timeout=_REQUEST_TIMEOUT):
         """
         Turn text into mp3 bytes in a given contact's voice. Raises
         SynthesisError rather than printing, so the caller can route the
@@ -75,7 +80,7 @@ class AlfredVoiceService:
                 "Content-Type": "application/json",
                 "xi-api-key": ELEVENLABS_API_KEY,
             },
-            timeout=_REQUEST_TIMEOUT,
+            timeout=timeout,
         )
         if response.status_code != 200:
             raise SynthesisError(f"ElevenLabs returned {response.status_code}: {response.text[:200]}")
@@ -86,6 +91,17 @@ class AlfredVoiceService:
         return audio
 
     def synthesize_timed(self, text, voice_id):
+        """Timed synthesis, falling back once to the plain endpoint. See _timed."""
+        try:
+            return self._timed(text, voice_id)
+        except SynthesisError:
+            raise
+        except Exception:
+            # Timed out or dropped. One more go without the alignment, which is
+            # the lighter request; the page estimates word timing instead.
+            return self.synthesize(text, voice_id, timeout=_SENTENCE_TIMEOUT), []
+
+    def _timed(self, text, voice_id):
         """
         mp3 bytes plus when each word starts, as [[word, ms], ...].
 
@@ -108,7 +124,7 @@ class AlfredVoiceService:
             f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream/with-timestamps",
             json={"text": text, "model_id": ELEVENLABS_MODEL},
             headers={"Content-Type": "application/json", "xi-api-key": ELEVENLABS_API_KEY},
-            timeout=_REQUEST_TIMEOUT, stream=True,
+            timeout=_SENTENCE_TIMEOUT, stream=True,
         )
         if response.status_code != 200:
             raise SynthesisError(f"ElevenLabs returned {response.status_code}: {response.text[:200]}")

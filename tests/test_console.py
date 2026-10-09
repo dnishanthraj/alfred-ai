@@ -39,7 +39,7 @@ def _console():
 
 def test_the_greeting_is_ready_before_pickup_and_heard_only_at_it():
     console, sent = _console()
-    contact = SimpleNamespace(has_voice=True, voice_id="v")
+    contact = SimpleNamespace(id="t", has_voice=True, voice_id="v")
 
     def greeting():
         yield events.sentence(0, "Evening.")
@@ -63,7 +63,7 @@ def test_a_superseded_turn_closes_its_generator():
     # Abandoning it left the worker reading the model to the end of a reply
     # nobody would hear, with the next turn queued behind it.
     console, sent = _console()
-    contact = SimpleNamespace(has_voice=False, voice_id="")
+    contact = SimpleNamespace(id="t", has_voice=False, voice_id="")
     closed, produced = [], []
 
     def reply():
@@ -89,7 +89,7 @@ def test_a_superseded_turn_closes_its_generator():
 def test_sentence_keys_never_repeat_across_replies():
     # The holding line and the answer's first sentence are both index 0.
     console, sent = _console()
-    contact = SimpleNamespace(has_voice=True, voice_id="v")
+    contact = SimpleNamespace(id="t", has_voice=True, voice_id="v")
 
     def turn():
         yield events.sentence(0, "One moment.")
