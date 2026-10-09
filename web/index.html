@@ -160,24 +160,43 @@
             <button type="button" class="gm-chip" data-layer="places">Places</button>
             <button type="button" class="gm-chip" data-layer="streets">Streets</button>
             <button type="button" class="gm-chip" data-layer="buildings">Buildings</button>
+            <button type="button" class="gm-chip" data-layer="transit">Transit</button>
+            <button type="button" class="gm-chip" data-layer="crime">Crime</button>
+            <button type="button" class="gm-chip" data-layer="safety">Safety</button>
             <button type="button" class="gm-chip" data-layer="trails">Trails</button>
             <button type="button" class="gm-chip" data-layer="pins">Pins</button>
           </div>
           <div class="gm__tools">
-            <button type="button" class="gm-tool" data-act="drop" data-tip="Drop a pin (or right-click the map)" aria-label="Drop a pin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg></button>
-            <button type="button" class="gm-tool gm-tool--text" data-act="3d" data-tip="Tilt into 3D (or right-drag to turn)" aria-label="3D view">3D</button>
-            <button type="button" class="gm-tool" data-act="zoom-out" data-tip="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 12h12"/></svg></button>
-            <button type="button" class="gm-tool" data-act="zoom-in" data-tip="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 12h12M12 6v12"/></svg></button>
-            <button type="button" class="gm-tool" data-act="fit" data-tip="The whole city" aria-label="Fit the city"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
             <button type="button" class="gm-tool" data-act="close" data-tip="Close the map" aria-label="Close the map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
           </div>
         </header>
         <div class="gm__body">
           <div class="gm-canvas"></div>
+          <div class="gm__tools gm__tools--float">
+            <button type="button" class="gm-tool" data-act="drop" data-tip="Drop a pin (or right-click the map)" aria-label="Drop a pin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg></button>
+            <button type="button" class="gm-tool gm-tool--text" data-act="3d" data-tip="Tilt into 3D (or right-drag to turn)" aria-label="3D view">3D</button>
+            <button type="button" class="gm-tool" data-act="zoom-out" data-tip="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 12h12"/></svg></button>
+            <button type="button" class="gm-tool" data-act="zoom-in" data-tip="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 12h12M12 6v12"/></svg></button>
+            <button type="button" class="gm-tool" data-act="fit" data-tip="The whole city" aria-label="Fit the city"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+          </div>
+
           <aside class="gm-side">
             <p class="gm-side__label">Whereabouts</p>
             <ul class="gm-roster"></ul>
           </aside>
+          <div class="gm-info" hidden>
+            <button type="button" class="gm-card__x gm-info__x" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            <div class="gm-card__top">
+              <span class="gm-info__icon"></span>
+              <div>
+                <p class="gm-card__name gm-info__name"></p>
+                <p class="gm-card__status gm-info__sub"></p>
+              </div>
+            </div>
+            <p class="gm-info__bio"></p>
+            <p class="gm-info__note"></p>
+          </div>
+          <div class="gm-legend" aria-hidden="true"><span>Quiet</span><i></i><span>Rough</span></div>
           <div class="gm-card" hidden>
             <button type="button" class="gm-card__x" data-act="dismiss" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
             <div class="gm-card__top">

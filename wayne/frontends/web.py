@@ -1888,6 +1888,13 @@ async def delete_pin(pin_id: str):
     return JSONResponse({"ok": True})
 
 
+@app.get("/api/map/incidents")
+async def map_incidents():
+    """What the scanner says is happening in the city right now."""
+    from ..engine import incidents
+    return JSONResponse({"incidents": incidents.at()})
+
+
 @app.get("/api/map/trail/{contact_id}")
 async def map_trail(contact_id: str, hours: float = 2.0):
     """Where someone has been lately, for the map — nothing for those who don't share."""

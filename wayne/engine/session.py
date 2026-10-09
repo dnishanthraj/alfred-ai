@@ -1479,7 +1479,8 @@ class ContactSession:
         yield events.state(events.IDLE)
 
     _WHEREABOUTS = re.compile(r"(?i)\b(where(?:'s| is| are|abouts)?|location|heard from|seen|up to|"
-                              r"status|on patrol|out tonight|doing|check on|tracker)\b")
+                              r"status|on patrol|out tonight|doing|check on|tracker|going on|happening|"
+                              r"scanner|police|reports?|crime|trouble|quiet tonight)\b")
 
     def _tracker(self, prompt):
         """
@@ -1502,9 +1503,12 @@ class ContactSession:
             with_ = [book.get(c).name for c in company if book.get(c)]
             lines.append(f"{other.name}: {state['status']}" + (f", {state['doing']}" if state["doing"] else "")
                          + (f" — {where}" if where else "") + (f", with {' and '.join(with_)}" if with_ else ""))
+        from . import incidents
+        scanner = incidents.scanner_note()
         return ("The family tracker, as you see it on your screens. Answer only what he asked — "
                 "whoever he asked about, the way you would — not a roll call: " + "; ".join(lines)
-                + (f". Not on it: {', '.join(dark)}." if dark else "."))
+                + (f". Not on it: {', '.join(dark)}." if dark else ".")
+                + (f" {scanner}" if scanner else ""))
 
     def _can_look(self):
         """

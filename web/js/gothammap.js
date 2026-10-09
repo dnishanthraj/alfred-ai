@@ -57,11 +57,12 @@
     asylum: C.alert, prison: C.alert, industry: C.alert, nightlife: C.alert,
     manor: C.lit, clock: C.lit, tower: C.lit,
     police: '#9fd8ff', hospital: '#9fd8ff', civic: '#9fd8ff',
-    garden: C.good, water: C.edge, cemetery: C.faint
+    garden: C.good, water: C.edge, cemetery: C.faint, statue: C.lit, lighthouse: C.lit, airport: '#9fd8ff'
   };
   var ICON_KINDS = ['tower', 'manor', 'police', 'hospital', 'asylum', 'prison', 'church', 'theatre', 'university',
                     'museum', 'industry', 'station', 'stadium', 'lab', 'nightlife', 'civic', 'news', 'zoo', 'marina',
-                    'naval', 'dock', 'clock', 'garden', 'water', 'cemetery', 'circus'];
+                    'naval', 'dock', 'clock', 'garden', 'water', 'cemetery', 'circus', 'statue', 'lighthouse',
+                    'airport', 'observatory', 'hotel'];
 
   function glyph(kind) {
     var p = new Path2D();
@@ -91,6 +92,11 @@
       case 'water': [-4, 2].forEach(function (y) { p.moveTo(-9, y); p.bezierCurveTo(-5, y - 4, -2, y + 4, 2, y); p.bezierCurveTo(5, y - 4, 7, y + 2, 9, y); }); break;
       case 'cemetery': p.moveTo(-6, 9); p.lineTo(-6, -3); p.arc(0, -3, 6, Math.PI, 0); p.lineTo(6, 9); p.closePath(); p.moveTo(0, -5); p.lineTo(0, 3); p.moveTo(-3, -2); p.lineTo(3, -2); break;
       case 'circus': p.moveTo(-9, 8); p.lineTo(0, -6); p.lineTo(9, 8); p.closePath(); p.moveTo(0, -6); p.lineTo(0, -11); p.lineTo(4, -9.5); p.lineTo(0, -8); break;
+      case 'statue': p.moveTo(2, -8); p.arc(0, -8, 2, 0, Math.PI * 2); p.moveTo(0, -6); p.lineTo(0, 4); p.moveTo(0, -4); p.lineTo(6, -11); p.moveTo(0, -3); p.lineTo(-4, 1); p.moveTo(-5, 9); p.lineTo(5, 9); p.lineTo(4, 4); p.lineTo(-4, 4); p.closePath(); break;
+      case 'lighthouse': p.moveTo(-3, 9); p.lineTo(-2, -5); p.lineTo(2, -5); p.lineTo(3, 9); p.closePath(); p.rect(-3, -9, 6, 4); p.moveTo(-5, -7); p.lineTo(-9, -9); p.moveTo(5, -7); p.lineTo(9, -9); break;
+      case 'airport': p.moveTo(0, -10); p.lineTo(0, 9); p.moveTo(-9, 1); p.lineTo(0, -3); p.lineTo(9, 1); p.moveTo(-4, 8); p.lineTo(0, 6); p.lineTo(4, 8); break;
+      case 'observatory': p.moveTo(-8, 3); p.arc(0, 3, 8, Math.PI, 0); p.moveTo(-9, 3); p.lineTo(9, 3); p.lineTo(9, 8); p.lineTo(-9, 8); p.closePath(); p.moveTo(1, -5); p.lineTo(5, -9); break;
+      case 'hotel': p.rect(-9, 0, 18, 5); p.moveTo(-9, 5); p.lineTo(-9, 9); p.moveTo(9, 5); p.lineTo(9, 9); p.moveTo(-9, 0); p.lineTo(-9, -6); p.rect(-6, -3, 5, 3); break;
       default: p.arc(0, 0, 4, 0, Math.PI * 2);
     }
     return p;
@@ -127,6 +133,29 @@
     return { width: size, height: size, data: ctx.getImageData(0, 0, size, size).data };
   }
 
+  // A report on the scanner: a warning triangle, amber to red with how bad it is.
+  var SEVERITY = { 1: '#c9a23a', 2: '#e08a3f', 3: '#e0574f', 4: '#ff3b3b' };
+
+  function warning(severity) {
+    var ratio = 2, size = 30 * ratio;
+    var canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    var ctx = canvas.getContext('2d');
+    ctx.scale(ratio, ratio);
+    var tint = SEVERITY[severity];
+    ctx.beginPath();
+    ctx.moveTo(15, 3); ctx.lineTo(27, 25); ctx.lineTo(3, 25); ctx.closePath();
+    ctx.fillStyle = 'rgba(12, 5, 4, 0.92)';
+    ctx.shadowColor = tint; ctx.shadowBlur = 7;
+    ctx.fill();
+    ctx.shadowBlur = 0; ctx.lineWidth = 1.8; ctx.strokeStyle = tint; ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.fillStyle = tint;
+    ctx.fillRect(14, 10, 2, 8);
+    ctx.fillRect(14, 20, 2, 2);
+    return { width: size, height: size, data: ctx.getImageData(0, 0, size, size).data };
+  }
+
   /* --- the style ------------------------------------------------------------ */
 
   function is(layer) { return ['==', ['get', 'l'], layer]; }
@@ -140,10 +169,18 @@
     return {
       version: 8,
       glyphs: '/static/map/fonts/{fontstack}/{range}.pbf',
+      // The night over the city when it tilts: the horizon fades into fog.
+      sky: { 'sky-color': '#02050a', 'horizon-color': '#0b2236', 'fog-color': '#02050a',
+             'fog-ground-blend': 0.9, 'horizon-fog-blend': 0.35, 'sky-horizon-blend': 0.6, 'atmosphere-blend': 0 },
       sources: {
         city: { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, generateId: true },
         buildings: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-        trail: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
+        trees: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+        incidents: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+        trail: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+        // The ground itself: hills shaded in 2D, raised when the map tilts.
+        terrain: { type: 'raster-dem', tiles: ['/static/map/terrain/{z}/{x}/{y}.png'], tileSize: 256,
+                   encoding: 'mapbox', minzoom: 9, maxzoom: 11, bounds: [-0.48, -0.36, 0.38, 0.5] }
       },
       layers: [
         { id: 'void', type: 'background', paint: { 'background-color': C.void } },
@@ -159,12 +196,29 @@
         { id: 'district-hover', type: 'line', source: 'city', filter: is('district'),
           paint: { 'line-color': C.lit, 'line-width': 1.6, 'line-blur': 1,
                    'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.55, 0] } },
+        // Safety, when asked for: each district tinted by how much trouble it sees.
+        { id: 'safety', type: 'fill', source: 'city', filter: is('district'), layout: { visibility: 'none' },
+          paint: { 'fill-color': ['interpolate', ['linear'], ['get', 'cr'], 0, C.good, 0.5, '#c9a23a', 1, C.alert],
+                   'fill-opacity': 0.24 } },
+        { id: 'relief', type: 'hillshade', source: 'terrain',
+          paint: { 'hillshade-exaggeration': 0.5, 'hillshade-shadow-color': '#000000',
+                   'hillshade-highlight-color': '#1d4d6e', 'hillshade-accent-color': '#06121c',
+                   'hillshade-illumination-direction': 315 } },
         { id: 'park', type: 'fill', source: 'city', filter: is('park'), paint: { 'fill-color': C.park, 'fill-opacity': 0.9 } },
+        { id: 'apron', type: 'fill', source: 'city', filter: is('apron'), paint: { 'fill-color': '#0e1f2e' } },
+        { id: 'runway', type: 'fill', source: 'city', filter: is('runway'), paint: { 'fill-color': '#15293a' } },
+        { id: 'runway-line', type: 'line', source: 'city', filter: is('runway_line'),
+          paint: { 'line-color': '#8fb9d8', 'line-width': z([11, 0.4, 15, 1.6]), 'line-dasharray': [4, 4], 'line-opacity': 0.7 } },
         { id: 'park-edge', type: 'line', source: 'city', filter: is('park'),
           paint: { 'line-color': C.parkEdge, 'line-width': 0.8, 'line-opacity': 0.4 } },
         { id: 'water', type: 'fill', source: 'city', filter: is('water'), paint: { 'fill-color': C.water } },
         { id: 'water-edge', type: 'line', source: 'city', filter: is('water'),
           paint: { 'line-color': C.edge, 'line-width': 1, 'line-opacity': 0.45 } },
+        // Light on the water, twinkling (animated in the loop below).
+        { id: 'sparkle', type: 'circle', source: 'city', filter: is('sparkle'), minzoom: 11,
+          paint: { 'circle-radius': z([11, 0.6, 15, 1.6, 18, 2.6]), 'circle-color': C.lit, 'circle-opacity': 0, 'circle-blur': 0.4 } },
+        { id: 'ferry', type: 'line', source: 'city', filter: is('ferry'),
+          paint: { 'line-color': '#3a7aa8', 'line-width': z([10, 0.6, 15, 1.4]), 'line-dasharray': [1, 3], 'line-opacity': 0.75 } },
         { id: 'pier', type: 'fill', source: 'city', filter: is('pier'), paint: { 'fill-color': '#163650', 'fill-opacity': 0.95 } },
         { id: 'coast', type: 'line', source: 'city', filter: is('land'),
           paint: { 'line-color': C.edge, 'line-width': z([10, 0.8, 14, 1.6, 17, 3]), 'line-opacity': 0.75 } },
@@ -178,6 +232,10 @@
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: { 'line-color': C.secondary, 'line-width': z([10, 0.35, 14, 1.6, 16, 4.5, 18, 14]),
                    'line-opacity': z([10, 0.45, 13, 0.9]) } },
+        { id: 'avenue', type: 'line', source: 'city', filter: road('avenue'), minzoom: 11.2,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': '#21486a', 'line-width': z([11.2, 0.4, 14, 1.3, 16, 4, 18, 12]),
+                   'line-opacity': z([11.2, 0.5, 13, 0.95]) } },
         { id: 'primary-glow', type: 'line', source: 'city', filter: road('primary'),
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: { 'line-color': C.primary, 'line-width': z([10, 3, 14, 7, 17, 22]), 'line-blur': z([10, 3, 14, 7, 17, 22]), 'line-opacity': 0.35 } },
@@ -186,6 +244,15 @@
           paint: { 'line-color': C.primary, 'line-width': z([10, 0.7, 14, 2.4, 16, 6, 18, 18]) } },
         { id: 'rail', type: 'line', source: 'city', filter: road('rail'),
           paint: { 'line-color': '#5f86a6', 'line-width': z([10, 0.6, 14, 1.4, 17, 3]), 'line-dasharray': [3, 2.2], 'line-opacity': 0.8 } },
+        // Underground, faintly: the subway, its lines in their own colours.
+        { id: 'subway', type: 'line', source: 'city', filter: is('subway'), minzoom: 11.6,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': ['get', 'col'], 'line-width': z([11.6, 1, 14, 2.4, 17, 4]),
+                   'line-opacity': z([11.6, 0, 12.4, 0.55]) } },
+        // The skyway stands above the street: its shadow falls beside it.
+        { id: 'skyway-shadow', type: 'line', source: 'city', filter: ['all', road('highway'), ['has', 'e']],
+          paint: { 'line-color': '#000', 'line-width': z([10, 2, 14, 5, 17, 14]), 'line-translate': [4, 5],
+                   'line-blur': 3, 'line-opacity': 0.6 } },
         { id: 'highway-glow', type: 'line', source: 'city', filter: ['any', road('highway'), road('bridge')],
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: { 'line-color': C.highway, 'line-width': z([10, 5, 14, 11, 17, 30]), 'line-blur': z([10, 5, 14, 11, 17, 30]), 'line-opacity': 0.32 } },
@@ -200,22 +267,41 @@
         { id: 'footprint', type: 'line', source: 'buildings', minzoom: 13.4,
           paint: { 'line-color': ['case', ['has', 'n'], C.lit, '#2f6f9c'], 'line-width': z([13.4, 0.3, 16, 1, 18, 1.6]),
                    'line-opacity': z([13.4, 0, 14.2, 0.55]) } },
-        // The city in three dimensions: dark volumes, brightening with height.
-        { id: 'buildings', type: 'fill-extrusion', source: 'buildings', minzoom: 13.2,
+        // The city in three dimensions: dark volumes, brightening with height;
+        // the landmarks lit, the skyway a deck in the air.
+        { id: 'buildings', type: 'fill-extrusion', source: 'buildings', minzoom: 12.6,
           paint: {
-            'fill-extrusion-color': ['case', ['has', 'n'], '#7ccaf5',
-              ['interpolate', ['linear'], ['get', 'h'], 0, '#0a1c2a', 25, '#0e2a40', 60, '#14405f', 120, '#1f5f8c', 240, '#3f92cc']],
-            'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 13.2, 0, 14.4, ['get', 'h']],
-            'fill-extrusion-base': 0,
-            'fill-extrusion-opacity': 0.88,
+            'fill-extrusion-color': ['match', ['get', 'k'], '~landmark', '#7ccaf5', '~deck', '#2a6a94',
+              ['interpolate', ['linear'], ['get', 'h'], 0, '#081521', 25, '#0b2133', 60, '#10334d', 120, '#184d73', 240, '#2f78ad']],
+            'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 12.6, 0, 13.8, ['get', 'h']],
+            'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 12.6, 0, 13.8, ['get', 'b']],
+            'fill-extrusion-opacity': 0.86,
             'fill-extrusion-vertical-gradient': true
           } },
+        { id: 'trees', type: 'fill-extrusion', source: 'trees', minzoom: 13,
+          paint: { 'fill-extrusion-color': ['interpolate', ['linear'], ['get', 'h'], 8, '#0f3d2d', 17, '#1d6b4c'],
+                   'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 13, 0, 14, ['get', 'h']],
+                   'fill-extrusion-opacity': 0.92 } },
         // Where someone has been.
         { id: 'trail', type: 'line', source: 'trail', filter: ['==', ['geometry-type'], 'LineString'],
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: { 'line-color': ['get', 'color'], 'line-width': 2.4, 'line-dasharray': [1.5, 1.8], 'line-opacity': 0.9 } },
         { id: 'trail-stop', type: 'circle', source: 'trail', filter: ['==', ['geometry-type'], 'Point'],
           paint: { 'circle-radius': 4, 'circle-color': C.void, 'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 1.8 } },
+        // Trouble, as the scanner has it: a pulse under each report.
+        { id: 'incident-pulse', type: 'circle', source: 'incidents',
+          paint: { 'circle-radius': 10, 'circle-color': ['match', ['get', 'severity'], 1, SEVERITY[1], 2, SEVERITY[2], 3, SEVERITY[3], SEVERITY[4]],
+                   'circle-opacity': 0.25, 'circle-blur': 0.6, 'circle-pitch-alignment': 'map' } },
+        { id: 'incident', type: 'symbol', source: 'incidents',
+          layout: { 'icon-image': ['concat', 'gm-warn-', ['to-string', ['get', 'severity']]], 'icon-size': z([10.6, 0.6, 14, 0.85, 17, 1]),
+                    'icon-allow-overlap': true, 'icon-anchor': 'bottom' } },
+        { id: 'station', type: 'circle', source: 'city', filter: is('station'), minzoom: 12.6,
+          paint: { 'circle-radius': z([12.6, 2, 15, 4, 18, 6]), 'circle-color': C.void,
+                   'circle-stroke-color': ['get', 'col'], 'circle-stroke-width': z([12.6, 1, 15, 2]) } },
+        { id: 'station-label', type: 'symbol', source: 'city', filter: is('station'), minzoom: 14.6,
+          layout: { 'text-field': ['get', 'n'], 'text-font': ['Noto Sans Regular'], 'text-size': 10, 'text-offset': [0, 1.1],
+                    'text-anchor': 'top', 'text-optional': true },
+          paint: { 'text-color': ['get', 'col'], 'text-halo-color': C.void, 'text-halo-width': 1.4 } },
         // Words on top, laid out so they never collide.
         { id: 'water-label', type: 'symbol', source: 'city', filter: is('water_label'),
           layout: { 'text-field': ['get', 'n'], 'text-font': ['Noto Sans Italic'], 'text-size': z([10, 11, 14, 16]),
@@ -259,29 +345,45 @@
       map.getSource('city').setData(fc);
       return fetch('/static/map/gotham-buildings.json');
     }).then(function (r) { return r.json(); }).then(function (rows) {
+      // [height, base, x, y, x, y, ..., kind?] in hundredths of a unit.
       var features = rows.map(function (row) {
-        var named = typeof row[row.length - 1] === 'string' ? row[row.length - 1] : null;
-        var nums = named ? row.slice(1, -1) : row.slice(1);
+        var kind = typeof row[row.length - 1] === 'string' ? row[row.length - 1] : null;
+        var nums = kind ? row.slice(2, -1) : row.slice(2);
         var ring = [];
         for (var i = 0; i < nums.length; i += 2) ring.push(ll(nums[i] / 100, nums[i + 1] / 100));
         ring.push(ring[0]);
-        var props = { h: row[0] };
-        if (named) props.n = named;
+        var props = { h: row[0], b: row[1] };
+        if (kind) props.k = kind;
         return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: props };
       });
       map.getSource('buildings').setData({ type: 'FeatureCollection', features: features });
+      return fetch('/static/map/gotham-trees.json');
+    }).then(function (r) { return r.json(); }).then(function (trees) {
+      // Each tree a small hexagon, so it can stand up in 3D.
+      var features = trees.map(function (t) {
+        var x = t[0] / 100, y = t[1] / 100, r = 0.09, ring = [];
+        for (var i = 0; i <= 6; i++) {
+          var a = i * Math.PI / 3;
+          ring.push(ll(x + Math.cos(a) * r, y + Math.sin(a) * r));
+        }
+        return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: { h: t[2] } };
+      });
+      map.getSource('trees').setData({ type: 'FeatureCollection', features: features });
     }).catch(function () { /* the city still draws without its buildings */ });
   }
 
   /* --- hovering: the console's own tooltip, never the map's ----------------- */
 
-  var HOVERABLE = ['landmark', 'district-label', 'quarter-label', 'road-label', 'primary', 'highway',
-                   'secondary', 'park', 'water', 'trail-stop', 'district'];
+  var HOVERABLE = ['incident', 'landmark', 'station', 'district-label', 'quarter-label', 'road-label', 'primary',
+                   'highway', 'avenue', 'secondary', 'subway', 'ferry', 'park', 'water', 'trail-stop', 'district'];
 
   function describe(f) {
     var p = f.properties || {};
     if (p.l === 'place') return p.n + (p.a && p.a !== p.n ? ' · ' + p.a : '');
     if (p.l === 'stop') return p.n;
+    if (p.kind) return p.kind + ' · ' + p.place + ' · ' + p.status;
+    if (p.l === 'station') return p.n + ' · ' + p.line;
+    if (p.l === 'subway' || p.l === 'ferry') return p.n;
     if ((p.l === 'road' || p.l === 'park' || p.l === 'water' || p.l === 'district') && p.n) return p.n;
     return '';
   }
@@ -310,8 +412,11 @@
     map.getCanvas().addEventListener('mouseleave', function () { hover.hidden = true; });
     map.on('click', 'landmark', function (e) {
       if (dropping) return;
-      map.flyTo({ center: e.features[0].geometry.coordinates, zoom: Math.max(map.getZoom(), 15.4), duration: 900 });
+      var f = e.features[0];
+      map.flyTo({ center: f.geometry.coordinates, zoom: Math.max(map.getZoom(), 15.4), duration: 900 });
+      placeCard(f.properties.n);
     });
+    map.on('click', 'incident', function (e) { if (!dropping) incidentCard(e.features[0].properties); });
   }
 
   /* --- people ----------------------------------------------------------------- */
@@ -455,6 +560,81 @@
         });
         source.setData({ type: 'FeatureCollection', features: features });
       }).catch(function () {});
+  }
+
+  /* --- a place's own card: what it is, and what he thinks of it ------------- */
+
+  function iconUrl(kind) {
+    var img = icon(kind), canvas = document.createElement('canvas');
+    canvas.width = img.width; canvas.height = img.height;
+    canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
+    return canvas.toDataURL();
+  }
+
+  function showInfo(title, sub, body, note, imageUrl, tint) {
+    var card = $('.gm-info');
+    card.style.setProperty('--accent', tint || C.edge);
+    card.querySelector('.gm-info__icon').style.backgroundImage = imageUrl ? 'url(' + imageUrl + ')' : '';
+    card.querySelector('.gm-info__name').textContent = title;
+    card.querySelector('.gm-info__sub').textContent = sub || '';
+    card.querySelector('.gm-info__bio').textContent = body || '';
+    card.querySelector('.gm-info__bio').hidden = !body;
+    card.querySelector('.gm-info__note').textContent = note || '';
+    card.querySelector('.gm-info__note').hidden = !note;
+    card.hidden = false;
+  }
+
+  function placeCard(name) {
+    var p = (gazetteer.places || []).filter(function (q) { return q.name === name; })[0];
+    if (!p) return;
+    showInfo(p.name, p.area, p.bio, p.note, iconUrl(p.icon || ''), ICON_TINT[p.icon]);
+  }
+
+  function incidentCard(report) {
+    var when = new Date(report.at * 1000);
+    var near = visible().filter(function (c) {
+      var s = c.presence.spot;
+      return Math.hypot(s.x - report.x, s.y - report.y) < 2.2;
+    }).map(function (c) { return c.name; });
+    showInfo(report.kind, report.place + ' · ' + String(when.getHours()).padStart(2, '0') + ':' +
+             String(when.getMinutes()).padStart(2, '0') + ' · ' + report.status,
+             near.length ? 'On scene or close: ' + near.join(', ') + '.' : 'Nobody from the family nearby.',
+             '', '', SEVERITY[report.severity]);
+  }
+
+  /* --- the scanner ------------------------------------------------------------ */
+
+  var reports = [];
+  function loadIncidents() {
+    if (!ready || root.hidden) return;
+    fetch('/api/map/incidents').then(function (r) { return r.json(); }).then(function (body) {
+      reports = body.incidents || [];
+      map.getSource('incidents').setData({ type: 'FeatureCollection', features: reports.map(function (r) {
+        return { type: 'Feature', geometry: { type: 'Point', coordinates: ll(r.x, r.y) }, properties: r };
+      }) });
+    }).catch(function () {});
+  }
+
+  /* --- the living map: water that twinkles, reports that pulse ------------------ */
+
+  var frame = null, last = 0;
+  function animate(now) {
+    frame = requestAnimationFrame(animate);
+    if (root.hidden || !ready || now - last < 90) return;
+    last = now;
+    var t = now / 700;
+    // Each point of light catches it briefly, then not, in its own rhythm.
+    map.setPaintProperty('sparkle', 'circle-opacity',
+      ['*', 0.75, ['^', ['max', 0, ['sin', ['+', ['get', 'p'], t]]], 14]]);
+    var pulse = (now % 1800) / 1800;
+    map.setPaintProperty('incident-pulse', 'circle-radius', 8 + pulse * 22);
+    map.setPaintProperty('incident-pulse', 'circle-opacity', 0.35 * (1 - pulse));
+  }
+
+  function fogFor() {
+    // Far out, the edges fade to night: the map is about Gotham.
+    var z0 = map.getZoom();
+    root.style.setProperty('--gm-fog', Math.max(0, Math.min(1, (11.5 - z0) / 0.8)).toFixed(2));
   }
 
   /* --- pins of his own ------------------------------------------------------ */
@@ -613,8 +793,11 @@
 
   var LAYER_GROUPS = {
     places: ['landmark', 'quarter-label'],
-    streets: ['street', 'road-label'],
-    buildings: ['buildings', 'footprint'],
+    streets: ['street', 'avenue', 'road-label'],
+    buildings: ['buildings', 'footprint', 'trees'],
+    transit: ['subway', 'station', 'station-label', 'ferry'],
+    crime: ['incident', 'incident-pulse'],
+    safety: ['safety'],
     trails: ['trail', 'trail-stop']
   };
 
@@ -634,17 +817,27 @@
     if (chip) chip.classList.toggle('is-on', on);
   }
 
+  function relief(on) {
+    // The ground rises only when the map tilts; flat, the hillshade is enough.
+    try { map.setTerrain(on ? { source: 'terrain', exaggeration: 1.5 } : null); } catch (e) { /* older GPUs */ }
+  }
+
   function setThreeD(on) {
     threeD = on;
     $('[data-act="3d"]').classList.toggle('is-on', on);
-    map.easeTo(on ? { pitch: 58, bearing: -17, zoom: Math.max(map.getZoom(), 14), duration: 1200 }
+    relief(on);
+    map.easeTo(on ? { pitch: 56, bearing: -16, zoom: Math.max(map.getZoom(), 13.2), duration: 1200 }
                   : { pitch: 0, bearing: 0, duration: 900 });
   }
 
   function fit() {
-    map.fitBounds([ll(11, 133), ll(90, 14)], { padding: 24, duration: fitted ? 900 : 0, pitch: 0, bearing: 0 });
-    threeD = false;
-    $('[data-act="3d"]').classList.remove('is-on');
+    // The whole island, tilted: the city as a model on the table.
+    var camera = map.cameraForBounds([ll(11, 133), ll(90, 14)], { padding: 30 });
+    relief(true);
+    threeD = true;
+    $('[data-act="3d"]').classList.add('is-on');
+    map.easeTo({ center: camera.center, zoom: camera.zoom + 0.15, pitch: 45, bearing: -12,
+                 duration: fitted ? 1100 : 0 });
   }
 
   function wireFrame() {
@@ -664,6 +857,7 @@
       renderCard(selected);
       if (following) map.easeTo({ center: people[following].getLngLat(), zoom: Math.max(map.getZoom(), 15), duration: 900 });
     });
+    $('.gm-info__x').addEventListener('click', function () { $('.gm-info').hidden = true; });
     $('.gm-card [data-act="dismiss"]').addEventListener('click', function () {
       selected = null; following = null;
       $('.gm-card').hidden = true;
@@ -687,7 +881,7 @@
       map = new maplibregl.Map({
         container: $('.gm-canvas'), style: style(), center: ll(50, 70), zoom: 12,
         // Zoomed all the way out, the land and water still run past every edge.
-        minZoom: 10.2, maxZoom: 18.5, maxPitch: 70, attributionControl: false,
+        minZoom: 10.8, maxZoom: 18.5, maxPitch: 70, attributionControl: false,
         renderWorldCopies: false, dragRotate: true, pitchWithRotate: true,
         maxBounds: [ll(-300, 330), ll(330, -300)]
       });
@@ -695,18 +889,30 @@
         ICON_KINDS.forEach(function (kind) {
           if (!map.hasImage('gm-' + kind)) map.addImage('gm-' + kind, icon(kind), { pixelRatio: 2 });
         });
+        [1, 2, 3, 4].forEach(function (s) { map.addImage('gm-warn-' + s, warning(s), { pixelRatio: 2 }); });
         ready = true;
         loadCity();
-        ['places', 'streets', 'buildings', 'trails', 'people', 'pins'].forEach(function (name) {
+        ['places', 'streets', 'buildings', 'transit', 'crime', 'trails', 'people', 'pins'].forEach(function (name) {
           setLayer(name, layerShown(name));
         });
+        // Safety is a view you ask for, not the default.
+        setLayer('safety', recall(SHOWN_KEY, {}).safety === true);
+        loadIncidents();
+        setInterval(loadIncidents, 60000);
+        frame = requestAnimationFrame(animate);
         loadPins();
         if (!root.hidden) { map.resize(); if (!fitted) { fit(); fitted = true; } placePeople(); }
       });
       map.on('click', function (e) { if (dropping) dropPin(e.lngLat); });
       map.on('contextmenu', function (e) { e.preventDefault(); dropPin(e.lngLat); });
       map.on('dragstart', function () { if (following) { following = null; if (selected) renderCard(selected); } });
-      map.on('pitchend', function () { threeD = map.getPitch() > 10; $('[data-act="3d"]').classList.toggle('is-on', threeD); });
+      map.on('pitchend', function () {
+        var tilted = map.getPitch() > 10;
+        if (tilted !== threeD) relief(tilted);
+        threeD = tilted;
+        $('[data-act="3d"]').classList.toggle('is-on', threeD);
+      });
+      map.on('zoom', fogFor);
       wireHover();
       wireFrame();
       wireSearch();
@@ -720,6 +926,8 @@
         map.resize();
         if (ready && !fitted) { fit(); fitted = true; }
         placePeople();
+        loadIncidents();
+        fogFor();
         if (focus) select(focus, true);
       }, 30);
     },
@@ -732,6 +940,7 @@
       if (opts.toggled) opts.toggled(false);
     },
     isOpen: function () { return !!root && !root.hidden; },
+    _map: function () { return map; },
     update: function () { if (map && !root.hidden) placePeople(); },
     focus: function (id) { if (map && !root.hidden) select(id, true); }
   };

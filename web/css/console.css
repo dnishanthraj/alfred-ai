@@ -1533,3 +1533,33 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .end-call svg { width: 100%; height: 100%; display: block; }
 .end-call:hover { background: var(--alert); color: #fff; }
 .end-call[hidden] { display: none; }
+
+/* A place's card: what it is, and Bruce's note on it. */
+.gm-info { position: absolute; right: 224px; top: 14px; z-index: 900; width: 300px; padding: 12px 14px;
+  background: var(--raised); border: 1px solid var(--hairline-2); border-left: 2px solid var(--accent);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); animation: toast-in 0.16s var(--ease) both; }
+.gm-info[hidden] { display: none; }
+.gm-info__icon { width: 34px; height: 34px; flex: none; background-size: contain; background-repeat: no-repeat; }
+.gm-info__bio { margin: 10px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-dim); }
+.gm-info__note { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--operator); font-style: italic; }
+.gm-info__note::before { content: "Bruce — "; font-style: normal; font-family: var(--mono); font-size: 9px;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--operator-dim); }
+.gm-info__bio[hidden], .gm-info__note[hidden] { display: none; }
+/* The safety legend, shown only with the overlay. */
+.gm-legend { position: absolute; left: 14px; top: 14px; z-index: 800; display: none; align-items: center; gap: 8px;
+  padding: 6px 10px; background: var(--raised); border: 1px solid var(--hairline-2); font-family: var(--mono);
+  font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); }
+.gm-legend i { width: 80px; height: 6px; background: linear-gradient(90deg, var(--good), #c9a23a, var(--alert)); opacity: 0.8; }
+.gm:has([data-layer="safety"].is-on) .gm-legend { display: flex; }
+/* Far out, the edges fade to night. */
+.gm-canvas::before { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(2, 5, 10, 0.96) 85%);
+  opacity: var(--gm-fog, 0); transition: opacity 0.3s var(--ease); }
+
+/* The map's tools float on the map, a column at its edge; the header keeps search and layers. */
+.gm__tools--float { position: absolute; right: 224px; bottom: 14px; z-index: 850; flex-direction: column;
+  margin: 0; gap: 4px; }
+.gm__tools--float .gm-tool { background: rgba(10, 13, 20, 0.88); }
+.gm__head { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.gm__chips { flex-wrap: nowrap; }
+.gm-chip { padding: 5px 7px; }

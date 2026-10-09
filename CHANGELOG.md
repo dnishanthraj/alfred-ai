@@ -110,6 +110,22 @@ A full review of the code turned up, among others:
   asked something factual gets the answer found quietly, handed to them as
   what they might know — used only if someone like them would, never as "let
   me check". Alfred and Lucius at a computer still say they're looking.
+- **The map, deeper.** Terrain — Cherry Hills, Gotham Heights, the Bristol hills,
+  a ridge across the mainland — shaded flat and raised in 3D, which is now how
+  the map opens: the city as a model on the table, the far distance fading to
+  night. Water that twinkles; trees through every park; skyscrapers clustering
+  in Otisburg, New Town, the Upper East Side, the Fashion District, Burnside
+  and downtown Blüdhaven as well as around Wayne Tower; landmarks built to
+  their own shapes — Wayne Tower's setbacks and spire, the Clocktower, the
+  Cathedral's cross and towers, Arkham's wings, Blackgate's yard, City Hall's
+  dome, Ace's tanks, the Knightsdome bowl, the Statue of Justice on its island,
+  the Cape Carmine lighthouse; the Gotham Skyway standing above the street; the
+  subway's three lines and their stations, the ferries, roundabouts, more named
+  avenues, avenues inside every district's grid, and Archie Goodwin
+  International out on the mainland. Click a landmark for what it is and
+  Bruce's note on it. The police scanner is on the map too — reports across the
+  city, busier at night, each with its own while — with a safety overlay by
+  district, and a family member on patrol may be where the trouble is.
 - **The map of Gotham, live.** The map button in the top bar opens the whole
   city as a holographic map, drawn with MapLibre GL in the console's palette:
   one island in the shape later canon settled on — Cherry Hills, Otisburg, the

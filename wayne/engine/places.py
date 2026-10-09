@@ -90,9 +90,11 @@ def on_beat(contact, t):
 
 def patrol_spot(contact, planned, t):
     """
-    Where a patrol has them now: a stop on their beat within the area the plan
-    named (all of it if the plan was vague), else the plan's own place.
+    Where a patrol has them now: at an open report on their beat, if there is
+    one and they'd answer it; otherwise a stop on their beat within the area
+    the plan named (all of it if the plan was vague), else the plan's own place.
     """
+    from . import incidents
     beat = list(getattr(contact, "beat", ()) or ())
     there = resolve(planned) if planned and "/" not in planned else None
     if there:
@@ -101,6 +103,11 @@ def patrol_spot(contact, planned, t):
             return planned
     if not beat:
         return planned or None
+    areas = {(resolve(b) or {}).get("area") for b in beat}
+    report = incidents.near(areas, t)
     slot = int(t // BEAT_STEP)
     digest = hashlib.sha1(f"{contact.id}:{slot}".encode()).digest()
+    if report and digest[1] % 3:
+        # Two times in three, they go where the trouble is.
+        return report["place"]
     return beat[digest[0] % len(beat)]

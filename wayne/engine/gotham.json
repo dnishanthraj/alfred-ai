@@ -425,6 +425,31 @@
      122.4
     ]
    ]
+  },
+  {
+   "name": "Justice Island",
+   "coast": [
+    [
+     55.6,
+     129.4
+    ],
+    [
+     58.2,
+     128.8
+    ],
+    [
+     59.6,
+     130.4
+    ],
+    [
+     58.4,
+     132.2
+    ],
+    [
+     55.8,
+     132.0
+    ]
+   ]
   }
  ],
  "mainland": [
@@ -1029,7 +1054,8 @@
    "angle": 18,
    "block": 1.15,
    "tall": 14,
-   "warp": 0.5
+   "warp": 0.5,
+   "crime": 0.3
   },
   {
    "name": "Otisburg",
@@ -1039,7 +1065,8 @@
    ],
    "angle": 6,
    "block": 1.0,
-   "tall": 46
+   "tall": 46,
+   "crime": 0.35
   },
   {
    "name": "Amusement Mile",
@@ -1049,7 +1076,8 @@
    ],
    "angle": -6,
    "block": 1.3,
-   "tall": 10
+   "tall": 10,
+   "crime": 0.75
   },
   {
    "name": "New Town",
@@ -1059,7 +1087,8 @@
    ],
    "angle": -22,
    "block": 0.95,
-   "tall": 34
+   "tall": 34,
+   "crime": 0.4
   },
   {
    "name": "Burnley",
@@ -1069,7 +1098,8 @@
    ],
    "angle": 12,
    "block": 1.05,
-   "tall": 18
+   "tall": 18,
+   "crime": 0.7
   },
   {
    "name": "Crime Alley",
@@ -1080,7 +1110,8 @@
    "angle": -14,
    "block": 0.85,
    "tall": 15,
-   "warp": 0.35
+   "warp": 0.35,
+   "crime": 0.97
   },
   {
    "name": "The Bowery",
@@ -1090,7 +1121,8 @@
    ],
    "angle": -14,
    "block": 0.9,
-   "tall": 14
+   "tall": 14,
+   "crime": 0.85
   },
   {
    "name": "Robinsville",
@@ -1100,7 +1132,8 @@
    ],
    "angle": 30,
    "block": 1.2,
-   "tall": 16
+   "tall": 16,
+   "crime": 0.6
   },
   {
    "name": "Arkham Island",
@@ -1110,7 +1143,8 @@
    ],
    "angle": 0,
    "block": 2.6,
-   "tall": 8
+   "tall": 8,
+   "crime": 0.8
   },
   {
    "name": "Coventry",
@@ -1120,7 +1154,8 @@
    ],
    "angle": 0,
    "block": 1.1,
-   "tall": 18
+   "tall": 18,
+   "crime": 0.42
   },
   {
    "name": "University District",
@@ -1130,7 +1165,8 @@
    ],
    "angle": 25,
    "block": 1.15,
-   "tall": 20
+   "tall": 20,
+   "crime": 0.25
   },
   {
    "name": "Upper East Side",
@@ -1140,7 +1176,8 @@
    ],
    "angle": -13,
    "block": 0.95,
-   "tall": 40
+   "tall": 40,
+   "crime": 0.15
   },
   {
    "name": "Upper West Side",
@@ -1150,7 +1187,8 @@
    ],
    "angle": 28,
    "block": 1.0,
-   "tall": 24
+   "tall": 24,
+   "crime": 0.3
   },
   {
    "name": "Diamond District",
@@ -1160,7 +1198,8 @@
    ],
    "angle": 6,
    "block": 0.85,
-   "tall": 72
+   "tall": 72,
+   "crime": 0.32
   },
   {
    "name": "Fashion District",
@@ -1170,7 +1209,8 @@
    ],
    "angle": -10,
    "block": 0.9,
-   "tall": 54
+   "tall": 54,
+   "crime": 0.3
   },
   {
    "name": "City Hall District",
@@ -1181,7 +1221,8 @@
    "angle": 20,
    "block": 0.95,
    "tall": 44,
-   "warp": 0.45
+   "warp": 0.45,
+   "crime": 0.48
   },
   {
    "name": "Chinatown",
@@ -1191,7 +1232,8 @@
    ],
    "angle": 35,
    "block": 0.75,
-   "tall": 22
+   "tall": 22,
+   "crime": 0.55
   },
   {
    "name": "Old Gotham",
@@ -1202,7 +1244,8 @@
    "angle": 0,
    "block": 0.8,
    "tall": 30,
-   "warp": 0.7
+   "warp": 0.7,
+   "crime": 0.5
   },
   {
    "name": "Tricorner",
@@ -1212,7 +1255,8 @@
    ],
    "angle": -25,
    "block": 1.1,
-   "tall": 15
+   "tall": 15,
+   "crime": 0.62
   },
   {
    "name": "Bristol",
@@ -1241,7 +1285,8 @@
      -8,
      30
     ]
-   ]
+   ],
+   "crime": 0.05
   },
   {
    "name": "Burnside",
@@ -1269,7 +1314,8 @@
      96.8,
      86
     ]
-   ]
+   ],
+   "crime": 0.35
   },
   {
    "name": "Central Business District",
@@ -1280,7 +1326,8 @@
    "angle": 12,
    "block": 0.85,
    "tall": 46,
-   "city": "Blüdhaven"
+   "city": "Blüdhaven",
+   "crime": 0.66
   },
   {
    "name": "Waterloo Docks",
@@ -1291,7 +1338,8 @@
    "angle": 12,
    "block": 1.2,
    "tall": 12,
-   "city": "Blüdhaven"
+   "city": "Blüdhaven",
+   "crime": 0.88
   },
   {
    "name": "Avalon Heights",
@@ -1302,7 +1350,8 @@
    "angle": -8,
    "block": 1.2,
    "tall": 18,
-   "city": "Blüdhaven"
+   "city": "Blüdhaven",
+   "crime": 0.4
   },
   {
    "name": "Halyard Square",
@@ -1313,7 +1362,8 @@
    "angle": 12,
    "block": 0.95,
    "tall": 26,
-   "city": "Blüdhaven"
+   "city": "Blüdhaven",
+   "crime": 0.55
   },
   {
    "name": "Port's Park",
@@ -1324,7 +1374,8 @@
    "angle": 20,
    "block": 1.2,
    "tall": 14,
-   "city": "Blüdhaven"
+   "city": "Blüdhaven",
+   "crime": 0.72
   },
   {
    "name": "Fort Joseph",
@@ -1335,7 +1386,8 @@
    "angle": 0,
    "block": 1.3,
    "tall": 12,
-   "city": "Blüdhaven"
+   "city": "Blüdhaven",
+   "crime": 0.6
   }
  ],
  "bluedhaven_limits": [
@@ -1928,6 +1980,241 @@
      25.0
     ]
    ]
+  },
+  {
+   "name": "Otisburg Avenue",
+   "class": "primary",
+   "line": [
+    [
+     49.4,
+     21.6
+    ],
+    [
+     49.8,
+     28.2
+    ],
+    [
+     50.6,
+     34.0
+    ],
+    [
+     51.4,
+     40.0
+    ]
+   ]
+  },
+  {
+   "name": "Burnley Avenue",
+   "class": "primary",
+   "line": [
+    [
+     41.0,
+     39.4
+    ],
+    [
+     47.0,
+     38.6
+    ],
+    [
+     54.0,
+     38.8
+    ],
+    [
+     60.0,
+     38.0
+    ],
+    [
+     66.0,
+     37.4
+    ]
+   ]
+  },
+  {
+   "name": "University Avenue",
+   "class": "primary",
+   "line": [
+    [
+     18.4,
+     66.4
+    ],
+    [
+     24.0,
+     66.2
+    ],
+    [
+     30.0,
+     66.0
+    ],
+    [
+     35.6,
+     65.4
+    ]
+   ]
+  },
+  {
+   "name": "West End Avenue",
+   "class": "primary",
+   "line": [
+    [
+     21.2,
+     76.0
+    ],
+    [
+     22.4,
+     82.0
+    ],
+    [
+     23.4,
+     88.0
+    ],
+    [
+     24.6,
+     94.0
+    ],
+    [
+     26.6,
+     100.0
+    ]
+   ]
+  },
+  {
+   "name": "Fashion Avenue",
+   "class": "primary",
+   "line": [
+    [
+     57.0,
+     84.0
+    ],
+    [
+     62.0,
+     86.6
+    ],
+    [
+     68.0,
+     89.2
+    ],
+    [
+     74.0,
+     90.0
+    ],
+    [
+     80.4,
+     92.0
+    ]
+   ]
+  },
+  {
+   "name": "City Hall Parkway",
+   "class": "primary",
+   "line": [
+    [
+     58.0,
+     100.4
+    ],
+    [
+     64.0,
+     101.0
+    ],
+    [
+     70.0,
+     99.6
+    ],
+    [
+     76.0,
+     98.0
+    ],
+    [
+     81.0,
+     99.0
+    ]
+   ]
+  },
+  {
+   "name": "Robinson Boulevard",
+   "class": "primary",
+   "line": [
+    [
+     54.6,
+     66.0
+    ],
+    [
+     60.0,
+     66.6
+    ],
+    [
+     66.0,
+     67.6
+    ],
+    [
+     72.4,
+     68.0
+    ]
+   ]
+  },
+  {
+   "name": "Gotham Skyway",
+   "class": "highway",
+   "elevated": true,
+   "line": [
+    [
+     39.6,
+     97.2
+    ],
+    [
+     44.0,
+     98.0
+    ],
+    [
+     50.0,
+     98.4
+    ],
+    [
+     56.0,
+     98.0
+    ],
+    [
+     62.0,
+     97.4
+    ],
+    [
+     68.0,
+     97.0
+    ],
+    [
+     74.0,
+     96.6
+    ],
+    [
+     79.0,
+     96.8
+    ],
+    [
+     83.8,
+     97.0
+    ]
+   ]
+  },
+  {
+   "name": "Airport Expressway",
+   "class": "highway",
+   "line": [
+    [
+     5.2,
+     100.8
+    ],
+    [
+     0.0,
+     104.0
+    ],
+    [
+     -6.0,
+     110.0
+    ],
+    [
+     -12.0,
+     114.6
+    ]
+   ]
   }
  ],
  "bridges": [
@@ -2319,7 +2606,9 @@
     "batcave",
     "the cave",
     "manor"
-   ]
+   ],
+   "bio": "The Wayne family seat since the 1800s, out in Gotham County past the Robert Kane Memorial Bridge — forty-odd rooms, a park, and caves in the bluffs beneath.",
+   "note": "Home. Alfred keeps it running. The cave keeps me running."
   },
   {
    "name": "Drake Manor",
@@ -2330,7 +2619,9 @@
    "icon": "manor",
    "match": [
     "drake manor"
-   ]
+   ],
+   "bio": "The Drake family house in Bristol, next door to Wayne Manor by Gotham County standards.",
+   "note": "Where Tim figured out who I was. From the house next door."
   },
   {
    "name": "Bristol",
@@ -2352,7 +2643,9 @@
    "match": [
     "cemetery",
     "graveyard"
-   ]
+   ],
+   "bio": "Gotham's old cemetery in the Gotham County hills.",
+   "note": "Thomas and Martha Wayne."
   },
   {
    "name": "Sionis Steel Mill",
@@ -2364,7 +2657,9 @@
    "match": [
     "steel mill",
     "sionis"
-   ]
+   ],
+   "bio": "Roman Sionis's steel mill on the mainland shore — legitimate in daylight.",
+   "note": "Black Mask's business, wearing an honest face."
   },
   {
    "name": "The Narrows",
@@ -2407,7 +2702,9 @@
     "knightsdome",
     "stadium",
     "arena"
-   ]
+   ],
+   "bio": "Otisburg's stadium — home games, concerts, and the city's loudest Saturdays.",
+   "note": "Wayne Enterprises sponsors the box. I've never watched a full game from it."
   },
   {
    "name": "S.T.A.R. Labs",
@@ -2419,7 +2716,9 @@
    "match": [
     "star labs",
     "s.t.a.r."
-   ]
+   ],
+   "bio": "The Gotham branch of S.T.A.R. Labs, Otisburg's high-security research campus.",
+   "note": "Good people, dangerous inventory."
   },
   {
    "name": "Amusement Mile",
@@ -2483,7 +2782,9 @@
    "icon": "theatre",
    "match": [
     "monarch"
-   ]
+   ],
+   "bio": "A shuttered movie palace on Park Row. Its last good season was decades ago; the district took its name afterwards.",
+   "note": "We saw The Mark of Zorro. We took the shortcut home. I still walk past it."
   },
   {
    "name": "Thompkins Clinic",
@@ -2496,7 +2797,9 @@
     "clinic",
     "leslie",
     "thompkins"
-   ]
+   ],
+   "bio": "Dr. Leslie Thompkins's free clinic in Crime Alley: no questions asked, no one turned away.",
+   "note": "Leslie was there that night. She's been there every night since."
   },
   {
    "name": "The Bowery",
@@ -2528,7 +2831,9 @@
    "match": [
     "iceberg lounge",
     "iceberg"
-   ]
+   ],
+   "bio": "Oswald Cobblepot's nightclub at the end of the Robinsville spit: ice sculptures, a penguin habitat, and half the city's crooked deals done over cocktails.",
+   "note": "Legitimate business. Every regular is someone I'm watching."
   },
   {
    "name": "Arkham Island",
@@ -2549,7 +2854,9 @@
    "icon": "asylum",
    "match": [
     "arkham"
-   ]
+   ],
+   "bio": "Elizabeth Arkham Asylum for the Criminally Insane, on its island in the Sprang — Gotham's answer to the people it can't hold in Blackgate, and rarely an answer for long.",
+   "note": "Every name I've put away and every one that's walked back out."
   },
   {
    "name": "Coventry",
@@ -2583,7 +2890,9 @@
     "gotham u",
     "campus",
     "university"
-   ]
+   ],
+   "bio": "The city's oldest university, in the University District, known for its law school, its labs, and the professors who go on to stranger things.",
+   "note": "Half the city's best minds studied here. A few of its worst."
   },
   {
    "name": "Gotham General Hospital",
@@ -2595,7 +2904,9 @@
    "match": [
     "hospital",
     "gotham general"
-   ]
+   ],
+   "bio": "The city's main hospital and its busiest emergency room.",
+   "note": "Too many nights here. Not all of them as a visitor."
   },
   {
    "name": "Robinson Park",
@@ -2619,7 +2930,9 @@
    "match": [
     "botanical",
     "garden"
-   ]
+   ],
+   "bio": "The botanical garden at the north end of Robinson Park, endowed by the Wayne Foundation.",
+   "note": "Ivy's idea of a home. I check the greenhouses."
   },
   {
    "name": "The Reservoir",
@@ -2630,7 +2943,8 @@
    "icon": "water",
    "match": [
     "reservoir"
-   ]
+   ],
+   "bio": "The reservoir at the heart of Robinson Park — the city's water and its joggers' loop."
   },
   {
    "name": "Saul Erdel Planetarium",
@@ -2641,7 +2955,8 @@
    "icon": "museum",
    "match": [
     "planetarium"
-   ]
+   ],
+   "bio": "The planetarium at Robinson Park's south end, named for the astronomer who brought something unexpected to Gotham."
   },
   {
    "name": "Upper East Side",
@@ -2664,7 +2979,9 @@
     "museum",
     "gallery",
     "galleries"
-   ]
+   ],
+   "bio": "The Gotham Museum of Antiquities and Art on the Upper East Side — the wing with my mother's name on it, and a gem collection Selina knows better than the curators.",
+   "note": "My mother's wing. Selina's favourite room."
   },
   {
    "name": "Ace Chemicals",
@@ -2675,7 +2992,9 @@
    "icon": "industry",
    "match": [
     "ace chemicals"
-   ]
+   ],
+   "bio": "Chemical plant on the Upper East Side shore — the vats, the catwalks, the river outflow. Its safety record is a matter of public concern and private legend.",
+   "note": "Where a man fell in and something else climbed out."
   },
   {
    "name": "Janus Cosmetics",
@@ -2686,7 +3005,8 @@
    "icon": "industry",
    "match": [
     "janus"
-   ]
+   ],
+   "bio": "The Sionis family's cosmetics company, a polished front on the Upper East Side."
   },
   {
    "name": "Upper West Side",
@@ -2734,7 +3054,9 @@
     "r&d",
     "board meeting",
     "boardroom"
-   ]
+   ],
+   "bio": "Headquarters of Wayne Enterprises and the tallest thing in the Diamond District skyline; Applied Sciences works out of the lower floors, Lucius Fox out of the boardroom.",
+   "note": "My father's building. Lucius's company, in every way that matters."
   },
   {
    "name": "Theater District",
@@ -2762,7 +3084,9 @@
     "ballet",
     "symphony",
     "concert hall"
-   ]
+   ],
+   "bio": "Home of the Gotham Opera and Ballet, in the Theater District.",
+   "note": "Cass comes here more than I do. She watches the dancers' feet."
   },
   {
    "name": "Union Station",
@@ -2775,7 +3099,8 @@
     "union station",
     "train station",
     "the station"
-   ]
+   ],
+   "bio": "Gotham's grand rail terminal: commuter lines, the Coast Line to Blüdhaven, and a concourse with stars on the ceiling."
   },
   {
    "name": "Financial District",
@@ -2801,7 +3126,9 @@
     "police headquarters",
     "precinct",
     "commissioner"
-   ]
+   ],
+   "bio": "Gotham City Police Department headquarters, Commissioner James Gordon's building — and the roof the Signal shines from.",
+   "note": "Jim's roof. The one light in this city I answer to."
   },
   {
    "name": "Fashion District",
@@ -2823,7 +3150,8 @@
    "icon": "zoo",
    "match": [
     "zoo"
-   ]
+   ],
+   "bio": "The city zoo in the Fashion District."
   },
   {
    "name": "Gotham Gazette",
@@ -2835,7 +3163,9 @@
    "match": [
     "gazette",
     "newsroom"
-   ]
+   ],
+   "bio": "The city's paper of record since before the bridges. Vicki Vale's byline, Jack Ryder's opinions.",
+   "note": "They print what I'd rather they didn't. Usually they're right to."
   },
   {
    "name": "City Hall District",
@@ -2856,7 +3186,9 @@
    "icon": "civic",
    "match": [
     "city hall"
-   ]
+   ],
+   "bio": "Gotham City Hall, domed and marble, in the City Hall District — where the mayor's office sits and the city's money goes to be argued over.",
+   "note": "Every mayor promises to clean this city up. Some of them mean it."
   },
   {
    "name": "Mercy Hospital",
@@ -2867,7 +3199,8 @@
    "icon": "hospital",
    "match": [
     "mercy"
-   ]
+   ],
+   "bio": "Mercy General, the City Hall District's hospital."
   },
   {
    "name": "Gotham Superior Courthouse",
@@ -2879,7 +3212,9 @@
    "match": [
     "courthouse",
     "court"
-   ]
+   ],
+   "bio": "The superior court — where Harvey Dent made his name, and lost it.",
+   "note": "Harvey's courthouse."
   },
   {
    "name": "East End",
@@ -2912,7 +3247,9 @@
    "match": [
     "marina",
     "houseboat"
-   ]
+   ],
+   "bio": "The Chinatown marina — sailboats, a fuel dock, and Tim's houseboat.",
+   "note": "Tim's houseboat. He thinks I don't know which berth."
   },
   {
    "name": "Old Gotham",
@@ -2934,7 +3271,9 @@
    "match": [
     "clocktower",
     "clock tower"
-   ]
+   ],
+   "bio": "A nineteenth-century clocktower in Old Gotham. The gears still turn; behind the face, Oracle's servers run hotter than the city knows.",
+   "note": "Barbara's tower. If something's happening in Gotham, she saw it first."
   },
   {
    "name": "Gotham Cathedral",
@@ -2946,7 +3285,9 @@
    "match": [
     "cathedral",
     "church"
-   ]
+   ],
+   "bio": "The great Gothic cathedral of Old Gotham, gargoyles and all — once the tallest building in the city, still the one with the best view of it.",
+   "note": "Good gargoyles. Sound bell tower. I've spent more nights on its roof than inside it."
   },
   {
    "name": "Tricorner",
@@ -2967,7 +3308,9 @@
    "icon": "naval",
    "match": [
     "naval yard"
-   ]
+   ],
+   "bio": "The decommissioned naval yard on Tricorner — dry docks and empty sheds.",
+   "note": "Empty sheds are never empty."
   },
   {
    "name": "Gotham Docks",
@@ -2984,7 +3327,9 @@
     "pier",
     "waterfront",
     "shipyard"
-   ]
+   ],
+   "bio": "Dixon Docks and the Tricorner wharves — containers, cranes, night shifts, and cargo that never appears on a manifest.",
+   "note": "Half the guns in the city come through here."
   },
   {
    "name": "Blackgate Penitentiary",
@@ -2995,7 +3340,9 @@
    "icon": "prison",
    "match": [
     "blackgate"
-   ]
+   ],
+   "bio": "The city's maximum-security prison, on Blackgate Isle in the harbour, reached by causeway and ferry. Overcrowded, underfunded, and run on favours.",
+   "note": "Where the ones who aren't sick go. Mostly."
   },
   {
    "name": "Paris Island",
@@ -3076,7 +3423,9 @@
     "precinct",
     "police",
     "station"
-   ]
+   ],
+   "bio": "Blüdhaven Police Department — the precinct Dick Grayson works out of, and fights from within.",
+   "note": "Dick's precinct. He says it's getting better."
   },
   {
    "name": "Port's Park",
@@ -3110,7 +3459,109 @@
     "circus",
     "big top",
     "trapeze"
-   ]
+   ],
+   "bio": "Where Haly's Circus winters outside Blüdhaven — the big top folded, the trapeze rigs still up.",
+   "note": "Where Dick was born, in every way that counts."
+  },
+  {
+   "name": "Statue of Justice",
+   "x": 57.6,
+   "y": 130.4,
+   "area": "Justice Island",
+   "kind": "landmark",
+   "icon": "statue",
+   "match": [
+    "statue of justice",
+    "the statue",
+    "justice island"
+   ],
+   "bio": "The harbour statue on Justice Island, sword lowered, scales raised — the first thing ships see of Gotham.",
+   "note": "The city's idea of itself. Some nights it's close."
+  },
+  {
+   "name": "Cape Carmine Lighthouse",
+   "x": 86.6,
+   "y": 30.2,
+   "area": "Robinsville",
+   "kind": "landmark",
+   "icon": "lighthouse",
+   "match": [
+    "lighthouse",
+    "cape carmine"
+   ],
+   "bio": "The old lighthouse at the tip of Robinsville, automated now, watching the Atlantic approach."
+  },
+  {
+   "name": "Archie Goodwin International Airport",
+   "x": -16.0,
+   "y": 118.0,
+   "area": "Gotham County",
+   "kind": "landmark",
+   "icon": "airport",
+   "match": [
+    "airport",
+    "archie goodwin",
+    "flight",
+    "plane",
+    "terminal"
+   ],
+   "bio": "Gotham's international airport, out on the Gotham County shore.",
+   "note": "The jet's hangar is on the far side of the field."
+  },
+  {
+   "name": "Gotham Observatory",
+   "x": 37.6,
+   "y": 25.2,
+   "area": "Cherry Hills",
+   "kind": "landmark",
+   "icon": "observatory",
+   "match": [
+    "observatory",
+    "telescope"
+   ],
+   "bio": "The domed observatory on the Cherry Hills heights, the highest ground on the island."
+  },
+  {
+   "name": "Gotham Power Station",
+   "x": 78.4,
+   "y": 30.8,
+   "area": "New Town",
+   "kind": "landmark",
+   "icon": "industry",
+   "match": [
+    "power station",
+    "power plant"
+   ],
+   "bio": "The New Town generating station that keeps the north of the island lit."
+  },
+  {
+   "name": "Gotham Aquarium",
+   "x": 53.6,
+   "y": 113.0,
+   "area": "Old Gotham",
+   "kind": "landmark",
+   "icon": "water",
+   "match": [
+    "aquarium"
+   ],
+   "bio": "The aquarium on the Old Gotham waterfront.",
+   "note": "Oswald asked for a private tour once. We declined."
+  },
+  {
+   "name": "Gotham Royal Hotel",
+   "x": 49.4,
+   "y": 93.0,
+   "area": "Diamond District",
+   "kind": "landmark",
+   "icon": "hotel",
+   "match": [
+    "hotel",
+    "royal hotel",
+    "gala",
+    "ballroom"
+   ],
+   "bio": "The grand hotel of the Diamond District, where the Wayne Foundation holds its galas.",
+   "note": "Bruce Wayne's natural habitat. I leave early."
   }
  ],
  "regions": [
@@ -3124,5 +3575,352 @@
     "bludhaven"
    ]
   }
+ ],
+ "district_crime_extra": {
+  "The Narrows": 0.95,
+  "Blackgate Isle": 0.9,
+  "Paris Island": 0.6,
+  "Justice Island": 0.1
+ },
+ "subway": [
+  {
+   "name": "Kane Line",
+   "color": "#4fa8e0",
+   "stations": [
+    [
+     "Cherry Hills",
+     40.0,
+     27.0
+    ],
+    [
+     "Knightsdome",
+     50.6,
+     27.6
+    ],
+    [
+     "Burnley Square",
+     52.4,
+     40.2
+    ],
+    [
+     "Coventry",
+     40.6,
+     57.2
+    ],
+    [
+     "Gotham University",
+     29.6,
+     66.0
+    ],
+    [
+     "Upper West Side",
+     25.4,
+     84.6
+    ],
+    [
+     "Chinatown",
+     28.4,
+     101.8
+    ],
+    [
+     "Old Gotham",
+     44.4,
+     112.0
+    ]
+   ]
+  },
+  {
+   "name": "Robinson Line",
+   "color": "#c9a23a",
+   "stations": [
+    [
+     "Amusement Mile",
+     66.6,
+     25.6
+    ],
+    [
+     "New Town",
+     66.4,
+     35.6
+    ],
+    [
+     "Park Row",
+     64.0,
+     45.8
+    ],
+    [
+     "Bowery",
+     68.0,
+     51.6
+    ],
+    [
+     "Museum Mile",
+     61.0,
+     63.2
+    ],
+    [
+     "Fifth Avenue",
+     63.4,
+     75.4
+    ],
+    [
+     "Fashion Avenue",
+     65.2,
+     88.6
+    ],
+    [
+     "City Hall",
+     73.2,
+     98.6
+    ]
+   ]
+  },
+  {
+   "name": "Diamond Shuttle",
+   "color": "#58c08a",
+   "stations": [
+    [
+     "Union Station",
+     40.0,
+     96.6
+    ],
+    [
+     "Diamond Square",
+     46.8,
+     93.8
+    ],
+    [
+     "Theater District",
+     51.8,
+     89.4
+    ],
+    [
+     "GCPD Plaza",
+     54.0,
+     101.0
+    ],
+    [
+     "Financial District",
+     58.6,
+     104.6
+    ],
+    [
+     "Courthouse",
+     68.6,
+     107.4
+    ]
+   ]
+  }
+ ],
+ "roundabouts": [
+  {
+   "name": "Kane Circle",
+   "at": [
+    50.0,
+    28.2
+   ],
+   "r": 0.9
+  },
+  {
+   "name": "Coventry Circle",
+   "at": [
+    41.2,
+    59.2
+   ],
+   "r": 0.8
+  },
+  {
+   "name": "Grand Circle",
+   "at": [
+    56.2,
+    86.0
+   ],
+   "r": 1.0
+  },
+  {
+   "name": "Diamond Circle",
+   "at": [
+    50.2,
+    96.6
+   ],
+   "r": 0.9
+  },
+  {
+   "name": "Harbor Circle",
+   "at": [
+    52.0,
+    111.2
+   ],
+   "r": 0.8
+  }
+ ],
+ "ferries": [
+  {
+   "name": "Blackgate Ferry",
+   "line": [
+    [
+     60.0,
+     114.4
+    ],
+    [
+     62.0,
+     117.2
+    ],
+    [
+     64.6,
+     119.2
+    ]
+   ]
+  },
+  {
+   "name": "Statue Ferry",
+   "line": [
+    [
+     46.0,
+     117.4
+    ],
+    [
+     50.0,
+     124.0
+    ],
+    [
+     54.0,
+     128.0
+    ],
+    [
+     56.6,
+     129.4
+    ]
+   ]
+  },
+  {
+   "name": "Blüdhaven Ferry",
+   "line": [
+    [
+     79.0,
+     26.0
+    ],
+    [
+     86.0,
+     18.0
+    ],
+    [
+     96.0,
+     12.0
+    ],
+    [
+     108.0,
+     7.0
+    ],
+    [
+     116.0,
+     4.0
+    ]
+   ]
+  }
+ ],
+ "airport": {
+  "runways": [
+   [
+    [
+     -30.0,
+     112.0
+    ],
+    [
+     -2.0,
+     120.0
+    ]
+   ],
+   [
+    [
+     -24.0,
+     125.0
+    ],
+    [
+     -8.0,
+     106.0
+    ]
+   ]
+  ],
+  "apron": [
+   [
+    -20,
+    116
+   ],
+   [
+    -10,
+    118.4
+   ],
+   [
+    -11,
+    122
+   ],
+   [
+    -21,
+    119.6
+   ]
+  ],
+  "terminal": [
+   [
+    -19.4,
+    117.4
+   ],
+   [
+    -12.0,
+    119.2
+   ],
+   [
+    -12.6,
+    120.6
+   ],
+   [
+    -20.0,
+    118.8
+   ]
+  ]
+ },
+ "cores": [
+  [
+   45.2,
+   100.0,
+   2.4,
+   8.0
+  ],
+  [
+   49.0,
+   30.2,
+   1.5,
+   5.5
+  ],
+  [
+   65.0,
+   34.2,
+   1.2,
+   5.0
+  ],
+  [
+   62.0,
+   70.0,
+   1.1,
+   6.0
+  ],
+  [
+   64.0,
+   90.4,
+   1.5,
+   5.5
+  ],
+  [
+   106.0,
+   66.0,
+   1.1,
+   5.5
+  ],
+  [
+   122.0,
+   -9.0,
+   1.8,
+   5.5
+  ]
  ]
 }
