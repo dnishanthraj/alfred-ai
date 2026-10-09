@@ -1314,3 +1314,9 @@ html[data-rail="compact"] .panel__head .panel__label { display: none; }
    every messenger does. Pushing the first item down (rather than flex-end)
    keeps the thread scrollable back to its start. */
 .messages__thread > :first-child { margin-top: auto; }
+
+/* The console's own confirmation. */
+.modal__card--small { width: min(320px, calc(100% - 32px)); }
+.modal__detail { margin: 0 0 4px; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+.modal__btn--danger { border-color: rgba(224, 87, 79, 0.5); color: var(--alert); }
+.modal__btn--danger:hover { background: rgba(224, 87, 79, 0.08); }

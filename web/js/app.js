@@ -838,7 +838,6 @@
       renderDirectory();
       notify(event.speaker, event.message.text);
     }
-    if (document.hidden) systemNotify(event.speaker, event.message.text);
   }
 
   /* Presence changed: the dot, the line under their name, the thread header. */
@@ -873,7 +872,6 @@
     ConsoleSystem.say('incoming', event.speaker).then(function () {
       if (state.incomingId === event.speaker) ConsoleTones.startIncoming();
     });
-    if (document.hidden) systemNotify(event.speaker, 'Incoming call');
   }
 
   function closeIncoming() {
@@ -949,18 +947,6 @@
     ConsoleTones.stopRinging();
     ConsoleSystem.say(line, id);
     renderDirectory();
-  }
-
-  /* The system's own notification, for when the console isn't in front. */
-  function systemNotify(id, body) {
-    var contact = state.contacts[id];
-    if (!contact || !('Notification' in window) || Notification.permission !== 'granted') return;
-    try {
-      var n = new Notification(contact.full_name, {
-        body: body, tag: 'wayne-' + id, icon: '/static/portraits/' + id + '.png', silent: true
-      });
-      n.onclick = function () { window.focus(); openMessages(id); n.close(); };
-    } catch (e) {}
   }
 
   function updateInbox() {
@@ -1167,7 +1153,6 @@
           updateInbox();
           notifyGroup(id, m);
         }
-        if (document.hidden && m.from !== 'me') systemNotify(m.from, (state.groups[id] || {}).name + ': ' + m.text);
         renderGroups();
         break;
     }
@@ -1331,8 +1316,24 @@
   function deleteGroup() {
     var id = state.groupOpen;
     var g = state.groups[id];
-    if (!g || !window.confirm('Delete “' + g.name + '” and everything said in it?')) return;
-    fetch('/api/groups/' + id, { method: 'DELETE' });
+    if (!g) return;
+    // The console's own question, in its own style — never the browser's.
+    consoleConfirm('Delete “' + g.name + '”?', 'Everything said in it goes too.', 'Delete', function () {
+      fetch('/api/groups/' + id, { method: 'DELETE' });
+    });
+  }
+
+  /* A yes-or-no in the console's own dialog. */
+  function consoleConfirm(title, detail, action, onYes) {
+    $('confirm-title').textContent = title;
+    $('confirm-detail').textContent = detail;
+    $('confirm-yes').textContent = action;
+    var modal = $('confirm-modal');
+    var close = function () { modal.hidden = true; };
+    $('confirm-yes').onclick = function () { close(); onYes(); };
+    $('confirm-no').onclick = close;
+    modal.hidden = false;
+    $('confirm-no').focus();
   }
 
   /* --- notifications -------------------------------------------------------
@@ -1427,13 +1428,6 @@
     });
     document.addEventListener('click', function (e) {
       if (e.target.closest && e.target.closest('button:not(:disabled)')) ConsoleTones.press();
-    });
-    // Ask once, on a gesture, to notify when the console is behind other windows.
-    document.addEventListener('click', function ask() {
-      document.removeEventListener('click', ask);
-      if ('Notification' in window && Notification.permission === 'default') {
-        try { Notification.requestPermission(); } catch (e) {}
-      }
     });
   }
 

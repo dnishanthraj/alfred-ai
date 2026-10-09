@@ -180,8 +180,9 @@ A full review of the code turned up, among others:
   sentences and Lucius's rare, solemn thumbs-up — and a reply goes out as one
   composed message or several in a row.
 - **Notifications:** a reply that arrives while its thread is closed raises a
-  toast and a soft tone, and counts on the inbox button in the bar; with the
-  console in the background, a system notification.
+  toast and a soft tone, and counts on the inbox button in the bar — all inside
+  the console; nothing pops up from the browser or the system, and deleting a
+  group asks in the console's own dialog.
 - **Sounds for the furniture:** a dry tick as the pointer finds a button, a click
   when it's pressed, a sweep when a text leaves, an inbound ring distinct from
   the outgoing one. The typing indicator is a wave rather than an ellipsis.

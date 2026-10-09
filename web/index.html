@@ -212,6 +212,18 @@
     </div>
   </div>
 
+  <!-- The console's own yes-or-no. -->
+  <div class="modal" id="confirm-modal" hidden role="alertdialog" aria-labelledby="confirm-title">
+    <div class="modal__card modal__card--small">
+      <h2 class="modal__title" id="confirm-title"></h2>
+      <p class="modal__detail" id="confirm-detail"></p>
+      <div class="modal__actions">
+        <button class="modal__btn" id="confirm-no" type="button">Cancel</button>
+        <button class="modal__btn modal__btn--danger" id="confirm-yes" type="button">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <!-- A contact's status, shown on hovering their portrait. -->
   <div class="hovercard" id="hovercard" hidden>
     <span class="hovercard__name" id="hovercard-name"></span>
