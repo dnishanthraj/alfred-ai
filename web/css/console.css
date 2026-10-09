@@ -922,7 +922,10 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
   white-space: pre-wrap; word-wrap: break-word;
 }
 .bubble--them .bubble__text { background: var(--surface-2); color: var(--text); border-bottom-left-radius: 4px; }
-.bubble--me { align-self: flex-end; }
+/* Pushed to the right edge of its own row too: the timestamp beneath wraps
+   onto a full-width line, which makes the row wider than the bubble, and a
+   bubble left at the row's start sat stranded away from the edge. */
+.bubble--me { align-self: flex-end; justify-content: flex-end; }
 .bubble--me .bubble__text { background: rgba(79, 168, 224, 0.14); color: var(--operator); border-bottom-right-radius: 4px; }
 .bubble--typing .bubble__text { color: var(--text-faint); letter-spacing: 0.2em; }
 .messages__day { align-self: center; font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; color: var(--text-faint); text-transform: uppercase; margin: 6px 0; }
