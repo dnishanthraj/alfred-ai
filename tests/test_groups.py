@@ -97,6 +97,7 @@ def test_he_posts_and_each_member_reads_in_their_own_time(monkeypatch):
     console._post_as = post_as
     monkeypatch.setattr(web, "RECHECK_SECONDS", 0.05)
     monkeypatch.setattr(web.random, "uniform", lambda a, b: a)
+    monkeypatch.setattr(web.random, "random", lambda: 0.99)    # no leeway, no asides
     group = store.create("Night shift", ["nightwing", "robin"])
 
     async def run():

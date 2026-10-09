@@ -807,9 +807,29 @@ class Console(GroupChats):
             # something to type. Shown while the model worked, they sat there
             # for minutes whenever it was busy with something else.
             reply = await self._write_text(contact, "\n".join(m["text"] for m in batch))
+            session = self.session_for(contact.id)
+            choice = getattr(session, "_reply_choice", None)
+            if choice == "none":
+                logging.getLogger("wayne").info("%s chose not to answer", contact.id)
+                return
+            if choice == "later" and session._deferred:
+                # Their choice: they'll answer, just not now. If he texts again
+                # meanwhile, this is dropped and they answer everything at once.
+                waiting = len(self._pending_texts.get(contact.id, []))
+                await asyncio.sleep(random.uniform(*pace.get("on_read_for", [480, 2700])))
+                if len(self._pending_texts.get(contact.id, [])) > waiting:
+                    session._deferred = None
+                    return
+                said, held = session._deferred
+                session.history.record_exchange(said, held, via="text")
+                session._deferred = None
+                logging.getLogger("wayne").info("%s answered later", contact.id)
+            group_task = getattr(session, "_group_task", None)
             if reply:
                 await self._deliver(contact, reply, loop.time())
                 whereabouts.drop("callback")     # back in touch; no need to ring him back
+            if group_task:
+                self._spawn(self.carry_out_group_task(contact, *group_task))
                 if not glancing:
                     whereabouts.touch()
                     if random.random() < (contact.texting_pace or {}).get("drift", 0):

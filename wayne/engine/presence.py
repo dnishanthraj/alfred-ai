@@ -400,6 +400,8 @@ def read_delay(contact, state, rng=random):
     pace = contact.texting_pace or {}
     status = state["status"]
     if status == ONLINE:
+        if rng.random() < 0.1:
+            return rng.uniform(30, 180)      # saw it, finished what they were doing first
         return rng.uniform(*pace.get("online_read", [2, 9]))
     if status == IDLE:
         return rng.uniform(*pace.get("idle_read", [60, 600]))

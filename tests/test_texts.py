@@ -93,7 +93,8 @@ def test_a_night_past_midnight_belongs_to_the_night_it_began():
 def test_how_soon_they_read_depends_on_what_theyre_doing():
     contact = _contact(texting_pace={"online_read": [1, 2], "idle_read": [100, 200],
                                      "busy_read": [1000, 2000], "glance": 0})
-    assert 1 <= presence.read_delay(contact, {"status": "online"}) <= 2
+    steady = SimpleNamespace(random=lambda: 0.5, uniform=random.uniform)    # not one of the slow ones
+    assert 1 <= presence.read_delay(contact, {"status": "online"}, steady) <= 2
     assert 100 <= presence.read_delay(contact, {"status": "idle"}) <= 200
     assert 1000 <= presence.read_delay(contact, {"status": "busy"}) <= 2000
     assert presence.read_delay(contact, {"status": "offline"}) is None

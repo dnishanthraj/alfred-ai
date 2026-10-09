@@ -396,7 +396,7 @@
     b.type = 'button';
     b.className = 'book__act';
     b.dataset.kind = kind;
-    b.title = title;
+    b.dataset.tip = title;
     b.setAttribute('aria-label', title);
     b.innerHTML = ICONS[kind];
     b.disabled = !!disabled;
@@ -455,7 +455,7 @@
       var text = document.createElement('button');
       text.type = 'button';
       text.className = 'book__open';
-      text.title = contact.full_name + ' — ' + contact.role + ' (open personnel file)';
+
       var name = document.createElement('span');
       name.className = 'book__name';
       name.textContent = contact.name;
@@ -1047,7 +1047,7 @@
       text.appendChild(line);
       row.appendChild(faces);
       row.appendChild(text);
-      row.title = g.name + ' — ' + groupMembersLine(g);
+
       row.addEventListener('click', function () { openGroup(id); });
       li.appendChild(row);
       list.appendChild(li);
@@ -1428,6 +1428,33 @@
     });
     document.addEventListener('click', function (e) {
       if (e.target.closest && e.target.closest('button:not(:disabled)')) ConsoleTones.press();
+    });
+  }
+
+  /* The console's own tooltips — never the browser's. Anything with data-tip
+     gets one, in the same style as the status card, after a short hover. */
+  function wireTips() {
+    var tip = document.createElement('div');
+    tip.className = 'tip';
+    tip.hidden = true;
+    document.body.appendChild(tip);
+    var timer = null;
+    document.addEventListener('pointerover', function (e) {
+      var node = e.target.closest && e.target.closest('[data-tip]');
+      clearTimeout(timer);
+      if (!node || !node.dataset.tip) { tip.hidden = true; return; }
+      timer = setTimeout(function () {
+        tip.textContent = node.dataset.tip;
+        tip.hidden = false;
+        var r = node.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+        var x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8);
+        var y = r.bottom + 8 + h > window.innerHeight ? r.top - h - 8 : r.bottom + 8;
+        tip.style.left = x + 'px';
+        tip.style.top = y + 'px';
+      }, 450);
+    });
+    ['pointerdown', 'scroll', 'blur'].forEach(function (name) {
+      window.addEventListener(name, function () { clearTimeout(timer); tip.hidden = true; }, true);
     });
   }
 
@@ -1854,7 +1881,7 @@
     el['mode-ptt'].classList.toggle('is-on', mode === 'ptt');
     el['mode-ambient'].classList.toggle('is-on', mode === 'ambient');
     el.ptt.dataset.ambient = mode === 'ambient' ? '1' : '0';
-    el.ptt.title = mode === 'ambient'
+    el.ptt.dataset.tip = mode === 'ambient'
       ? 'Listening — click to send now'
       : 'Hold to speak (or hold Space)';
     ConsoleMic.setMode(mode).catch(function () {
@@ -2099,6 +2126,7 @@
   wireSystem();
   wireLayout();
   wireSounds();
+  wireTips();
   try { state.unread = JSON.parse(recall('unread') || '{}') || {}; } catch (e) { state.unread = {}; }
   updateInbox();
   loadSession().then(startBoot, startBoot);

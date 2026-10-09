@@ -210,6 +210,12 @@ _SEARCH_MARKER_COMPLETE = re.compile(r"\[\s*SEARCH\s*:\s*([^\]\n]+?)\s*(?:\]|\n)
 # was read as a marker and spoken as "Re".
 _SEARCH_MARKER = re.compile(r"(?:\[\s*|^\s*)SEARCH\s*:\s*([^\]\n]+?)\s*\]?\s*$", re.M)
 
+# Something he asked them, privately, to go and say or do in a group chat.
+_GROUP_TASK = re.compile(r"\[\s*group\s*:\s*([^|\]]+)\|([^\]]+)\]", re.I)
+
+# A text they've chosen not to answer yet, or at all.
+_REPLY_CHOICE = re.compile(r"\[\s*(later|no reply)\s*\]", re.I)
+
 # Written at the end of a reply when they're the one closing the call.
 _HANG_UP = re.compile(r"\[\s*(hang(s|ing)?\s+up|end(s|ing)?\s+(the\s+)?call|click)\b[^\]]*\]", re.I)
 
@@ -395,6 +401,16 @@ class ContactSession:
                 # They're closing the call: their goodbye is meant, not trailing.
                 self._hanging_up = leaving = True
                 buffer = _HANG_UP.sub("", buffer)
+            task = _GROUP_TASK.search(buffer)
+            if task:
+                self._group_task = (task.group(1).strip(), task.group(2).strip())
+                buffer = _GROUP_TASK.sub("", buffer)
+            elif "[group" in buffer.lower() and "]" not in buffer[buffer.lower().rfind("[group"):]:
+                continue        # half a marker so far; wait for the rest
+            choice = _REPLY_CHOICE.search(buffer)
+            if choice:
+                self._reply_choice = "none" if "no" in choice.group(1).lower() else "later"
+                buffer = _REPLY_CHOICE.sub("", buffer)
 
             # Watched for the whole reply, not just its opening. He may write
             # the marker straight away, or say "I'll see what I can find" and
@@ -965,7 +981,7 @@ class ContactSession:
         parts = [grapevine.block(self.contact.id), groupchat.block(self.contact.id, directory())]
         return "\n\n".join(p for p in parts if p)
 
-    def group_post(self, group, unread, must=False, opening=None):
+    def group_post(self, group, unread, must=False, opening=None, task=None):
         """
         Their next message in a group chat, or "" if they'd rather not say
         anything. `unread` is what they've just read; `opening` is something on
@@ -991,7 +1007,10 @@ class ContactSession:
         if unread:
             context.append("Just now (you've only now read these):\n" + groupchat.transcript(unread, name))
         style = f" ({self.contact.texting})" if self.contact.texting else ""
-        if opening:
+        if task:
+            ask = (f"Bruce asked you privately to do this in the group: {task}. Do it now, in your own "
+                   "words, as you would — don't mention that he asked unless you'd naturally say so.")
+        elif opening:
             ask = (f"Nobody's said anything for a while. Start something in the group — {opening}. "
                    "One or two short texts.")
         else:
@@ -1187,6 +1206,7 @@ class ContactSession:
 
         awareness = self._awareness(prompt, interrupted, confidence)
         texting = via == "text"
+        self._reply_choice, self._deferred, self._group_task = None, None, None
         length, self._turn_cap = None, None
         if via is None and not self.call:
             # A call: this turn's length, from their own spread (see
@@ -1206,6 +1226,23 @@ class ContactSession:
             elif state["doing"] and state["source"] in ("routine", "conversation"):
                 # Patrol is when they're most reachable — and least chatty.
                 awareness.append(f"You're {state['doing']}; texting between things, so keep it short.")
+            # Theirs to decide, whatever their status: answer now, sit on it, or not at all.
+            pace = self.contact.texting_pace or {}
+            habit = ("You do this a lot." if pace.get("on_read", 0) + pace.get("ghost", 0) >= 0.4 else
+                     "You do it sometimes." if pace.get("on_read", 0) + pace.get("ghost", 0) >= 0.15 else
+                     "You almost never do this.")
+            from ..memory import groups as group_store
+            mine = [g.name for g in group_store.groups_with(self.contact.id)]
+            if mine:
+                awareness.append(
+                    "Your group chats with him: " + ", ".join(f"“{n}”" for n in mine) + ". If he asks you "
+                    "to say or do something in one, don't write it here — answer him here (asking which "
+                    "chat if it isn't clear), and end with [group: exact chat name | what you'll do there]; "
+                    "you'll then go and do it in the chat yourself.")
+            awareness.append(
+                "You've read it. If you'd genuinely leave him on read for a while right now — mood, "
+                "pride, busy, making a point — begin with [later] and write what you'd eventually send; "
+                "if you wouldn't answer at all, reply exactly [no reply]. " + habit)
         if via == "text_on_call":
             awareness.append(
                 "He's just texted you this while you're on the call together — it's on "
@@ -1296,6 +1333,20 @@ class ContactSession:
 
         if not isinstance(reply, str) or not reply:
             reply = reply if isinstance(reply, str) and reply else "Mm."
+        if texting and self._reply_choice == "none":
+            # Read, and left. Remembered as exactly that.
+            self.history.record_exchange(said, "(You read it and didn't answer.)", via="text")
+            self._spoken = []
+            yield events.reply_end("")
+            yield events.state(events.IDLE)
+            return
+        if texting and self._reply_choice == "later":
+            # Held back, not remembered until it's actually sent (Console decides).
+            self._deferred = (said, reply)
+            self._spoken = []
+            yield events.reply_end(reply)
+            yield events.state(events.IDLE)
+            return
         self.history.record_exchange(said, reply, via="text" if via == "text" else None)
         self._spoken = []
         self.heard = []

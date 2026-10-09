@@ -112,7 +112,7 @@ class GroupChats:
             # More arrived while they were reading or writing: another look.
             group = store.of(group_id)
             if group is not None and group.unread_for(contact.id):
-                self._read_later(group, contact)
+                self._read_later(group, contact.id)
 
     async def _maybe_reply(self, group, contact, unread):
         must = any(groupchat.addressed(m["text"], contact) for m in unread if m["from"] != contact.id)
@@ -143,14 +143,36 @@ class GroupChats:
         await asyncio.sleep(delay)
         await coroutine
 
-    async def _post_as(self, group, contact, unread=(), must=False, opening=None):
+    async def carry_out_group_task(self, contact, chat_name, task):
+        """
+        He asked them in a DM to say or do something in a group. They find the
+        chat they're both in that he meant, and go and do it — in a moment, in
+        their own words. Asked about a chat that isn't clear, they'll have asked
+        him which in the DM, and nothing happens here.
+        """
+        import difflib
+        theirs = store.groups_with(contact.id)
+        names = {g.name.lower().strip(" .!"): g for g in theirs}
+        match = difflib.get_close_matches(chat_name.lower().strip(" .!"), list(names), 1, 0.5)
+        group = names[match[0]] if match else (theirs[0] if len(theirs) == 1 else None)
+        if group is None:
+            log.info("%s couldn't tell which group was meant", contact.id)
+            return
+        await asyncio.sleep(random.uniform(15, 75))
+        log.info("%s doing what he asked in group %s", contact.id, group.id)
+        await self._post_as(group, contact, task=task)
+
+    async def _post_as(self, group, contact, unread=(), must=False, opening=None, task=None):
         """They write, type and send — then everyone else reads it in turn."""
         session = self.session_for(contact.id)
         loop = asyncio.get_running_loop()
         session._group_actions = {"leave": False, "add": []}
         async with self.turn_lock:
-            text = await loop.run_in_executor(None, session.group_post, group, list(unread), must, opening)
+            text = await loop.run_in_executor(None, session.group_post, group, list(unread), must,
+                                              opening, task)
         actions = getattr(session, "_group_actions", {}) or {}
+        if task:
+            actions["asked"] = True     # he asked for this, in a DM: it stands
         if not text:
             await self._group_actions(group, contact, actions)
             return
@@ -186,7 +208,8 @@ class GroupChats:
             newcomer = next((c for c in self.directory
                              if name.lower() in (c.name.lower(), c.full_name.lower(), c.id)), None)
             if (newcomer and newcomer.id != contact.id and newcomer.id not in group.members
-                    and groupchat.may_add(group, contact, newcomer) and group.add_member(newcomer.id)):
+                    and (actions.get("asked") or groupchat.may_add(group, contact, newcomer))
+                    and group.add_member(newcomer.id)):
                 groupchat.note_added(group)
                 line = group.system(f"{contact.name} added {newcomer.name}")
                 log.info("%s added %s to group %s", contact.id, newcomer.id, group.id)
@@ -197,7 +220,8 @@ class GroupChats:
             member = next((c for c in self.directory
                            if name.lower() in (c.name.lower(), c.full_name.lower(), c.id)), None)
             if (member and member.id != contact.id and member.id in group.members
-                    and len(group.members) > 1 and groupchat.may_remove(group, contact, member)
+                    and len(group.members) > 1
+                    and (actions.get("asked") or groupchat.may_remove(group, contact, member))
                     and group.remove_member(member.id)):
                 await self._drop_member(group, member.id)
                 line = group.system(f"{contact.name} removed {member.name}")

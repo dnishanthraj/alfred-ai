@@ -1320,3 +1320,10 @@ html[data-rail="compact"] .panel__head .panel__label { display: none; }
 .modal__detail { margin: 0 0 4px; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
 .modal__btn--danger { border-color: rgba(224, 87, 79, 0.5); color: var(--alert); }
 .modal__btn--danger:hover { background: rgba(224, 87, 79, 0.08); }
+
+/* The console's own tooltip. */
+.tip { position: fixed; z-index: 80; pointer-events: none; max-width: 240px; padding: 6px 9px;
+  background: var(--raised); border: 1px solid var(--hairline-2); color: var(--text-dim);
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45); animation: toast-in 0.14s var(--ease) both; }
+.tip[hidden] { display: none; }

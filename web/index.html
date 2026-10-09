@@ -43,7 +43,7 @@
   <!-- ── Console ──────────────────────────────────────────────────────── -->
   <header class="bar">
     <div class="bar__left">
-    <button class="bar__btn" id="rail-toggle" type="button" title="Show or hide the directory" aria-label="Toggle directory">
+    <button class="bar__btn" id="rail-toggle" type="button" data-tip="Show or hide the directory" aria-label="Toggle directory">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h16"/></svg>
     </button>
     <div class="bar__brand">
@@ -59,7 +59,7 @@
     </div>
     <div class="bar__title" id="bar-title"></div>
     <div class="bar__status">
-      <button class="bar__btn bar__inbox" id="inbox" type="button" title="Messages" aria-label="Messages">
+      <button class="bar__btn bar__inbox" id="inbox" type="button" data-tip="Messages" aria-label="Messages">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span class="bar__count" id="inbox-count" hidden></span>
       </button>
@@ -71,11 +71,11 @@
 
     <!-- Directory -->
     <aside class="rail" id="rail">
-      <div class="rail__resize" id="rail-resize" title="Drag to resize"></div>
+      <div class="rail__resize" id="rail-resize" data-tip="Drag to resize"></div>
       <section class="panel panel--book">
         <div class="panel__head">
           <h2 class="panel__label">Directory</h2>
-          <button class="groups__new" id="group-new" type="button" title="New group chat"
+          <button class="groups__new" id="group-new" type="button" data-tip="New group chat"
                   aria-label="New group chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>+</span></button>
         </div>
         <div class="groups__wrap" id="groups-wrap" hidden>
@@ -118,15 +118,15 @@
 
     <!-- Messages: a text thread with one contact -->
     <aside class="messages" id="messages" hidden>
-      <div class="messages__resize" id="messages-resize" title="Drag to resize"></div>
+      <div class="messages__resize" id="messages-resize" data-tip="Drag to resize"></div>
       <header class="messages__head">
-        <button class="messages__avatar" id="messages-avatar" type="button" title="Open personnel file"></button>
-        <div class="messages__who" id="messages-who" title="Open personnel file">
+        <button class="messages__avatar" id="messages-avatar" type="button" data-tip="Open personnel file"></button>
+        <div class="messages__who" id="messages-who" data-tip="Open personnel file">
           <span class="messages__name" id="messages-name"></span>
           <span class="messages__role" id="messages-role"></span>
         </div>
         <button class="messages__delete" id="messages-delete" type="button" hidden
-                title="Delete this group" aria-label="Delete this group"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg></button>
+                data-tip="Delete this group" aria-label="Delete this group"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg></button>
         <button class="messages__close" id="messages-close" type="button" aria-label="Close messages">Close</button>
       </header>
       <ol class="messages__thread" id="messages-thread"></ol>
@@ -158,7 +158,7 @@
       </div>
 
       <form class="compose" id="compose">
-        <button type="button" class="ptt" id="ptt" title="Hold to speak (or hold Space)">
+        <button type="button" class="ptt" id="ptt" data-tip="Hold to speak (or hold Space)">
           <span class="ptt__ring" aria-hidden="true"></span>
           <span class="ptt__glyph" aria-hidden="true"></span>
         </button>
@@ -171,7 +171,7 @@
         <div class="modes" role="group" aria-label="Microphone mode">
           <button type="button" class="modes__btn is-on" id="mode-ptt">Push</button>
           <button type="button" class="modes__btn is-disabled" id="mode-ambient"
-                  title="Ambient listening — under development" disabled>Ambient</button>
+                  data-tip="Ambient listening — under development" disabled>Ambient</button>
         </div>
       </form>
 
