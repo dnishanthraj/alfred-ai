@@ -249,5 +249,6 @@
     "busy_text": 0.6,
     "callback": 0.85,
     "callback_call": 0.3
-  }
+  },
+  "home": "Wayne Manor"
 }

@@ -209,6 +209,7 @@ def test_a_text_to_someone_asleep_waits_until_they_can_see_it(tmp_path, monkeypa
     console._write_text = write
     monkeypatch.setattr(web, "RECHECK_SECONDS", 0.1)
     monkeypatch.setattr(web.random, "uniform", lambda a, b: a)
+    monkeypatch.setattr(web.random, "random", lambda: 0.99)    # no ghosting, no leeway
 
     async def run():
         await console.text("nightwing", "you up?")

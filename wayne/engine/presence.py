@@ -152,6 +152,10 @@ class Presence:
         key = time.strftime("%Y-%m-%d", time.localtime(t or time.time()))
         return bool((self._state.get("plans") or {}).get(key))
 
+    def plan_today(self, t=None):
+        key = time.strftime("%Y-%m-%d", time.localtime(t or time.time()))
+        return list((self._state.get("plans") or {}).get(key) or [])
+
     def set_plan(self, blocks, t=None):
         """Their own plan for the day — kept for today and yesterday's late night."""
         key = time.strftime("%Y-%m-%d", time.localtime(t or time.time()))
@@ -252,6 +256,17 @@ class Presence:
             self._state["lines"] = dict(list(lines.items())[-12:])
             self.save()
 
+    def whereabouts(self, t=None):
+        """
+        (place, [contact ids with them]) — from their own plan for now, or home
+        when nothing in their day puts them elsewhere. ("", []) if unknown.
+        """
+        t = t or time.time()
+        block = self._routine(t) or self._whim(t) or {}
+        if block.get("where"):
+            return block["where"], list(block.get("with") or [])
+        return getattr(self.contact, "home", "") or "", []
+
     def public(self, t=None):
         """
         What the page is told. Someone who doesn't share their status — Jason,
@@ -262,8 +277,11 @@ class Presence:
         if not self.contact.shares_status:
             shown = getattr(self.contact, "hidden_as", "unknown") or "unknown"
             return {"status": shown, "doing": "", "last_active": None, "line": self.line(t)}
-        return {"status": state["status"], "doing": state["doing"],
-                "last_active": state["last_active"] or None, "line": self.line(t)}
+        shown = {"status": state["status"], "doing": state["doing"],
+                 "last_active": state["last_active"] or None, "line": self.line(t)}
+        if getattr(self.contact, "shares_location", True):
+            shown["where"], shown["with"] = self.whereabouts(t)
+        return shown
 
     def note(self, t=None):
         """
@@ -275,7 +293,15 @@ class Presence:
         if state["source"] not in ("conversation", "routine") or not state["doing"]:
             return ""
         how_long = describe_until(state["until"], t)
-        line = f"Right now you're {state['doing']}" + (f", {how_long}" if how_long else "") + "."
+        where, company = self.whereabouts(t) if state["source"] == "routine" else ("", [])
+        line = (f"Right now you're {state['doing']}" + (f" ({where})" if where else "")
+                + (f", {how_long}" if how_long else "") + ".")
+        if company:
+            from ..contacts import directory
+            book = directory()
+            names = [book.get(c).name for c in company if book.get(c)]
+            if names:
+                line += f" You're with {' and '.join(names)}."
         if state["status"] == OFFLINE:
             line += " Your phone wasn't in your hand; he's reached you anyway."
         elif state["status"] == BUSY:

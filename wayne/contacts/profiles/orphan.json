@@ -249,5 +249,6 @@
     "callback": 0.95,
     "callback_call": 0.6
   },
-  "silence": "Silence doesn't bother you — you might just say his name."
+  "silence": "Silence doesn't bother you — you might just say his name.",
+  "home": "Wayne Manor"
 }

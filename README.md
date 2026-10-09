@@ -17,8 +17,8 @@ their own memory on disk.
 
 - **A console, not a chat window** — contact directory, live status readouts, and a
   radial spectrum ring driven by the real FFT of the voice currently speaking.
-- **Two microphone modes** — push-to-talk, or an ambient always-open channel with
-  voice-activity detection and barge-in (talk over a reply and it stops).
+- **Hold to talk, or type** — push-to-talk with barge-in (talk over a reply and
+  it stops); an ambient always-open mode is built but withheld from the interface.
 - **Speech that starts before the reply is finished** — sentences are synthesized as
   the model writes them, several in flight at once, so audio begins in about half a
   second rather than after the whole answer.
@@ -216,7 +216,7 @@ you are typing at software.
 
 ### Talking
 
-Two microphone modes, switchable in the composer:
+Speaking:
 
 - **Push** — hold the mic button, **Space**, or **Right Command**, speak,
   release. Reliable in a noisy room.
@@ -285,6 +285,10 @@ hanging. Budgeted — a handful a day across everyone, never two within the hour
 none in your quiet hours, none from someone already waiting on you — so it reads
 as people rather than notifications.
 
+Hover a portrait for their status line, what they're doing and — for those who
+share it — where they are and who with, from the day they planned (Jason,
+Selina and Randy don't share).
+
 ### Group chats
 
 Make a group of any of them from the directory (**+** under Groups). Each member
@@ -294,8 +298,20 @@ thread's energy and yours restore it, so a chat drifts quiet the way a real one
 does. The group's log is the single record — what each member knows of it is
 what they've read, and it reaches them wherever they speak next, so Dick on a
 call can tell you what's been said in the group. With someone in it who doesn't
-know about the masks, the rest are told so. See `wayne/memory/groups.py` and
-`wayne/engine/groupchat.py`.
+know about the masks, the rest are told so. Type @ to tag a member (it pings
+them); double-click a message to react; they tag and react too. A late reply
+reads as one, a question nobody's read may get chased by someone who has, and
+a group call can carry on in the group afterwards. See `wayne/memory/groups.py`
+and `wayne/engine/groupchat.py`.
+
+### Group calls
+
+Ring a group from its chat (you and up to four; a bigger group lets you pick
+who), or add people one by one. Each has a seat — their ring, colour, name and
+words. Misses can dial back in, be texted on by someone on the call, or report
+back through them; anyone can ring someone else in, hang up, or leave, and the
+others react or don't. Pauses get filled — less each time — and now and then
+two people start at once and sort it out. See `wayne/engine/party.py`.
 
 ### Hearing you
 
@@ -408,7 +424,7 @@ The console is a phone book, not a single assistant. Nine contacts ship:
 Each is a JSON profile in [`wayne/contacts/profiles/`](wayne/contacts/profiles/)
 with its own memory under `data/<id>/`. A contact without a voice ID still
 works, in text. All of them share one model, so switching does not load a
-second. Call them, put up to three on one call, or text them — texts land in the
+second. Call them, put up to four on one call, or text them — texts land in the
 same memory as calls. What one hears may reach another, as hearsay, with who
 said it (see `wayne/engine/grapevine.py`).
 

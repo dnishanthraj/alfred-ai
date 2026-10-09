@@ -53,8 +53,48 @@ A full review of the code turned up, among others:
   it, so a secret identity reaches only the characters who would know it.
   Anyone can be someone else: copy the profile, point `WAYNE_OPERATOR` at it,
   and every contact follows. The previous real-life operator files are gone.
+- The push / ambient switch is gone from the composer: push-to-talk (hold the
+  button or Space) or type, in one pill like the messages box. The messages
+  panel's Close is an icon beside call and delete, rather than a button that
+  wrapped onto its own line in groups. Alfred's "sir" is a habit now, with
+  "Master Bruce" and the odd "Master Wayne"; Lucius's "Mr. Wayne" is joined by
+  a dry "sir".
 
 ### Added
+
+- **Group calls that behave like a room.** Ring a group from its chat — you and
+  up to four, each with their own ring, colour, name and subtitle; for a bigger
+  group, pick who. People pick up in their own time or don't; whoever misses it
+  may dial back in a few minutes later, or someone on the call texts them ("I'll
+  get her on") and they join, knowing who got them there — or report back what
+  came of it ("she's at the library"). Anyone can ring someone else in, hang up
+  on joining ("I told you not to call me"), or drop off mid-call, and the others
+  react, in their own way or not at all. Anyone named in a greeting or reaction
+  answers it ("Barbara, where were you?"). When you go quiet, someone fills the
+  pause — ribbing someone, picking a thread back up, asking if you're still
+  there — less with each line, so a call you've gone silent on drifts off. Now
+  and then two start at once, stop, and sort out who goes. Replies keep each
+  person's own length on a group call too. With someone on the line who doesn't
+  know about the masks, the rest keep it to what a family would say.
+- **Group chats, further:** a reply hours late reads as one ("(3 hours later)"),
+  and they know where they've been; whoever's waiting on a turn to write sees
+  what was said meanwhile, instead of two people answering the same question
+  blind; a question to someone who hasn't read it may get chased by someone who
+  has ("@Barb??", "she's at work"); tapbacks — theirs when they'd rather react
+  than write, yours with a double-click; the occasional "typing…" that comes to
+  nothing; and after a group call, sometimes, a word about it in the group.
+- **@ tags.** Type @ for a list of who can be tagged here — the group's members,
+  or the one person in a DM. A tag shows in their colour, with their card on
+  hover, and pings: a tagged person is far likelier to look now. They tag each
+  other too.
+- **Where they are.** Hover a portrait and, for those who'd share it, see where
+  they are and who's with them — "Crime Alley rooftops · with Dick" — from the
+  day each sketched, or home. Plans are written knowing what the others in the
+  secret have planned, so two who'd patrol together say so on both sides; what
+  they tell you on a call matches the map. Jason, Selina and Randy don't share.
+- **Left on read, as people would.** A question you never answered is chased
+  once, by the ones who would — or they move on to something else, or let it
+  go. How soon they'll start something new after your silence is theirs too.
 
 - **Days of their own.** Each contact sketches their own day with the model, once a
   day and only while it's already loaded — sleep, work, whether they're going out
@@ -454,7 +494,7 @@ A full review of the code turned up, among others:
 
 - **He remembered things that never happened — and they came from the primer.**
   Asked "have I ever driven home drunk?", he answered "Once. Two years ago, at
-  Christmas. You threw up in the passenger seat before we even made Watford High
+  Christmas. You threw up in the passenger seat before we even made the High
   Street." Asked what had been discussed before, he recited the worked examples
   as past conversation. None of it was hallucination in the usual sense: the
   primer is injected as real user/assistant turns, and the model has no way to

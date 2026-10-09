@@ -129,6 +129,10 @@ class Contact:
     # What a hidden status shows as: "unknown", or "offline" for someone who
     # has simply gone dark (Randy).
     hidden_as: str = "unknown"
+    # Where they live, for when nothing in their day puts them elsewhere — and
+    # whether he can see where they are at all (Find My, between family).
+    home: str = ""
+    shares_location: bool = True
 
     @property
     def has_voice(self):
@@ -246,6 +250,8 @@ def _load_profile(path):
         shares_status=bool(raw.get("shares_status", True)),
         silence=raw.get("silence", ""),
         hidden_as=raw.get("hidden_as", "unknown"),
+        home=raw.get("home", ""),
+        shares_location=bool(raw.get("shares_location", raw.get("shares_status", True))),
     )
 
 

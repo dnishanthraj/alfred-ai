@@ -216,6 +216,9 @@ _GROUP_TASK = re.compile(r"\[\s*group\s*:\s*([^|\]]+)\|([^\]]+)\]", re.I)
 # A text they've chosen not to answer yet, or at all.
 _REPLY_CHOICE = re.compile(r"\[\s*(later|no reply)\s*\]", re.I)
 
+# Someone on a call ringing someone else in: [add: Jason].
+_CALL_ADD = re.compile(r"\[\s*add\s*:\s*([^\]]+)\]", re.I)
+
 # Written at the end of a reply when they're the one closing the call.
 _HANG_UP = re.compile(r"\[\s*(hang(s|ing)?\s+up|end(s|ing)?\s+(the\s+)?call|click)\b[^\]]*\]", re.I)
 
@@ -346,6 +349,7 @@ class ContactSession:
         self._pending_query = None
         self._cue_spent = False
         self._hanging_up = False
+        self._call_add = []
 
         def finalize(sentence):
             """Guard one sentence. Returns (emit, sentence) or (False, None)."""
@@ -401,6 +405,10 @@ class ContactSession:
                 # They're closing the call: their goodbye is meant, not trailing.
                 self._hanging_up = leaving = True
                 buffer = _HANG_UP.sub("", buffer)
+            adding = _CALL_ADD.search(buffer)
+            if adding:
+                self._call_add.append(adding.group(1).strip())
+                buffer = _CALL_ADD.sub("", buffer)
             task = _GROUP_TASK.search(buffer)
             if task:
                 self._group_task = (task.group(1).strip(), task.group(2).strip())
@@ -602,7 +610,7 @@ class ContactSession:
         """
         self._last_call = how
 
-    def boot(self, incoming=None, rung=0):
+    def boot(self, incoming=None, rung=0, also_ringing=()):
         """
         Generate the opening line. Stored as a proper user/assistant pair: a
         history starting with an orphaned assistant message leaves the model
@@ -627,6 +635,9 @@ class ContactSession:
                             "calling — a word of hello at most, then why.)")
         elif whereabouts:
             instruction += f"\n({whereabouts} He's calling you.)"
+        if also_ringing:
+            instruction += (f"\n(He's ringing several of you at once — {', '.join(also_ringing)} too. "
+                            "You're the first on the line; the others may join.)")
         if rung and not incoming:
             instruction += (f"\n(He's rung you {rung + 1} times in the last few minutes before you "
                             "picked up. React to that the way you would.)")
@@ -942,6 +953,34 @@ class ContactSession:
         text = _SEARCH_MARKER.sub("", text)
         return _HANG_UP.sub("", text).strip()
 
+    def draft(self, instruction):
+        """
+        What they'd say to this, written but not said — for two people opening
+        their mouths into the same pause, where only the first words come out.
+        """
+        payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
+        try:
+            text = self._chat_once(payload, temperature=0.85, num_predict=80)
+        except Exception:
+            return ""
+        if re.match(r"\W*skip\b", text or "", re.I):
+            return ""
+        text = re.sub(r"\[[^\]]*\]", "", text or "")
+        return self._plain(text).strip()
+
+    def utter(self, text, cut_off=False):
+        """
+        Say exactly this — a line already drafted — as an event stream. A
+        line cut off by someone else isn't remembered as said; one finished is.
+        """
+        yield events.reply_start()
+        for i, sentence in enumerate(guards.split_sentences(text)):
+            if sentence.strip():
+                yield events.sentence(i, sentence.strip())
+        if text and not cut_off:
+            self.history.record_aside(text)
+        yield events.reply_end(text)
+
     def say(self, instruction, prompted_by=None, greeting=False, farewell=False):
         """
         One line the contact says because of something on the call — joining
@@ -954,6 +993,18 @@ class ContactSession:
             text = self._chat_once(payload, temperature=0.85, num_predict=80)
         except Exception:
             text = ""
+        if re.match(r"\W*skip\b", text or "", re.I):
+            text = ""       # nothing they'd say
+        # Chasing someone who didn't pick up: "I'll text her."
+        self._nudging = bool(re.search(r"\[\s*nudge\s*\]", text or "", re.I))
+        text = re.sub(r"\[\s*nudge\s*\]", "", text or "", flags=re.I)
+        # Talked over: letting the other one go first.
+        self._yielding = bool(re.search(r"\[\s*(yield|you go)\s*\]", text or "", re.I))
+        text = re.sub(r"\[\s*(yield|you go)\s*\]", "", text or "", flags=re.I)
+        # Joining only to say no — "I told you not to call me" — and gone.
+        self._hanging_up = bool(_HANG_UP.search(text or ""))
+        self._call_add = [m.strip() for m in _CALL_ADD.findall(text or "")]
+        text = _CALL_ADD.sub("", text or "")
         text = self._plain(text)
         # Joining a call is a greeting and leaving one a goodbye: the guards
         # that strip those from ordinary turns emptied both to "Mm.".
@@ -981,7 +1032,7 @@ class ContactSession:
         parts = [grapevine.block(self.contact.id), groupchat.block(self.contact.id, directory())]
         return "\n\n".join(p for p in parts if p)
 
-    def group_post(self, group, unread, must=False, opening=None, task=None):
+    def group_post(self, group, unread, must=False, opening=None, task=None, chase=None):
         """
         Their next message in a group chat, or "" if they'd rather not say
         anything. `unread` is what they've just read; `opening` is something on
@@ -1006,13 +1057,30 @@ class ContactSession:
             context.append("Earlier in the chat:\n" + groupchat.transcript(earlier, name))
         if unread:
             context.append("Just now (you've only now read these):\n" + groupchat.transcript(unread, name))
+        # Where they are and how late they are to it: a reply three hours on
+        # reads as one, and they can say why — or not.
+        state = presence.of(self.contact).now()
+        waited = time.time() - min(m["at"] for m in unread) if unread else 0
+        if waited > groupchat.GAP:
+            context.append(f"These came in over the last {groupchat.later(waited)}; you're only "
+                           "seeing them now" + (f" — you've been {state['doing']}." if state["doing"] else "."))
+        elif state["doing"]:
+            context.append(f"Right now you're {state['doing']}.")
         style = f" ({self.contact.texting})" if self.contact.texting else ""
         if task:
             ask = (f"Bruce asked you privately to do this in the group: {task}. Do it now, in your own "
                    "words, as you would — don't mention that he asked unless you'd naturally say so.")
+        elif chase:
+            ask = (f"{operator_name()} asked {chase['name']} something in here {chase['ago']} and they "
+                   "haven't even read it yet."
+                   + (f" As far as you know they're {chase['doing']}." if chase.get("doing") else "")
+                   + f" Say something about it if you would — ping them with @{chase['name']}, cover "
+                   "for them, or tell him where they probably are (only what you'd actually know). "
+                   "If you wouldn't bother, reply with exactly SKIP.")
         elif opening:
-            ask = (f"Nobody's said anything for a while. Start something in the group — {opening}. "
-                   "One or two short texts.")
+            quiet = (time.time() - group.messages()[-1]["at"] > 3600) if group.messages() else True
+            ask = (("Nobody's said anything for a while. " if quiet else "")
+                   + f"Start something in the group — {opening}. One or two short texts.")
         else:
             ask = ("Read what's actually going on — what Bruce means, and what you know of everyone "
                    "here — then write your next message to the group, the way you text in a group: "
@@ -1026,6 +1094,11 @@ class ContactSession:
                     "asked you to add someone — and only then, or if someone is truly needed and he "
                     "hasn't said to keep it small — end with [add: their first name]"
                     + (f" (could be {', '.join(c.name for c in others)})" if others else "") + ".")
+        ask += (" Most messages tag nobody; tag someone with @Name only to pull in someone who isn't "
+                "already talking — never the person you're replying to. If you'd just react to "
+                "the latest message instead of writing anything — the way you actually do, if you "
+                "do — reply with only [react: emoji], usually one of ❤️ 👍 👎 😂 ‼️ ❓; you can also put "
+                "[react: emoji] with a text.")
         instruction = ("[REFERENCE — context only]\n" + "\n".join(context) + "\n[END REFERENCE]\n\n"
                        + ask + f" As texts{style}; never write a line for anyone else, no stage cues.")
         payload = prompting.build_payload(self.contact, self.history.for_model(), instruction,
@@ -1038,11 +1111,15 @@ class ContactSession:
         self._group_actions = {
             "leave": bool(re.search(r"\[\s*leave\s*\]", text, re.I)),
             "add": [m.strip() for m in re.findall(r"\[\s*add\s*:\s*([^\]]+)\]", text, re.I)],
-            "remove": [m.strip() for m in re.findall(r"\[\s*remove\s*:\s*([^\]]+)\]", text, re.I)]}
-        text = re.sub(r"\[\s*(leave|(add|remove)\s*:[^\]]*)\]", "", text, flags=re.I)
+            "remove": [m.strip() for m in re.findall(r"\[\s*remove\s*:\s*([^\]]+)\]", text, re.I)],
+            "react": next(iter(re.findall(r"\[\s*react\s*:\s*([^\]]{1,8})\]", text, re.I)), "").strip()}
+        text = re.sub(r"\[\s*(leave|(add|remove|react)\s*:[^\]]*)\]", "", text, flags=re.I)
+        text = re.sub(r"\s*\[[^\]]{0,14}\]", "", text)     # a marker half-written: "[]", "[react]"
         text = self._plain(text)
         if re.match(r"\W*skip\b", text, re.I) and not must:
             return ""
+        if not text.strip(" .") and self._group_actions["react"]:
+            return ""           # a tapback, and nothing to say
         # A line written for someone else ("Tim: lol") is theirs to write, not this one's.
         lines = []
         for line in text.splitlines():
@@ -1080,8 +1157,9 @@ class ContactSession:
             context.append(background)
         style = f" ({self.contact.texting})" if self.contact.texting else ""
         if why == "chase":
-            ask = ("He hasn't answered your last text. Send one more, the way you'd chase "
-                   "an unanswered message — or nudge it from a new angle.")
+            ask = ("He's left your last text on read. What you do about it is yours: chase it the way "
+                   "you would, come at it from a new angle, or let it go and text him about something "
+                   "else entirely. If you'd honestly just leave it, reply with exactly SKIP.")
         elif why in ("declined", "missed"):
             ask = (f"You just rang him and he {'declined the call' if why == 'declined' else 'did not pick up'}. "
                    f"You were calling about: {about}. Text him instead, the way you would.")
@@ -1118,7 +1196,7 @@ class ContactSession:
         # A text, not a letter: told "a line or two", a model writes a paragraph.
         lines = [guards.cap_length(line, 3) for line in text.splitlines() if line.strip()][:4]
         text = "\n".join(lines)
-        if why == "second_thought" and re.match(r"\W*skip\b", text, re.I):
+        if why in ("second_thought", "chase") and re.match(r"\W*skip\b", text, re.I):
             return ""
         if text:
             self.history.record_exchange(REACH_MARKER, text, via="text")
@@ -1208,9 +1286,11 @@ class ContactSession:
         texting = via == "text"
         self._reply_choice, self._deferred, self._group_task = None, None, None
         length, self._turn_cap = None, None
-        if via is None and not self.call:
+        if via is None:
             # A call: this turn's length, from their own spread (see
-            # prompting.spoken_length) — and held to it.
+            # prompting.spoken_length) — and held to it. With company too: a
+            # group call isn't the place for the monologue a one-to-one might
+            # carry, and without it Tim answered "who's running point?" in five.
             length, self._turn_cap = prompting.spoken_length(self.contact, prompt)
             length = length or None
         if texting and getattr(self, "pestered", 0) >= 3:

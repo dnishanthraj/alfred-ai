@@ -42,9 +42,36 @@ def names(directory):
     return name
 
 
+# A pause in a thread long enough to show: "(2 hours later)" — so a reply
+# that took all afternoon reads as one, and "where were you?" can follow.
+GAP = 20 * 60
+
+
+def later(seconds):
+    minutes = seconds / 60
+    if minutes < 60:
+        return f"{int(minutes)} minutes"
+    hours = minutes / 60
+    if hours < 24:
+        return "an hour" if hours < 1.7 else f"{int(hours)} hours"
+    return "a day" if hours < 48 else f"{int(hours / 24)} days"
+
+
 def transcript(messages, name):
-    return "\n".join(f"({m.get('said') or m['text']})" if m.get("kind") == "system"
-                     else f"{name(m['from'])}: {m['text']}" for m in messages)
+    lines, prev = [], None
+    for m in messages:
+        if prev is not None and m["at"] - prev > GAP:
+            lines.append(f"({later(m['at'] - prev)} later)")
+        prev = m["at"]
+        if m.get("kind") == "system":
+            lines.append(f"({m.get('said') or m['text']})")
+            continue
+        line = f"{name(m['from'])}: {m['text']}"
+        reactions = m.get("reactions") or {}
+        if reactions:
+            line += "  [" + ", ".join(f"{e} from {name(who)}" for who, e in reactions.items()) + "]"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def relations(contact, group, directory):
@@ -84,8 +111,10 @@ def secrets_note(group, contact_id):
     outsiders = [m for m in group.members if m not in known]
     if not outsiders:
         return ""
-    return (f"Not everyone in this chat knows what's under the masks ({', '.join(outsiders)} "
-            "doesn't). Say nothing that would give anyone away.")
+    who = ", ".join(outsiders)
+    return (f"Not everyone in this chat knows about the masks ({who} doesn't). In front of {who}: "
+            "no patrols, cases, villains, suits, gear, the cave, or who anyone really is — only what "
+            "a family and its friends would say. Real names only.")
 
 
 def block(contact_id, directory, now=None):
@@ -117,6 +146,28 @@ def addressed(text, contact):
     return False
 
 
+def tagged(text, contact):
+    """'@Tim' — a tag, which pings, rather than just his name in passing."""
+    return any(re.search(rf"(?<!\w)@{re.escape(n)}\b", text or "", re.I)
+               for n in {contact.name, contact.full_name.split()[0], contact.id})
+
+
+def needless_tags(text, group, directory, sender):
+    """
+    An @ on someone already in the back-and-forth is just their name: people
+    tag to pull someone in, not on every reply to them.
+    """
+    recent = {m["from"] for m in group.messages()[-4:] if m.get("kind") != "system"} - {sender, "me"}
+    for cid in recent:
+        contact = directory.get(cid)
+        if contact is None:
+            continue
+        for n in {contact.name, contact.full_name.split()[0], contact.id}:
+            text = re.sub(rf"(?im)^@{re.escape(n)}\b[,:]?\s*", "", text)
+            text = re.sub(rf"(?i)(?<!\w)@({re.escape(n)})\b", r"\1", text)
+    return text
+
+
 def liveliness(group, directory):
     """
     How many of them are around right now, as a multiplier: a chat comes alive
@@ -137,8 +188,13 @@ def reply_odds(contact, group, unread, energy, lively=1.0):
     A question to the room: likely, for the chatty. Otherwise their own
     chattiness, scaled by how much life the thread has left.
     """
-    if any(addressed(m["text"], contact) for m in unread if m.get("kind") != "system"):
+    said = [m for m in unread if m.get("kind") != "system"]
+    if any(addressed(m["text"], contact) for m in said if m["from"] == "me"):
         return 1.0
+    if any(addressed(m["text"], contact) for m in said):
+        # One of them asking: likely, but not owed. Owed, two of them tagging
+        # each other went on for twenty messages, each "it's not just X, it's Y".
+        return max(0.0, min(0.95, (0.3 + 0.65 * energy) * lively))
     if all(m.get("kind") == "system" for m in unread):
         # Someone joined or was shown the door: some react, most don't.
         return max(0.0, min(0.7, 0.35 * energy * lively))

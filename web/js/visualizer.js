@@ -31,7 +31,10 @@
     return [parseInt(match[1], 16), parseInt(match[2], 16), parseInt(match[3], 16)];
   }
 
-  function Visualizer(canvas) {
+  /* `options.accent` fixes the colour — a seat on a group call stays its
+     person's colour rather than following whoever's on the line. */
+  function Visualizer(canvas, options) {
+    this.fixedAccent = options && options.accent ? hexToRgb(options.accent, null) : null;
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.values = new Float32Array(BARS);
@@ -83,6 +86,7 @@
     // Reading computed style every frame is wasteful; twice a second is plenty
     // to catch a contact switch.
     if (this._accentTick++ % 30) return;
+    if (this.fixedAccent) { this.accent = this.fixedAccent; return; }
     var value = getComputedStyle(document.documentElement)
       .getPropertyValue('--contact-accent');
     this.accent = hexToRgb(value, this.accent);

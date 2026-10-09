@@ -121,6 +121,21 @@ class Group:
             atomic_write(self.log_path, json.dumps(messages[-MAX_MESSAGES:]))
         return message
 
+    def react(self, message_id, member, emoji):
+        """A tapback on a message — or, with no emoji, taking one back. Returns the message."""
+        with _lock:
+            messages = self.messages()
+            for message in messages:
+                if message.get("id") == message_id:
+                    reactions = message.setdefault("reactions", {})
+                    if emoji:
+                        reactions[member] = emoji
+                    else:
+                        reactions.pop(member, None)
+                    atomic_write(self.log_path, json.dumps(messages[-MAX_MESSAGES:]))
+                    return message
+        return None
+
     def add_member(self, contact_id, at=None):
         """In they come — having read nothing yet, so the recent thread is theirs to read."""
         with _lock:

@@ -56,6 +56,8 @@
     lastSpeaker: null, // who said the line on screen, on a call with company
     incomingId: null, // who is calling him right now
     groups: {},       // group chats by id: {id, name, members, reads, last}
+    seats: {},        // a call with company: contact id -> {node, viz, line}
+    groupRinging: [], // rung together, not yet picked up (or turned down)
     groupTyping: {}   // group id -> {contact id: true} while they write
   };
 
@@ -79,7 +81,7 @@
   // The old windows (26–48s, then 17–29s, then hang up) closed the call after
   // about a minute and a half of quiet, and every nudge was the same question.
   // Contacts on one call at once: whoever was rung, and two more.
-  var MAX_PARTY = 3;
+  var MAX_PARTY = 4;
 
   var IDLE_WINDOWS = [
     [30000, 30000],   // first lull: he says something of his own
@@ -88,6 +90,10 @@
   ];
   var AFTER_QUESTION = [9000, 6000];   // he asked and you went quiet
   var MAX_NUDGES = IDLE_WINDOWS.length - 1;
+  // On a call with company a pause is shorter before somebody fills it — or
+  // lets it sit; the server decides which, and who.
+  var GROUP_LULL = [8000, 10000];
+  var MAX_LULLS = 3;
 
   // When he says he needs a moment, he takes one — and comes back on his own.
   var HE_ASKED_FOR_TIME = /\b(give me|just|hold on|hang on|one|bear with)\s*(a\s*)?(moment|minute|second|sec|mo)\b|\blet me (think|check|see)\b/i;
@@ -111,7 +117,7 @@
   function cacheElements() {
     ['input', 'compose', 'ptt', 'clock', 'bar-title', 'book', 'lock',
      'heard', 'utterance', 'status', 'empty', 'viz-wrap', 'ringing-label',
-     'mode-ptt', 'mode-ambient', 'dossier', 'dossier-close', 'dossier-name',
+     'dossier', 'dossier-close', 'dossier-name',
      'dossier-role', 'dossier-text', 'dossier-save', 'dossier-saved',
      'dossier-portrait', 'messages', 'messages-avatar', 'messages-name', 'messages-role',
      'messages-close', 'messages-thread', 'messages-compose', 'messages-input',
@@ -120,7 +126,9 @@
      'incoming-name', 'incoming-accept', 'incoming-decline', 'groups', 'group-new',
      'group-modal', 'group-form', 'group-name', 'group-people', 'group-cancel', 'group-create',
      'messages-delete', 'groups-wrap', 'group-info', 'group-info-name', 'group-info-members',
-     'group-info-add', 'group-info-add-label', 'group-info-close', 'group-info-save'].forEach(function (id) { el[id] = $(id); });
+     'group-info-add', 'group-info-add-label', 'group-info-close', 'group-info-save', 'seats',
+     'messages-call', 'call-pick', 'call-pick-form', 'call-pick-people', 'call-pick-cancel',
+     'call-pick-go'].forEach(function (id) { el[id] = $(id); });
   }
 
   /* --- the spoken line ---------------------------------------------------- */
@@ -197,6 +205,22 @@
     if (group && speaker && speaker !== state.lastSpeaker) state.fresh = true;
     state.lastSpeaker = speaker || state.lastSpeaker;
 
+    // With seats, the words go under the speaker's own ring.
+    var seat = speaker && state.seats[speaker];
+    if (seat) {
+      if (seat.fresh !== false || speaker !== state.seatLast) seat.line.textContent = '';
+      seat.fresh = false;
+      state.seatLast = speaker;
+      state.fresh = false;
+      var said = document.createElement('span');
+      said.className = 'said';
+      var earlier = seat.line.querySelector('.said');   // spans, not text: words still on timers
+      seat.line.appendChild(said);
+      if (earlier) said.textContent = ' ';
+      typeWords(said, text, durationMs, timings);
+      return;
+    }
+
     // The first sentence of a reply replaces whatever was said before it.
     if (state.fresh) {
       el.utterance.textContent = '';
@@ -218,7 +242,12 @@
     var after = el.utterance.querySelector('.said');
     el.utterance.appendChild(span);
     if (after) span.textContent = ' ';
+    typeWords(span, text, durationMs, timings);
+  }
 
+  /* Words revealed in time with the voice: on the real word timings when the
+     voice gave them, otherwise spread across the clip by length. */
+  function typeWords(span, text, durationMs, timings) {
     var words = text.split(/\s+/).filter(Boolean);
     if (!words.length) return;
 
@@ -289,6 +318,8 @@
     var window_ = (state.nudges === 0 && state.askedLast)
       ? AFTER_QUESTION : IDLE_WINDOWS[Math.min(state.nudges, IDLE_WINDOWS.length - 1)];
     var closing = state.nudges >= MAX_NUDGES;
+    var lull = state.party.length > 1 && (state.lulls || 0) < MAX_LULLS;
+    if (lull) { window_ = GROUP_LULL; closing = false; }
     var wait = window_[0] + Math.random() * window_[1];
     var quietFor = state.quietUntil - Date.now();
     if (quietFor > 0) wait += quietFor;
@@ -300,7 +331,8 @@
         send({ type: 'signoff' });
         return;
       }
-      state.nudges += 1;
+      if (lull) state.lulls = (state.lulls || 0) + 1;
+      else state.nudges += 1;
       send({ type: 'nudge' });
     }, wait);
   }
@@ -326,6 +358,7 @@
     // because nobody was there, and now somebody is.
     state.hangUpWhenQuiet = false;
     state.nudges = 0;
+    state.lulls = 0;
     if (opts && opts.quietFor) state.quietUntil = Date.now() + opts.quietFor;
     armIdleCheck();
   }
@@ -344,6 +377,98 @@
     document.documentElement.dataset.state = value;
     el.status.textContent = STATE_COPY[value] || '';
     if (state.viz) state.viz.setMode(value);
+    // On a call with company, speaking belongs to one seat (see seatSpeaking);
+    // the rest breathe — or all of them think, while a reply is coming.
+    Object.keys(state.seats).forEach(function (id) {
+      if (value !== 'speaking') state.seats[id].viz.setMode(value === 'thinking' ? 'thinking' : 'idle');
+    });
+  }
+
+  /* --- seats ---------------------------------------------------------------
+     A call with more than one of them gets a seat each: their own ring in
+     their own colour, their name, and their words underneath. Whoever is
+     speaking lights up; the rest wait. One voice at a time, always.
+     ------------------------------------------------------------------------ */
+
+  function seatIds() {
+    var ids = state.party.slice();
+    state.groupRinging.forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
+    return ids;
+  }
+
+  function renderSeats() {
+    var ids = seatIds();
+    var on = ids.length > 1;
+    el.seats.hidden = !on;
+    document.documentElement.dataset.seats = on ? ids.length : '';
+    Object.keys(state.seats).forEach(function (id) {
+      if (!on || ids.indexOf(id) === -1) { state.seats[id].node.remove(); delete state.seats[id]; }
+    });
+    if (!on) return;
+    ids.forEach(function (id, i) {
+      var contact = state.contacts[id];
+      if (!contact) return;
+      var seat = state.seats[id];
+      if (!seat) {
+        var node = document.createElement('div');
+        node.className = 'seat';
+        node.style.setProperty('--seat-accent', contact.accent);
+        var ring = document.createElement('div');
+        ring.className = 'seat__ring';
+        var canvas = document.createElement('canvas');
+        ring.appendChild(canvas);
+        var face = document.createElement('span');
+        face.className = 'seat__face';
+        portraitStyle(face, contact, 'center 22%');
+        ring.appendChild(face);
+        var name = document.createElement('p');
+        name.className = 'seat__name';
+        name.textContent = contact.name;
+        var line = document.createElement('p');
+        line.className = 'seat__line';
+        node.appendChild(ring);
+        node.appendChild(name);
+        node.appendChild(line);
+        el.seats.appendChild(node);
+        seat = state.seats[id] = { node: node, viz: new Visualizer(canvas, { accent: contact.accent }), line: line };
+      }
+      seat.node.style.order = i;
+      seat.node.dataset.state = state.groupRinging.indexOf(id) !== -1 || state.ringingId === id ? 'ringing' : 'live';
+    });
+  }
+
+  function seatSpeaking(speaker) {
+    Object.keys(state.seats).forEach(function (id) {
+      var seat = state.seats[id];
+      seat.viz.setMode(id === speaker ? 'speaking' : 'idle');
+      seat.node.dataset.speaking = id === speaker ? '1' : '0';
+    });
+  }
+
+  /* Ring several at once — from a group chat's header. */
+  function callGroup(ids) {
+    ids = ids.filter(function (id) { return state.contacts[id]; }).slice(0, MAX_PARTY);
+    if (!ids.length) return;
+    if (ids.length === 1) return placeCall(ids[0]);
+    if (state.connectedId) hangUp({ switching: true });
+    state.groupRinging = ids.slice();
+    state.party = [];
+    state.currentId = state.connectedId = ids[0];
+    state.ringingId = ids[0];
+    state.lastSpeaker = null;
+    el['bar-title'].textContent = ids.map(function (id) { return state.contacts[id].name; }).join(' · ');
+    clearUtterance();
+    showHeard('');
+    state.fresh = true;
+    state.nudges = 0;
+    el['ringing-label'].textContent = 'Ringing ' + ids.length + '…';
+    setLink('ringing');
+    setState('idle');
+    renderSeats();
+    renderDirectory();
+    send({ type: 'call_group', ids: ids });
+    ConsoleTones.startRinging();
+    if (state.mode === 'ptt') ConsoleMic.warm();
   }
 
   function setLink(value) {
@@ -570,7 +695,7 @@
       t.classList.add('bubble__dots');
       t.insertAdjacentHTML('beforeend', '<i></i><i></i><i></i>');
     } else {
-      t.appendChild(document.createTextNode(message.text));
+      appendMentions(t, message.text, opts.mentions);
       if (message.at) {
         var time = document.createElement('span');
         time.className = 'bubble__time';
@@ -578,8 +703,193 @@
         t.appendChild(time);
       }
     }
-    li.appendChild(t);
+    var reactions = message.reactions || {};
+    var who = Object.keys(reactions);
+    var body = t;
+    if (who.length) {
+      body = document.createElement('span');
+      body.className = 'bubble__body';
+      body.appendChild(t);
+    }
+    li.appendChild(body);
+    if (who.length) {
+      // Tapbacks: each emoji once, with who — in the console's own tip.
+      var row = document.createElement('span');
+      row.className = 'bubble__reacts';
+      var byEmoji = {};
+      who.forEach(function (cid) { (byEmoji[reactions[cid]] = byEmoji[reactions[cid]] || []).push(cid); });
+      Object.keys(byEmoji).forEach(function (emoji) {
+        var chip = document.createElement('span');
+        chip.className = 'bubble__react';
+        if (byEmoji[emoji].indexOf('me') !== -1) chip.dataset.mine = '1';
+        chip.textContent = emoji + (byEmoji[emoji].length > 1 ? ' ' + byEmoji[emoji].length : '');
+        chip.dataset.tip = byEmoji[emoji].map(function (cid) {
+          return cid === 'me' ? 'You' : (state.contacts[cid] || {}).name || cid;
+        }).join(', ');
+        row.appendChild(chip);
+      });
+      body.appendChild(row);
+      li.dataset.reacted = '1';
+    }
     return li;
+  }
+
+  /* Double-click someone's message in a group to tap a reaction on it. */
+  var TAPBACKS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
+
+  function wireTapbacks() {
+    var bar = document.createElement('div');
+    bar.className = 'tapbar';
+    bar.hidden = true;
+    document.body.appendChild(bar);
+    var target = null;
+    TAPBACKS.forEach(function (emoji) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tapbar__btn';
+      b.textContent = emoji;
+      b.addEventListener('click', function () {
+        if (!target || !state.groupOpen) return;
+        var m = (state.thread.messages || []).filter(function (x) { return x.id === target; })[0];
+        var mine = m && (m.reactions || {}).me;
+        send({ type: 'group_react', id: state.groupOpen, message: target, emoji: mine === emoji ? '' : emoji });
+        ConsoleTones.sent();
+        bar.hidden = true;
+      });
+      bar.appendChild(b);
+    });
+    el['messages-thread'].addEventListener('dblclick', function (e) {
+      var bubble = e.target.closest && e.target.closest('.bubble--them[data-id]');
+      if (!bubble || !state.groupOpen) return;
+      e.preventDefault();
+      window.getSelection && window.getSelection().removeAllRanges();
+      target = bubble.dataset.id;
+      bar.hidden = false;
+      var r = bubble.querySelector('.bubble__text').getBoundingClientRect();
+      var w = bar.offsetWidth;
+      bar.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+      bar.style.top = Math.max(8, r.top - bar.offsetHeight - 6) + 'px';
+    });
+    document.addEventListener('pointerdown', function (e) {
+      if (!bar.hidden && !bar.contains(e.target)) bar.hidden = true;
+    });
+    el['messages-thread'].addEventListener('scroll', function () { bar.hidden = true; });
+  }
+
+  /* "@Tim" as a tag — only for someone who can actually be tagged here: a
+     member of this group, or the person on the other end of this thread.
+     Anyone else stays plain text. Hover one for their card. */
+  var MENTION = /@([A-Za-z][A-Za-z'’-]*)/g;
+
+  function mentionTarget(name, ids) {
+    name = name.toLowerCase();
+    if (name === 'bruce' || name === 'me') return 'me';
+    for (var i = 0; i < (ids || []).length; i++) {
+      var c = state.contacts[ids[i]];
+      if (c && (c.name.toLowerCase() === name || c.id === name)) return c.id;
+    }
+    return null;
+  }
+
+  function appendMentions(node, text, ids) {
+    var last = 0, m;
+    MENTION.lastIndex = 0;
+    while ((m = MENTION.exec(text || '')) !== null) {
+      var target = mentionTarget(m[1], ids);
+      if (!target) continue;
+      if (m.index > last) node.appendChild(document.createTextNode(text.slice(last, m.index)));
+      var tag = document.createElement('span');
+      tag.className = 'mention';
+      tag.textContent = '@' + m[1];
+      if (target !== 'me') {
+        tag.dataset.mention = target;
+        tag.style.setProperty('--contact-accent', state.contacts[target].accent);
+      }
+      node.appendChild(tag);
+      last = m.index + m[0].length;
+    }
+    if (last < (text || '').length) node.appendChild(document.createTextNode(text.slice(last)));
+  }
+
+  /* Typing "@" in the box: who can be tagged here, to pick from. */
+  function mentionables() {
+    if (state.groupOpen) return ((state.groups[state.groupOpen] || {}).members || []).slice();
+    return state.messagesWith ? [state.messagesWith] : [];
+  }
+
+  function wireMentions() {
+    var input = el['messages-input'];
+    var pick = document.createElement('ul');
+    pick.className = 'mention-pick';
+    pick.hidden = true;
+    el['messages-compose'].appendChild(pick);
+    var options = [], at = -1, chosen = 0;
+
+    function close() { pick.hidden = true; options = []; at = -1; }
+    function draw() {
+      pick.innerHTML = '';
+      options.forEach(function (cid, i) {
+        var c = state.contacts[cid];
+        var li = document.createElement('li');
+        li.className = 'mention-pick__item';
+        if (i === chosen) li.dataset.on = '1';
+        li.style.setProperty('--contact-accent', c.accent);
+        var face = document.createElement('span');
+        face.className = 'bubble__avatar';
+        portraitStyle(face, c, 'center 22%');
+        li.appendChild(face);
+        li.appendChild(document.createTextNode(c.name));
+        li.addEventListener('mousedown', function (e) { e.preventDefault(); choose(i); });
+        pick.appendChild(li);
+      });
+      pick.hidden = !options.length;
+    }
+    function choose(i) {
+      var c = state.contacts[options[i]];
+      if (!c || at < 0) return close();
+      var caret = input.selectionStart;
+      var before = input.value.slice(0, at), after = input.value.slice(caret);
+      input.value = before + '@' + c.name + ' ' + after.replace(/^\s+/, '');
+      var pos = before.length + c.name.length + 2;
+      input.setSelectionRange(pos, pos);
+      close();
+    }
+    input.addEventListener('input', function () {
+      var upto = input.value.slice(0, input.selectionStart);
+      var m = /(^|\s)@([A-Za-z'’-]*)$/.exec(upto);
+      if (!m) return close();
+      at = upto.length - m[2].length - 1;
+      var q = m[2].toLowerCase();
+      options = mentionables().filter(function (cid) {
+        var c = state.contacts[cid];
+        return c && (c.name.toLowerCase().indexOf(q) === 0 || c.full_name.toLowerCase().indexOf(q) === 0);
+      });
+      chosen = 0;
+      draw();
+    });
+    input.addEventListener('keydown', function (e) {
+      if (pick.hidden) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        chosen = (chosen + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length;
+        draw();
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        choose(chosen);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        close();
+      }
+    });
+    input.addEventListener('blur', close);
+    // A tag in a message: their card, as on their portrait.
+    el['messages-thread'].addEventListener('pointerover', function (e) {
+      var tag = e.target.closest && e.target.closest('[data-mention]');
+      if (tag) showHovercard(tag.dataset.mention, tag);
+    });
+    el['messages-thread'].addEventListener('pointerout', function (e) {
+      if (e.target.closest && e.target.closest('[data-mention]')) hideHovercard();
+    });
   }
 
   /* In a group: one typing row however many are at it — their faces, who, the dots. */
@@ -640,7 +950,8 @@
       var sender = group ? state.contacts[m.from] : contact;
       if (m.kind === 'system') { box.appendChild(bubbleNode(m)); return; }
       var prev = th.messages[i - 1];
-      var node = bubbleNode(m, sender, { label: group && m.from !== 'me' && !sameRun(prev, m) });
+      var node = bubbleNode(m, sender, { label: group && m.from !== 'me' && !sameRun(prev, m),
+                                         mentions: group ? th.members : [th.id] });
       if (m.id && th.seen && !th.seen[m.id]) { node.dataset.new = '1'; th.seen[m.id] = true; }
       var next = th.messages[i + 1];
       if (sameRun(m, next) || (!next && m.from === 'them' && state.typing[th.id])) node.dataset.run = '1';
@@ -685,6 +996,7 @@
     delete state.unread[id];
     updateInbox();
     el['messages-delete'].hidden = true;
+    el['messages-call'].hidden = true;
     el['messages-avatar'].innerHTML = '';
     el['messages-avatar'].classList.remove('stack');
     el.messages.style.setProperty('--contact-accent', contact.accent);
@@ -764,10 +1076,23 @@
     $('hovercard-status').textContent = line;
     $('hovercard-line').textContent = p.line ? '“' + p.line + '”' : '';
     $('hovercard-line').hidden = !p.line;
+    // Where they are, for those who share it — and who's there with them.
+    var where = $('hovercard-where');
+    var company = (p['with'] || []).map(function (cid) { return (state.contacts[cid] || {}).name; })
+      .filter(Boolean);
+    where.textContent = p.where ? p.where + (company.length ? ' · with ' + company.join(', ') : '') : '';
+    where.hidden = !p.where;
     var r = anchor.getBoundingClientRect();
-    card.style.left = (r.right + 12) + 'px';
-    card.style.top = (r.top + r.height / 2 - 22) + 'px';
     card.hidden = false;
+    var w = card.offsetWidth;
+    if (r.right + 12 + w > window.innerWidth - 8) {
+      // No room beside it (a tag in the messages panel): just under it instead.
+      card.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+      card.style.top = (r.bottom + 6) + 'px';
+    } else {
+      card.style.left = (r.right + 12) + 'px';
+      card.style.top = (r.top + r.height / 2 - 22) + 'px';
+    }
   }
 
   function hideHovercard() { $('hovercard').hidden = true; }
@@ -939,6 +1264,17 @@
   function onRefused(event) {
     var id = event.speaker;
     var line = event.how === 'declined' ? 'declined' : 'unavailable';
+    if (event.group || state.groupRinging.indexOf(id) !== -1) {
+      state.groupRinging = state.groupRinging.filter(function (x) { return x !== id; });
+      ConsoleSystem.say(line, id);
+      if (!state.groupRinging.length && !state.party.length) {
+        hangUp({ refused: line, refusedId: id });
+        return;
+      }
+      renderSeats();
+      renderDirectory();
+      return;
+    }
     if (state.connectedId === id && state.party.length <= 1) {
       hangUp({ refused: line, refusedId: id });
       return;
@@ -1067,6 +1403,7 @@
     el['messages-role'].textContent = groupMembersLine(g);
     el['messages-role'].dataset.presence = '';
     el['messages-delete'].hidden = false;
+    el['messages-call'].hidden = false;
     state.thread = { kind: 'group', id: id, messages: [], more: false, loading: true, seen: {},
                      members: g.members, reads: g.reads || {} };
     renderThread();
@@ -1141,6 +1478,17 @@
         if (state.groups[id]) (state.groups[id].reads = state.groups[id].reads || {})[event.member] = event.at;
         if (groupOpenFor(id)) state.thread.reads[event.member] = event.at;
         break;
+      case 'group_reaction':
+        if (state.groups[id] && state.groups[id].last && state.groups[id].last.id === event.message.id) {
+          state.groups[id].last = event.message;
+        }
+        if (groupOpenFor(id)) {
+          state.thread.messages = state.thread.messages.map(function (x) {
+            return x.id === event.message.id ? event.message : x;
+          });
+          renderThread();
+        }
+        return;
       case 'group_sent':
       case 'group_message':
         var m = event.message;
@@ -1216,6 +1564,41 @@
     el['group-create'].disabled = true;
     el['group-modal'].hidden = false;
     el['group-name'].focus();
+  }
+
+  /* A group bigger than a call holds: pick who to ring, four at most — the
+     ones around right now ticked to start with. */
+  function openCallPick(members) {
+    var list = el['call-pick-people'];
+    list.innerHTML = '';
+    var ticked = 0;
+    function sync() {
+      var n = list.querySelectorAll('input:checked').length;
+      list.querySelectorAll('input').forEach(function (box) { box.disabled = !box.checked && n >= MAX_PARTY; });
+      el['call-pick-go'].disabled = n < 1;
+    }
+    members.forEach(function (cid) {
+      var c = state.contacts[cid];
+      if (!c) return;
+      var li = document.createElement('li');
+      var label = document.createElement('label');
+      label.className = 'modal__person';
+      var box = document.createElement('input');
+      box.type = 'checkbox';
+      box.value = cid;
+      if (ticked < MAX_PARTY && (c.presence || {}).status === 'online') { box.checked = true; ticked += 1; }
+      box.addEventListener('change', sync);
+      var face = document.createElement('span');
+      face.className = 'bubble__avatar';
+      portraitStyle(face, c, 'center 22%');
+      label.appendChild(box);
+      label.appendChild(face);
+      label.appendChild(document.createTextNode(c.name));
+      li.appendChild(label);
+      list.appendChild(li);
+    });
+    sync();
+    el['call-pick'].hidden = false;
   }
 
   function createGroup(e) {
@@ -1464,6 +1847,20 @@
     el['group-cancel'].addEventListener('click', function () { el['group-modal'].hidden = true; });
     el['group-form'].addEventListener('submit', createGroup);
     el['messages-delete'].addEventListener('click', deleteGroup);
+    el['messages-call'].addEventListener('click', function () {
+      var g = state.groups[state.groupOpen];
+      if (!g) return;
+      if (g.members.length > MAX_PARTY) openCallPick(g.members);
+      else callGroup(g.members);
+    });
+    el['call-pick-cancel'].addEventListener('click', function () { el['call-pick'].hidden = true; });
+    el['call-pick-form'].addEventListener('submit', function (e) {
+      e.preventDefault();
+      var ids = Array.prototype.map.call(el['call-pick-people'].querySelectorAll('input:checked'),
+        function (box) { return box.value; });
+      el['call-pick'].hidden = true;
+      callGroup(ids);
+    });
     el['group-info-close'].addEventListener('click', function () { el['group-info'].hidden = true; });
     el['group-info-save'].addEventListener('click', saveGroupInfo);
     el['incoming-decline'].addEventListener('click', declineIncoming);
@@ -1569,6 +1966,7 @@
       ConsoleSystem.stop();
       ConsoleTones.connected();
       state.ringingId = null;
+      renderSeats();
       renderDirectory();
       return;
     }
@@ -1581,12 +1979,18 @@
       document.documentElement.style.setProperty('--contact-accent', contact.accent);
     }
     setLink('on');
+    renderSeats();
     armIdleCheck();
   }
 
   /* The line-up changed: someone was added, or let go. */
   function onParty(event) {
     state.party = event.members || [];
+    state.groupRinging = state.groupRinging.filter(function (id) { return state.party.indexOf(id) === -1; });
+    if (state.party.length && state.connectedId && state.party.indexOf(state.connectedId) === -1
+        && !event.added) {
+      state.connectedId = state.currentId = state.party[0];
+    }
     var names = state.party.map(function (id) {
       return (state.contacts[id] || {}).name || id;
     });
@@ -1604,6 +2008,7 @@
       if (state.connectedId === event.removed) state.connectedId = state.party[0] || null;
       ConsoleSystem.say('drop', event.removed);
     }
+    renderSeats();
     renderDirectory();
   }
 
@@ -1631,6 +2036,8 @@
     state.connectedId = null;
     state.ringingId = null;
     state.party = [];
+    state.groupRinging = [];
+    renderSeats();
     state.lastSpeaker = null;
     el['bar-title'].textContent = '';
     document.title = 'WayneTech Console';
@@ -1676,7 +2083,7 @@
                           'text_reply', 'presence', 'call_incoming', 'call_unanswered',
                           'call_refused', 'group_created', 'group_deleted', 'group_sent',
                           'group_message', 'group_read', 'group_typing', 'group_idle',
-                          'group_updated']
+                          'group_updated', 'group_reaction']
                           .indexOf(event.type) === -1;
     if (!state.connectedId && conversational) return;
 
@@ -1771,6 +2178,7 @@
 
       case 'group_created': case 'group_deleted': case 'group_sent': case 'group_message':
       case 'group_read': case 'group_typing': case 'group_idle': case 'group_updated':
+      case 'group_reaction':
         onGroupEvent(event);
         break;
 
@@ -1878,8 +2286,6 @@
 
   function setMode(mode) {
     state.mode = mode;
-    el['mode-ptt'].classList.toggle('is-on', mode === 'ptt');
-    el['mode-ambient'].classList.toggle('is-on', mode === 'ambient');
     el.ptt.dataset.ambient = mode === 'ambient' ? '1' : '0';
     el.ptt.dataset.tip = mode === 'ambient'
       ? 'Listening — click to send now'
@@ -1917,12 +2323,8 @@
       });
     });
 
-    el['mode-ptt'].addEventListener('click', function () { setMode('ptt'); });
-    // Ambient is withheld from the UI until the detector is reliable; the
-    // handler stays so re-enabling it is a one-line change in the markup.
-    el['mode-ambient'].addEventListener('click', function () {
-      if (!el['mode-ambient'].disabled && state.connectedId) setMode('ambient');
-    });
+    // Ambient listening has no control: push-to-talk is the one way to speak
+    // until its detector stops hearing the room. setMode('ambient') still works.
 
     el['dossier-close'].addEventListener('click', function () { el.dossier.hidden = true; });
     el['messages-close'].addEventListener('click', closeMessages);
@@ -1976,10 +2378,12 @@
   function wireAudio() {
     ConsoleAudio.on('onSentenceStart', function (text, key, durationMs, words, speaker) {
       setState('speaking');
+      if (speaker && state.seats[speaker]) seatSpeaking(speaker);
       revealSentence(text, key, durationMs, words, speaker);
     });
     ConsoleAudio.on('onIdle', function () {
       if (document.documentElement.dataset.state === 'speaking') setState('idle');
+      seatSpeaking(null);
       if (state.generationDone) scheduleFlush(40);
       closeIfFinished();
     });
@@ -2127,6 +2531,8 @@
   wireLayout();
   wireSounds();
   wireTips();
+  wireMentions();
+  wireTapbacks();
   try { state.unread = JSON.parse(recall('unread') || '{}') || {}; } catch (e) { state.unread = {}; }
   updateInbox();
   loadSession().then(startBoot, startBoot);

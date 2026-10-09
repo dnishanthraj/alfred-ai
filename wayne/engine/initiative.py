@@ -151,7 +151,7 @@ def status_line(contact, state):
 _STATUSES = ("online", "idle", "busy", "offline")
 
 
-def day_plan(contact, when=None):
+def day_plan(contact, when=None, others="", people=()):
     """
     Their day, sketched by them: sleep, work, whether they're going out tonight,
     and whatever they've got on — in their own life, decided by the model, not a
@@ -167,9 +167,15 @@ def day_plan(contact, when=None):
         "things that are yours today: errands, people, plans, a whim. Times are approximate and "
         "needn't fill the day. Each block's status: online (phone in hand, on comms), idle "
         "(around, phone down), busy (occupied — a glance at most), offline (asleep or "
-        "unreachable). Return JSON only: "
+        "unreachable). Where: the actual place, a few words — a street, a district, a building "
+        "in your city — as it would show on a map to someone else (\"Home, Blüdhaven\", not "
+        "\"my flat\"). With: anyone from your circle you'd be with (first names), usually nobody."
+        + (f" What others in your circle have planned so far today — if one of them is meeting "
+           f"you, keep it at their time and place, unless you'd really not:\n{others}\n"
+           if others else " ")
+        + "Return JSON only: "
         '{"plan": [{"from": "HH:MM", "to": "HH:MM", "doing": "under eight words, as you\'d say it", '
-        '"status": "online|idle|busy|offline"}]}')
+        '"status": "online|idle|busy|offline", "where": "place", "with": []}]}')
     try:
         reply = ollama.chat(model=contact.model, think=False, format="json",
                             options={**contact.options, "temperature": 0.9, "num_predict": 700},
@@ -196,9 +202,23 @@ def day_plan(contact, when=None):
             continue
         status = b.get("status") if b.get("status") in _STATUSES else "busy"
         doing = str(b.get("doing") or "").strip()[:70]
+        where = _on_the_map(str(b.get("where") or ""))
+        names = b.get("with") if isinstance(b.get("with"), list) else []
+        company = [p.id for p in people if p.id != contact.id
+                   and any(str(n).strip().lower() in (p.name.lower(), p.id) for n in names)]
         if doing and start != end:
-            plan.append({"from": start, "to": end, "doing": doing, "status": status, "drift": 0.4})
+            plan.append({"from": start, "to": end, "doing": doing, "status": status, "drift": 0.4,
+                         "where": where, "with": company})
     return plan
+
+
+def _on_the_map(place):
+    """'My study, Bristol' → 'Home, Bristol': where they are, as he'd see it."""
+    place = place.strip()[:60]
+    place = re.sub(r"(?i)^my (apartment|flat|place|house|home|room|bedroom|study|kitchen|loft|couch|bed)\b",
+                   "Home", place)
+    place = re.sub(r"(?i)^my\s+", "", place)
+    return place[:1].upper() + place[1:]
 
 
 def _hours(clock):

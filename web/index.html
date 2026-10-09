@@ -125,9 +125,12 @@
           <span class="messages__name" id="messages-name"></span>
           <span class="messages__role" id="messages-role"></span>
         </div>
+        <button class="messages__delete messages__dial" id="messages-call" type="button" hidden
+                data-tip="Call everyone" aria-label="Call everyone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg></button>
         <button class="messages__delete" id="messages-delete" type="button" hidden
                 data-tip="Delete this group" aria-label="Delete this group"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg></button>
-        <button class="messages__close" id="messages-close" type="button" aria-label="Close messages">Close</button>
+        <button class="messages__close" id="messages-close" type="button" data-tip="Close"
+                aria-label="Close messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </header>
       <ol class="messages__thread" id="messages-thread"></ol>
       <form class="messages__compose" id="messages-compose">
@@ -147,6 +150,9 @@
           <canvas id="viz" aria-hidden="true"></canvas>
         </div>
 
+        <!-- A call with company: a seat each — their ring, their name, their words. -->
+        <div class="seats" id="seats" hidden></div>
+
         <p class="ringing-label" id="ringing-label">Ringing</p>
         <p class="utterance" id="utterance" role="status" aria-live="polite"></p>
         <p class="status" id="status"></p>
@@ -163,16 +169,7 @@
           <span class="ptt__glyph" aria-hidden="true"></span>
         </button>
         <input class="compose__input" id="input" type="text" autocomplete="off"
-               spellcheck="false" placeholder="Speak, or type here…">
-        <!-- Ambient mode is disabled pending work on the detector: it triggers
-             on room noise and mis-hears often enough to derail a conversation.
-             Push-to-talk is unambiguous and stays the only mode until that is
-             fixed. The code path is intact; only the control is withheld. -->
-        <div class="modes" role="group" aria-label="Microphone mode">
-          <button type="button" class="modes__btn is-on" id="mode-ptt">Push</button>
-          <button type="button" class="modes__btn is-disabled" id="mode-ambient"
-                  data-tip="Ambient listening — under development" disabled>Ambient</button>
-        </div>
+               spellcheck="false" placeholder="Type, or hold Space to talk…">
       </form>
 
     </section>
@@ -212,6 +209,19 @@
     </div>
   </div>
 
+  <!-- A group too big for one call: who to ring. -->
+  <div class="modal" id="call-pick" hidden role="dialog" aria-labelledby="call-pick-title">
+    <form class="modal__card" id="call-pick-form">
+      <h2 class="modal__title" id="call-pick-title">Group call</h2>
+      <p class="modal__label">Who to ring — up to four</p>
+      <ul class="modal__people" id="call-pick-people"></ul>
+      <div class="modal__actions">
+        <button class="modal__btn" id="call-pick-cancel" type="button">Cancel</button>
+        <button class="modal__btn modal__btn--go" id="call-pick-go" type="submit" disabled>Ring</button>
+      </div>
+    </form>
+  </div>
+
   <!-- The console's own yes-or-no. -->
   <div class="modal" id="confirm-modal" hidden role="alertdialog" aria-labelledby="confirm-title">
     <div class="modal__card modal__card--small">
@@ -229,6 +239,7 @@
     <span class="hovercard__name" id="hovercard-name"></span>
     <span class="hovercard__line" id="hovercard-line" hidden></span>
     <span class="hovercard__status" id="hovercard-status"></span>
+    <span class="hovercard__where" id="hovercard-where" hidden></span>
   </div>
 
   <!-- Someone calling him. -->

@@ -50,6 +50,8 @@ _MAX_CACHED_CLIPS = 64
 # What happened, when, and how long it took — for the times a reply goes quiet
 # and there is otherwise nothing to look at. data/ is gitignored.
 log = logging.getLogger("wayne")
+# How often two people on a group call start into the same pause together.
+TALK_OVER = 0.12
 if not log.handlers:
     paths.DATA_DIR.mkdir(parents=True, exist_ok=True)
     _handler = logging.FileHandler(paths.DATA_DIR / "console.log")
@@ -142,6 +144,11 @@ class Console(GroupChats):
         self._refused_at = {}
         # When he last rang or texted each contact — for "he keeps calling".
         self._call_attempts = {}
+        # How much life a group call has left for talk nobody prompted: each
+        # line said into a pause uses some up, his next word restores it.
+        self._lull_energy = 1.0
+        self._lulls = 0
+        self._last_lull = None
         self._text_bursts = {}
         # Set from the moment a call is placed until it's up, so nobody rings
         # him in the gap while the line is still being opened.
@@ -349,6 +356,10 @@ class Console(GroupChats):
                 if event.get("type") == "sentence" and first_at is None:
                     first_at = time.monotonic()
                     log.info("%s first sentence after %.2fs", contact.id, first_at - began)
+                if event.get("type") in ("sentence", "reply_end") and not event.get("speaker"):
+                    # Whoever's line it is, said: on a group call the first to
+                    # pick up greeted it unlabelled, and their seat stayed blank.
+                    event = {**event, "speaker": contact.id}
                 # On a call with company, each sentence in its speaker's voice.
                 speaker = self.directory.get(event.get("speaker") or "") or contact
                 if event.get("type") == "sentence" and self._can_speak(speaker):
@@ -424,7 +435,7 @@ class Console(GroupChats):
                 await self.broadcast({**events.speak(self._store_clip(audio), text, key, words),
                                       "speaker": speaker})
 
-    async def connect(self, contact_id, incoming=None):
+    async def connect(self, contact_id, incoming=None, ensure=False, also_ringing=()):
         """
         Switch the console to a contact, booting them on first connection.
         `incoming` is why they rang, when it was them who called.
@@ -446,11 +457,11 @@ class Console(GroupChats):
             asyncio.get_running_loop().create_task(self._unanswered("missed"))
         self._connecting = True
         try:
-            return await self._connect(contact, contact_id, incoming)
+            return await self._connect(contact, contact_id, incoming, ensure, also_ringing)
         finally:
             self._connecting = False
 
-    async def _connect(self, contact, contact_id, incoming):
+    async def _connect(self, contact, contact_id, incoming, ensure=False, also_ringing=()):
         switching = False
         if not self._abandon_ring() and self.current_id and self.current_id != contact_id:
             switching = True
@@ -478,7 +489,7 @@ class Console(GroupChats):
             state = presence.of(contact).now()
             whereabouts = state["status"]
             rung = 0 if incoming else self._attempt(self._call_attempts, contact_id, RING_AGAIN)
-            refused = None if incoming else presence.answers(contact, state, again=rung)
+            refused = None if (incoming or ensure) else presence.answers(contact, state, again=rung)
             if refused:
                 # Not picking up. The ring happens outside the lock, so texts
                 # to anyone else carry on meanwhile.
@@ -507,7 +518,8 @@ class Console(GroupChats):
                     f"Migrated existing {' and '.join(self.migrated)} into "
                     f"data/{config.DEFAULT_CONTACT}/.", "info"))
                 self.migrated = []
-            await self.drive(session.boot(incoming, rung), contact, self.interrupt(), release_at=pickup)
+            await self.drive(session.boot(incoming, rung, also_ringing), contact, self.interrupt(),
+                             release_at=pickup)
             self._call_attempts.pop(contact_id, None)
             presence.of(contact).touch()
             # Talking now: any plan to get back to him about a missed call is moot.
@@ -563,12 +575,46 @@ class Console(GroupChats):
         leaning = contact.initiative or {}
         doing = state["doing"] or ("asleep" if state["status"] == presence.OFFLINE else "")
         reason = f"you were {doing}" if doing else "you just didn't pick up"
+        call = self.call
         if (how == "declined" and state["status"] == presence.BUSY
                 and random.random() < leaning.get("busy_text", 0.4)):
             await asyncio.sleep(random.uniform(6, 25))
             await self._send_unprompted(contact, reason, "busy_now")
         if random.random() >= leaning.get("callback", 0.8):
             return          # some people just don't
+        if call is not None and call is self.call and contact.id in call.invited:
+            # A group call that's still going: they may dial back into it
+            # rather than ring him about it afterwards.
+            return await self._join_late(contact, call, reason)
+        self._plan_callback(contact, reason)
+
+    async def _join_late(self, contact, call, reason):
+        """
+        Missed the ring of a call that's still going. Free in a minute or two,
+        they come on — saying where they were, or not; busy, it waits until
+        they are; and if it's over by then, they get back to him as they would.
+        """
+        whereabouts = presence.of(contact)
+        current = whereabouts.now()
+        if current["status"] == presence.OFFLINE:
+            return self._plan_callback(contact, reason)
+        wait = random.uniform(40, 240)
+        if current["source"] == "conversation" and current["until"]:
+            wait = max(wait, current["until"] - time.time())
+        elif current["status"] == presence.BUSY:
+            wait += random.uniform(120, 600)
+        await asyncio.sleep(wait)
+        if self.call is not call or contact.id in self._members():
+            return self._plan_callback(contact, reason)
+        if len(call.members) >= MAX_CONTACTS:
+            return
+        log.info("%s dialling back into the call they missed", contact.id)
+        await self.add(contact.id, ensure=True, willing=True,
+                       note=f"you missed his call a few minutes ago ({reason}) and have just "
+                            "dialled back into it")
+
+    def _plan_callback(self, contact, reason):
+        leaning = contact.initiative or {}
         whereabouts = presence.of(contact)
         now, current = time.time(), whereabouts.now()
         if current["source"] == "conversation" and current["until"]:
@@ -611,6 +657,8 @@ class Console(GroupChats):
         members = self.call.members if self.call else (
             [self.sessions[self.current_id]] if self.current_id in self.sessions else [])
         present = {m.contact.id for m in members}
+        if len(present) > 1:
+            self._spawn(self._after_group_call(present))
         for member in members:
             self._wrap_up(member, present)
         if self.call:
@@ -650,20 +698,24 @@ class Console(GroupChats):
     def _members(self):
         return [m.contact.id for m in self.call.members] if self.call else []
 
-    async def add(self, contact_id):
+    async def add(self, contact_id, ensure=False, note="", willing=False):
         """
         Patch another contact into the call. They ring, pick up already knowing
         who is on the line and the last few things said, and greet the call.
         """
         contact = self.directory.get(contact_id)
         if (contact is None or not self.call or contact_id in self._members()
-                or len(self.call.members) >= MAX_CONTACTS
                 or not contact.availability.is_available()):
             return
+        if len(self.call.members) >= MAX_CONTACTS:
+            await self.broadcast(events.notice(
+                f"The line's full — {contact.name} can't be patched in until someone drops off.", "warn"))
+            return
+        self.call.invited.add(contact_id)
         state = presence.of(contact).now()
         how = presence.answers(contact, state,
                                again=self._attempt(self._call_attempts, contact_id, RING_AGAIN))
-        if how:
+        if how and not ensure:
             # Patched in, it rings — and they don't take it. The call goes on.
             await self.broadcast(events.party(self._members() + [contact_id], added=contact_id))
             await asyncio.sleep(random.uniform(*(DECLINE_AFTER if how == "declined" else NO_ANSWER_AFTER)))
@@ -671,6 +723,10 @@ class Console(GroupChats):
             await self.broadcast({"type": "call_refused", "speaker": contact_id, "how": how})
             await self.broadcast(events.party(self._members()))
             asyncio.get_running_loop().create_task(self._after_refusal(contact, how, state))
+            # Someone on the line may well remark on it.
+            missed = "didn't pick up" if how == "no_answer" else "declined"
+            await self._react(f"{contact.name} {missed} when he tried to add them to the call.",
+                              absent=contact)
             return
         epoch = self.interrupt()
         async with self.turn_lock:
@@ -681,7 +737,18 @@ class Console(GroupChats):
             # The console announces it and the line rings; the greeting is made
             # meanwhile and released when they "pick up".
             pickup = asyncio.get_running_loop().time() + 2.6 + random.uniform(0.3, 1.6)
-            await self.drive(self.call.greet(newcomer), contact, epoch, release_at=pickup)
+            await self.drive(self.call.greet(newcomer, note, willing), contact, epoch, release_at=pickup)
+        if getattr(newcomer, "_hanging_up", False):
+            # Picked up only to say no, and gone: the others may say something.
+            await self._hang_ups(reason="said their piece on joining and hung up")
+            return
+        # And someone already on the line may greet them back — unless they
+        # already have, answering the greeting.
+        if self.call and not self.call.aside_answered and random.random() < 0.6:
+            joined = (f"{contact.name} has just picked up too — he rang you all at once" if "all at once" in note else
+                      f"{contact.name} has just dialled back into the call" if "dialled back" in note else
+                      f"{contact.name} has just joined the call")
+            await self._react(joined + ".", but=contact_id)
 
     async def drop(self, contact_id):
         """Let one contact off the call. They say goodbye; the call goes on."""
@@ -704,6 +771,138 @@ class Console(GroupChats):
             if self.current_id == contact_id and self.call.members:
                 self.current_id = self.call.members[0].contact.id
             await self.broadcast(events.party(self._members(), removed=contact_id))
+        if self.call and self.call.is_group and random.random() < 0.5:
+            await self._react(f"{member.contact.name} has just dropped off the call.")
+
+    async def _react(self, what_happened, but=None, absent=None, who=None):
+        """
+        One person on the call, picked at random, reacts to it — or doesn't. If
+        it's someone who didn't pick up, they may chase them ("I'll text her"),
+        and the one chased may then join.
+        """
+        if not self.call or not self.call.members:
+            return
+        candidates = [m for m in self.call.members if m.contact.id != but
+                      and (who is None or m.contact.id == who)]
+        if not candidates:
+            return
+        member = random.choice(candidates)
+        epoch = self.interrupt()
+        async with self.turn_lock:
+            if epoch != self.turn_epoch or not self.call or member not in self.call.members:
+                return
+            await self.drive(self.call.react(member, what_happened, chase=absent is not None),
+                             member.contact, epoch)
+        if absent is not None and getattr(member, "_nudging", False):
+            member._nudging = False
+            self._spawn(self._chased(absent, member.contact))
+        # A reaction can be "I'm out too" or "I'll get Barbara on".
+        await self._hang_ups()
+        await self._call_adds()
+
+    async def _chased(self, contact, by):
+        """
+        Someone on the call chased them. A minute later they've seen it — and,
+        far likelier now than when the phone just rang, they join, knowing who
+        got them there.
+        """
+        await asyncio.sleep(random.uniform(20, 60))
+        if (not self.call or contact.id in self._members()
+                or len(self.call.members) >= MAX_CONTACTS):
+            return
+        state = presence.of(contact).now()
+        if presence.answers(contact, state, again=2):
+            log.info("%s didn't respond to %s chasing them", contact.id, by.id)
+            if random.random() < 0.65 and by.id in self._members():
+                await self._react(self._chase_came_back(contact, state), who=by.id)
+            return
+        log.info("%s joined after %s chased them", contact.id, by.id)
+        await self.add(contact.id, ensure=True, willing=True,
+                       note=f"{by.name} texted you to get on this call — you've only just seen it.")
+
+    @staticmethod
+    def _chase_came_back(contact, state):
+        """
+        What the one who chased them has heard back — from where they really
+        are, since that's what their reply would say. The private say nothing.
+        """
+        doing = state.get("doing") or ""
+        if (not contact.shares_status or not doing or state["status"] == presence.OFFLINE
+                or random.random() < 0.3):
+            return (f"You texted {contact.name} to get on the call a minute ago; nothing back yet. "
+                    "Tell the call, if you'd bother.")
+        return (f"{contact.name} has just texted you back: they can't get on right now — they're "
+                f"{doing}. Pass it on the way you would.")
+
+    async def _call_adds(self):
+        """Someone on the call rang someone else in, because he asked or they're needed."""
+        if not self.call:
+            return
+        for member in list(self.call.members):
+            for name in getattr(member, "_call_add", [])[:1]:
+                member._call_add = []
+                wanted = next((c for c in self.directory
+                               if name.lower() in (c.name.lower(), c.full_name.lower(), c.id)), None)
+                if wanted and wanted.id not in self._members() and len(self.call.members) < MAX_CONTACTS:
+                    log.info("%s is ringing %s into the call", member.contact.id, wanted.id)
+                    await self.add(wanted.id)
+
+    async def _hang_ups(self, reason="has just hung up and left the call"):
+        """
+        Anyone on a group call who said goodbye and [hang up] drops off; the call
+        goes on without them. The last one out ends it.
+        """
+        if not self.call or not self.call.is_group:
+            return
+        for member in list(self.call.members):
+            if getattr(member, "_hanging_up", False) and len(self.call.members) > 1:
+                member._hanging_up = False
+                self.call.leave(member)
+                self._wrap_up(member, {member.contact.id} | set(self._members()))
+                if self.current_id == member.contact.id and self.call.members:
+                    self.current_id = self.call.members[0].contact.id
+                await self.broadcast(events.party(self._members(), removed=member.contact.id))
+                if random.random() < 0.6:
+                    await self._react(f"{member.contact.name} {reason}.")
+
+    async def call_many(self, ids):
+        """
+        Ring several at once. Each picks up — or doesn't — in their own time;
+        the first to answer opens the line, knowing who else is being rung, and
+        the rest join as they pick up. Nobody answers: nobody answers.
+        """
+        contacts = [c for c in (self.directory.get(i) for i in dict.fromkeys(ids)) if c][:MAX_CONTACTS]
+        if not contacts:
+            return
+        if len(contacts) == 1:
+            return await self.connect(contacts[0].id)
+        decisions = {c.id: presence.answers(c, presence.of(c).now()) for c in contacts}
+        await self.broadcast({"type": "group_ringing", "members": [c.id for c in contacts]})
+        answering = [c for c in contacts if decisions[c.id] is None]
+        for c in contacts:
+            if decisions[c.id]:
+                self._spawn(self._refuse_group_ring(c, decisions[c.id]))
+        if not answering:
+            return
+        first, rest = answering[0], answering[1:]
+        others = [c.name for c in contacts if c is not first]
+        await self.connect(first.id, ensure=True, also_ringing=others)
+        if self.call:
+            self.call.invited.update(c.id for c in contacts)
+        for contact in rest:
+            if self.call and self.current_id:
+                together = [c.name for c in contacts if c is not contact]
+                await self.add(contact.id, ensure=True,
+                               note=f"he rang you along with {' and '.join(together)}, all at once")
+
+    async def _refuse_group_ring(self, contact, how):
+        await asyncio.sleep(random.uniform(*(DECLINE_AFTER if how == "declined" else NO_ANSWER_AFTER)))
+        self._refused_at[contact.id] = time.time()
+        await self.broadcast({"type": "call_refused", "speaker": contact.id, "how": how, "group": True})
+        self._spawn(self._after_refusal(contact, how, presence.of(contact).now()))
+        if self.call and self.call.members:
+            missed = "didn't pick up" if how == "no_answer" else "declined"
+            await self._react(f"{contact.name} {missed} — he'd rung them too.", absent=contact)
 
     async def text(self, contact_id, body):
         """
@@ -1080,13 +1279,34 @@ class Console(GroupChats):
         self._writing_lines = True
         try:
             contact = waiting[0]
-            plan = await asyncio.to_thread(initiative.day_plan, contact)
+            plan = await asyncio.to_thread(initiative.day_plan, contact, None,
+                                           self._plans_so_far(contact), list(self.directory))
             if plan:
                 presence.of(contact).set_plan(plan)
                 log.info("%s planned the day: %d blocks", contact.id, len(plan))
                 await self._presence_changed(contact)
         finally:
             self._writing_lines = False
+
+    def _plans_so_far(self, contact):
+        """
+        What the others who share his secret have planned today, for someone
+        sketching theirs — so two who'd patrol together can, and say so both
+        sides. Nobody outside the secret sees anyone's nights, or shows theirs.
+        """
+        from .. import operator
+        known = set((operator.profile().get("secrets") or {}).get("known_by") or [])
+        if contact.id not in known:
+            return ""
+        lines = []
+        for other in self.directory:
+            if other.id == contact.id or other.id not in known:
+                continue
+            for block in presence.of(other).plan_today():
+                if block.get("where"):
+                    lines.append(f"{other.name}: {block['doing']} — {block['where']}, "
+                                 f"{_clock(block['from'])}–{_clock(block['to'])}")
+        return "\n".join(lines[:14])
 
     async def _presence_changed(self, contact):
         shown = presence.of(contact).public()
@@ -1166,8 +1386,11 @@ class Console(GroupChats):
                 if chase.get("id") == last["id"] and chase.get("at") and now >= chase["at"]:
                     chases.append(contact)
                     continue
-                if now - last["at"] < 12 * 3600:
-                    continue    # they spoke last, and recently; it's his turn
+                # They spoke last: it's his turn — for a while. How long a
+                # while is theirs: Dick's onto the next thing in hours, Randy
+                # never texts into a silence he didn't break.
+                if now - last["at"] < 12 * 3600 * (1 - leaning.get("double_text", 0.3)) + 3600:
+                    continue
             # Something on their mind: a few times a day for the chatty ones.
             if random.random() < leaning.get("per_day", 0.4) * PULSE_SECONDS / (16 * 3600):
                 impulses.append(contact)
@@ -1179,6 +1402,10 @@ class Console(GroupChats):
         elif impulses:
             contact = random.choice(impulses)
             about = initiative.impulse(self.session_for(contact.id))
+            last = TextLog(contact.id).last()
+            if about and last and last["from"] == "them":
+                about += (" (he never answered your last text — mention that, or don't, "
+                          "whatever you'd actually do)")
             if about:
                 self._count_initiative()
                 self._spawn(self._send_unprompted(contact, about, "impulse"))
@@ -1262,6 +1489,8 @@ class Console(GroupChats):
         """
         if not self.current_id or self._ringing_out:
             return
+        if self.call and self.call.is_group:
+            return await self._lull()
         # The epoch is taken before waiting, as submit does: bumping it after
         # the wait cancelled whatever he'd said in the meantime, and his words
         # were replaced by a check-in.
@@ -1270,6 +1499,50 @@ class Console(GroupChats):
             if epoch != self.turn_epoch or not self.current_id:
                 return
             await self.drive(getattr(self.session_for(self.current_id), kind)(), self.contact, epoch)
+
+    async def _lull(self):
+        """
+        A pause on a group call (the page says when: it knows when the last
+        voice stopped). Someone may fill it — the chatty likelier, not whoever
+        just spoke — at odds that fall with each line said into the quiet, so a
+        call he's gone silent on drifts off rather than carrying on without him.
+        """
+        self._lulls += 1
+        if random.random() >= self._lull_energy:
+            return
+        members = list(self.call.members)
+        weights = [(0.25 + (m.contact.initiative or {}).get("per_day", 0.5) * 0.4)
+                   * (1 - (m.contact.texting_pace or {}).get("on_read", 0) * 0.7)
+                   * (0.4 if m is self.call.last_speaker else 1.0)
+                   # Whoever filled the last pause leaves the next to someone else, mostly.
+                   * (0.25 if m.contact.id == self._last_lull else 1.0) for m in members]
+        member = random.choices(members, weights=weights)[0]
+        # Now and then two of them go for the same pause at once.
+        rest = [(m, w) for m, w in zip(members, weights, strict=True) if m is not member]
+        second = (random.choices([m for m, _ in rest], weights=[w for _, w in rest])[0]
+                  if rest and random.random() < TALK_OVER else None)
+        epoch = self.interrupt()
+        async with self.turn_lock:
+            if epoch != self.turn_epoch or not self.call or member not in self.call.members:
+                return
+            turn = (self.call.collide(member, second, self._lulls)
+                    if second is not None and second in self.call.members
+                    else self.call.lull(member, self._lulls))
+            line = await self._drive_for(turn, member.contact, epoch)
+        if line:
+            self._last_lull = member.contact.id
+        self._lull_energy *= 0.55 if line else 0.8
+        await self._hang_ups()
+        await self._call_adds()
+
+    async def _drive_for(self, generator, contact, epoch):
+        """Drive a generator and hand back what it returned."""
+        result = {}
+
+        def keep():
+            result["value"] = yield from generator
+        await self.drive(keep(), contact, epoch)
+        return result.get("value")
 
     async def submit(self, text, spoken=False, confidence=1.0):
         """
@@ -1293,17 +1566,22 @@ class Console(GroupChats):
         # stops, and releases the lock instead of making the new input wait for
         # a reply nobody is listening to any more.
         was_speaking = self.voice_busy
+        self._lull_energy, self._lulls = 1.0, 0
         epoch = self.interrupt()
         async with self.turn_lock:
             if epoch != self.turn_epoch:
                 return             # something newer arrived while we waited
             contact = self.contact
-            if self.call and self.call.is_group:
+            group = bool(self.call and self.call.is_group)
+            if group:
                 turn = self.call.turn(text, interrupted=was_speaking, confidence=confidence)
             else:
                 session = self.session_for(self.current_id)
                 turn = session.ask(text, interrupted=was_speaking, confidence=confidence)
             await self.drive(turn, contact, epoch)
+        if group:
+            await self._hang_ups()
+        await self._call_adds()
 
     def _asked_to_add(self, text):
         """'Alfred, get Lucius on the line' — a contact not on the call, asked for."""
@@ -1329,6 +1607,10 @@ class Console(GroupChats):
 
 
 console = Console()
+
+
+def _clock(hours):
+    return f"{int(hours) % 24:02d}:{int(round(hours % 1 * 60)) % 60:02d}"
 
 
 def _model_loaded(model):
@@ -1680,6 +1962,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(console.decline(payload.get("id", "")))
             elif kind == "group_text":
                 asyncio.create_task(console.group_text(payload.get("id", ""), payload.get("text", "")))
+            elif kind == "group_react":
+                asyncio.create_task(console.group_react(payload.get("id", ""), payload.get("message", ""),
+                                                        payload.get("emoji", "")))
+            elif kind == "call_group":
+                asyncio.create_task(console.call_many(payload.get("ids") or []))
             elif kind == "add":
                 asyncio.create_task(console.add(payload.get("id", "")))
             elif kind == "drop":

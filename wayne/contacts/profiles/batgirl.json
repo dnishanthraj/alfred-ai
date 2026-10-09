@@ -240,5 +240,6 @@
     "callback": 0.8,
     "callback_call": 0.5
   },
-  "search_aloud": false
+  "search_aloud": false,
+  "home": "The Clocktower"
 }
