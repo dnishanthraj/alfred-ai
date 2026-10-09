@@ -21,7 +21,10 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
   researched bible of the comics, films, games and animation — Dick warm and
   quick with the ache under the jokes, Jason bookish and furious and fierce
   about kids, Tim deductive and steady, Barbara a peer who won't be pushed.
-  Bios in Bruce's own words; first marks 82.5, 77.4, 75.0 and 79.3.
+  First marks 82.5, 77.4, 75.0 and 79.3.
+- **Bios as Bruce would write them:** every contact's dossier is his honest
+  take on them, in plain short paragraphs — what they are to him, and usually
+  the thing he'd only admit on paper.
 - **Randy Wayne**, Bruce and Selina's son, raised at the manor and flying as
   Batwing in Lucius's suit — and Selina doesn't know. She keeps that secret by not
   having it: asked about Batwing on a call with Dick listening, she went fishing
@@ -29,6 +32,20 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 - **Texting.** Message any contact, on a call or not: a thread with their
   portrait on their side, replies in their own texting style, unread dots, and
   the same memory as their calls — they know what you texted when you next ring.
+- **Texts that behave like texts.** Replies aren't instant: each contact has a
+  pace — how soon they read, how fast they type, how often they're simply busy —
+  so a message sits at *Delivered*, turns *Read*, shows them typing, and only
+  then answers. Several texts sent before they look get one reply. Text someone
+  while you're on a call — the person you're talking to, or anyone on a group
+  call — and they read it and answer out loud ("Got the address"); the others
+  hear the answer, not the text. Threads are kept long-term and scroll back
+  through day separators and timestamps.
+- **Notifications:** a reply that arrives while its thread is closed raises a
+  toast and a soft tone, and counts on the inbox button in the bar.
+- **A layout you can arrange:** drag the directory wider or narrower — below a
+  point it folds to portraits only — or hide it from the bar; the message panel
+  resizes the same way. Click a portrait, or the name at the top of a thread,
+  to open that person's dossier, which can call or message them.
 - **The grapevine.** After a call, what might be passed on is noted; with a
   chance set by how close two people are and after hours rather than seconds, it
   reaches others as hearsay with its source — "Dick told me…". Never anything you

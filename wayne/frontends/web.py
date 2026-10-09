@@ -37,6 +37,7 @@ from ..engine import ContactSession, grapevine, guards, world
 from ..engine.party import MAX_CONTACTS, Call
 from ..memory import migrate_legacy
 from ..memory.store import atomic_write, read_text
+from ..memory.texts import TextLog
 from ..paths import WEB_DIR
 
 # Synthesized clips waiting to be fetched. Bounded — a long session would
@@ -100,6 +101,9 @@ class Console:
         self.boot_task = None
         self._release = None   # pending model release after a hang-up
         self.call = None       # the call in progress (see wayne.engine.party)
+        # Texts waiting to be read, and the task answering each contact's.
+        self._pending_texts = {}
+        self._texters = {}
         self.migrated = migrate_legacy(config.DEFAULT_CONTACT)
 
     # --- contacts ---------------------------------------------------------
@@ -436,42 +440,99 @@ class Console:
 
     async def text(self, contact_id, body):
         """
-        A text message to a contact — any contact, on a call or not. Answered
-        in writing, never spoken, and kept in the same memory as their calls.
+        A text message to a contact — any contact, on a call or not.
+
+        Texts behave like texts: delivered at once, read when the contact gets
+        to it (promptly for Alfred, eventually for Jason, sometimes not for a
+        while because someone is busy), answered after a typing delay that fits
+        the reply — and several sent in a row are read and answered together.
+        To whoever you're on a call with, a text lands mid-call and they answer
+        it out loud: "sent you the address" — "got it, the docks."
         """
         contact = self.directory.get(contact_id)
         body = (body or "").strip()
         if contact is None or not body:
             return
-        session = self.session_for(contact_id)
-        # The same lock as the call's turns: a contact on the call who is also
-        # texted must not be writing two replies into one memory at once.
-        async with self.turn_lock:
-            loop = asyncio.get_running_loop()
-            queue = asyncio.Queue()
-            done = object()
+        log = TextLog(contact_id)
+        message = log.add("me", body)
+        await self.broadcast({"type": "text_sent", "speaker": contact_id, "message": message})
 
-            def pump():
-                try:
-                    for event in session.ask(body, via="text"):
-                        loop.call_soon_threadsafe(queue.put_nowait, event)
-                except Exception as exc:
-                    loop.call_soon_threadsafe(queue.put_nowait,
-                                              events.notice(f"Message failed: {exc}", "error"))
-                finally:
-                    loop.call_soon_threadsafe(queue.put_nowait, done)
+        if contact_id in self._members() or contact_id == self.current_id:
+            read_at = log.mark_read([message["id"]])
+            await self.broadcast({"type": "text_read", "speaker": contact_id,
+                                  "ids": [message["id"]], "at": read_at})
+            return await self._text_into_call(contact_id, body)
 
-            threading.Thread(target=pump, daemon=True).start()
-            await self.broadcast({"type": "text_typing", "speaker": contact_id})
-            while True:
-                event = await queue.get()
-                if event is done:
-                    break
+        self._pending_texts.setdefault(contact_id, []).append(message)
+        if contact_id not in self._texters:
+            self._texters[contact_id] = asyncio.create_task(self._answer_texts(contact))
+
+    async def _answer_texts(self, contact):
+        """Read, think, type, reply — at the contact's own pace."""
+        loop = asyncio.get_running_loop()
+        pace = contact.texting_pace or {}
+        try:
+            delay = random.uniform(*pace.get("read", [3, 20]))
+            if random.random() < pace.get("busy", 0):
+                delay = random.uniform(*pace.get("busy_for", [60, 600]))
+            await asyncio.sleep(delay)
+            batch = self._pending_texts.pop(contact.id, [])
+            if not batch:
+                return
+            log = TextLog(contact.id)
+            read_at = log.mark_read([m["id"] for m in batch])
+            await self.broadcast({"type": "text_read", "speaker": contact.id,
+                                  "ids": [m["id"] for m in batch], "at": read_at})
+            await asyncio.sleep(random.uniform(0.8, 3.0))
+            await self.broadcast({"type": "text_typing", "speaker": contact.id})
+            started = loop.time()
+            reply = await self._write_text(contact, "\n".join(m["text"] for m in batch))
+            # As long as it would take them to type it, less the time spent writing.
+            typing = len(reply) / max(1.0, pace.get("wpm", 50) * 5 / 60)
+            remaining = min(typing, 25) - (loop.time() - started)
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+            if reply:
+                sent = log.add("them", reply)
+                await self.broadcast({"type": "text_reply", "speaker": contact.id, "message": sent})
+            else:
+                await self.broadcast({"type": "text_idle", "speaker": contact.id})
+        finally:
+            self._texters.pop(contact.id, None)
+            if self._pending_texts.get(contact.id):
+                # More arrived while they were replying: another round.
+                self._texters[contact.id] = asyncio.create_task(self._answer_texts(contact))
+
+    async def _write_text(self, contact, body):
+        """The contact writes a text reply. Held to the same lock as call turns."""
+        session = self.session_for(contact.id)
+        loop = asyncio.get_running_loop()
+        result = {"text": ""}
+
+        def run():
+            for event in session.ask(body, via="text"):
                 if event["type"] == "reply_end" and not event.get("interim"):
-                    await self.broadcast({"type": "text_reply", "speaker": contact_id,
-                                          "text": event["text"]})
-                elif event["type"] == "notice":
-                    await self.broadcast(event)
+                    result["text"] = event["text"]
+
+        async with self.turn_lock:
+            try:
+                await loop.run_in_executor(None, run)
+            except Exception as exc:
+                log.warning("%s text FAILED: %s", contact.id, str(exc)[:160])
+        return result["text"]
+
+    async def _text_into_call(self, contact_id, body):
+        """A text to someone on the line: they see it, and answer on the call."""
+        epoch = self.interrupt()
+        async with self.turn_lock:
+            if epoch != self.turn_epoch:
+                return
+            session = self.session_for(contact_id)
+            if self.call and self.call.is_group:
+                turn = self.call.text_turn(session, body)
+            else:
+                turn = session.ask(body, via="text_on_call")
+            await self.drive(turn, self.contact or session.contact, epoch)
 
     async def _release_after(self, contact):
         """
@@ -754,14 +815,15 @@ async def system_line(event: str, contact: str = ""):
 
 
 @app.get("/api/contacts/{contact_id}/messages")
-async def messages(contact_id: str):
-    """The text thread with a contact, oldest first."""
+async def messages(contact_id: str, before: float = 0, limit: int = 40):
+    """
+    A page of the text thread, oldest first: the newest `limit` messages older
+    than `before` (a timestamp), so the page can load further back on scroll.
+    """
     if console.directory.get(contact_id) is None:
         return Response(status_code=404)
-    thread = console.session_for(contact_id).history.texts()
-    return JSONResponse({"messages": [
-        {"from": "them" if m["role"] == "assistant" else "me", "text": m["content"],
-         "at": m.get("at")} for m in thread]})
+    page = TextLog(contact_id).page(before or None, max(1, min(limit, 200)))
+    return JSONResponse({"messages": page, "typing": contact_id in console._texters})
 
 
 @app.get("/api/audio/{clip_id}")

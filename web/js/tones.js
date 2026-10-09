@@ -113,7 +113,15 @@
     note(147, t, 0.05, 0.02);
   }
 
+  /** A text arrived: one soft, high blip — noticed, not alarming. */
+  function message() {
+    var t = ctx().currentTime;
+    note(880, t, 0.09, 0.03);
+    note(1175, t + 0.07, 0.14, 0.025);
+  }
+
   global.ConsoleTones = {
+    message: message,
     startRinging: startRinging,
     stopRinging: stopRinging,
     connected: connected,

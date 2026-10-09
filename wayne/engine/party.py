@@ -171,11 +171,24 @@ class Call:
                         queue.append((other, True))
                         break
 
-    def _speak(self, member, prompt, interrupted, confidence, follow_up):
+    def text_turn(self, member, body):
+        """
+        He texted one person on the call. Only they saw it; they answer out
+        loud, and everyone hears the answer — not the text.
+        """
+        reply = yield from self._speak(member, body, False, 1.0, False, via="text_on_call")
+        if reply:
+            self.last_speaker = member
+            line = f"{member.contact.full_name}: {reply}"
+            self.transcript.append(line)
+            for other in self.others(member):
+                other.heard.append(line)
+
+    def _speak(self, member, prompt, interrupted, confidence, follow_up, via=None):
         """Run one contact's turn, tagging every event with who said it."""
         reply = ""
         for event in member.ask(prompt, interrupted=interrupted, confidence=confidence,
-                                follow_up=follow_up):
+                                follow_up=follow_up, via=via):
             event = {**event, "speaker": member.contact.id}
             if event["type"] == "reply_end" and not event.get("interim"):
                 reply = event["text"]

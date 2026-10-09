@@ -925,7 +925,9 @@ class ContactSession:
         # On a call with others the model reads the conversation as it was
         # heard — who said what since this contact last spoke — and the
         # operator's line is announced once by the call, not by each contact.
-        said = self._heard_turn(prompt, follow_up) if self.call else prompt
+        said = self._heard_turn(prompt, follow_up, via) if self.call else prompt
+        if via == "text_on_call" and not self.call:
+            said = f"(texted you during the call) {prompt}"
         if not self.call:
             yield events.message("user", prompt)
 
@@ -935,7 +937,11 @@ class ContactSession:
                 return
 
         awareness = self._awareness(prompt, interrupted, confidence)
-        if via == "text":
+        if via == "text_on_call":
+            awareness.append(
+                "He's just texted you this while you're on the call together — it's on "
+                "your phone. Acknowledge it on the call, briefly, and use it.")
+        elif via == "text":
             # A text is answered as a text: short, written, in their own style.
             awareness.append(
                 "He's texting you, not calling. Reply as a text message — a line or two, "
@@ -1001,14 +1007,14 @@ class ContactSession:
                 yield events.state(events.IDLE)
                 return
 
-        self.history.record_exchange(said, reply, via=via)
+        self.history.record_exchange(said, reply, via="text" if via == "text" else None)
         self.heard = []
         yield events.reply_end(reply)
-        if guards.user_is_leaving(prompt) and not self.call and via != "text":
+        if guards.user_is_leaving(prompt) and not self.call and via is None:
             yield events.call_ending()
         yield events.state(events.IDLE)
 
-    def _heard_turn(self, prompt, follow_up):
+    def _heard_turn(self, prompt, follow_up, via=None):
         """
         What this contact hears as one turn on a call: everything said since
         they last spoke, each line labelled with who said it, then — unless
@@ -1016,7 +1022,8 @@ class ContactSession:
         """
         lines = list(self.heard)
         if not follow_up:
-            lines.append(f"{self.call.operator}: {prompt}")
+            label = " (texted you, privately)" if via == "text_on_call" else ""
+            lines.append(f"{self.call.operator}{label}: {prompt}")
         self.heard = []
         return "\n".join(lines)
 

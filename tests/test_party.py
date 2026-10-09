@@ -14,7 +14,7 @@ class FakeMember:
         self.replies = list(replies or ["Mm."])
         self.call, self.heard, self.asked = None, [], []
 
-    def ask(self, prompt, interrupted=False, confidence=1.0, follow_up=False):
+    def ask(self, prompt, interrupted=False, confidence=1.0, follow_up=False, via=None):
         self.asked.append((prompt, follow_up, list(self.heard)))
         self.heard = []
         reply = self.replies.pop(0) if self.replies else "Mm."

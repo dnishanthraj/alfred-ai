@@ -95,6 +95,9 @@ class Contact:
     texting: str = ""
     # Heading the directory lists them under ("Family", "Gotham").
     group: str = "Contacts"
+    # How quickly they read and answer a text, in seconds: {"read": [min, max],
+    # "busy": chance of being tied up, "busy_for": [min, max], "wpm": typing}.
+    texting_pace: dict = field(default_factory=dict)
 
     @property
     def has_voice(self):
@@ -201,6 +204,7 @@ def _load_profile(path):
         portrait=raw.get("portrait", {}),
         texting=raw.get("texting", ""),
         group=raw.get("group", "Contacts"),
+        texting_pace=raw.get("texting_pace", {}),
     )
 
 

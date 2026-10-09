@@ -283,10 +283,13 @@ html[data-state="searching"] .bar__brand svg { animation: spin 3s linear infinit
   z-index: 1;
   height: calc(100% - var(--bar-h));
   display: grid;
-  grid-template-columns: 250px 1fr;
+  grid-template-columns: var(--rail-w, 270px) 1fr;
 }
+html[data-rail="hidden"] .shell { grid-template-columns: 0 1fr; }
+html[data-rail="hidden"] .rail { display: none; }
 
 .rail {
+  position: relative;
   display: grid;
   grid-template-rows: 1fr auto;
   gap: 1px;
@@ -946,3 +949,94 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
   letter-spacing: 0.12em;
   max-width: 100%;
 }
+
+/* --- layout controls ------------------------------------------------------ */
+
+.bar__left { display: flex; align-items: center; gap: 12px; }
+.bar__btn {
+  position: relative;
+  width: 28px; height: 28px; display: grid; place-items: center;
+  background: transparent; border: 1px solid transparent; border-radius: 6px;
+  color: var(--text-dim); cursor: pointer;
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.bar__btn:hover { color: var(--primary); border-color: var(--hairline-2); }
+.bar__btn svg { width: 15px; height: 15px; }
+.bar__status { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+.bar__count {
+  position: absolute; top: -3px; right: -4px;
+  min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px;
+  background: var(--primary); color: var(--void);
+  font: 600 9px/15px var(--mono); text-align: center;
+}
+
+/* Drag the rail's edge to resize it; narrow enough and it becomes portraits. */
+.rail__resize, .messages__resize {
+  position: absolute; top: 0; bottom: 0; width: 6px; z-index: 3;
+  cursor: col-resize; background: transparent; transition: background 0.2s var(--ease);
+}
+.rail__resize { right: -3px; }
+.messages__resize { left: -3px; }
+.rail__resize:hover, .messages__resize:hover,
+html[data-resizing] .rail__resize, html[data-resizing] .messages__resize { background: var(--primary-dim); }
+html[data-resizing] { cursor: col-resize; user-select: none; }
+
+html[data-rail="compact"] .panel { padding: 16px 10px; }
+html[data-rail="compact"] .panel__label,
+html[data-rail="compact"] .book__open,
+html[data-rail="compact"] .book__actions { display: none; }
+html[data-rail="compact"] .book__group { font-size: 0; height: 1px; background: var(--hairline); margin: 12px 4px; }
+html[data-rail="compact"] .book__row { grid-template-columns: 1fr; justify-items: center; padding: 6px 0; border-left: 0; }
+html[data-rail="compact"] .book__avatar { width: 40px; height: 40px; cursor: pointer; }
+html[data-rail="compact"] .lock { font-size: 0; padding: 10px 0; }
+html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
+
+.messages { width: var(--msg-w, 400px); max-width: 100%; }
+.messages__avatar { cursor: pointer; padding: 0; }
+.messages__who { cursor: pointer; }
+.messages__who:hover .messages__name { color: var(--contact-accent, var(--primary)); }
+
+/* Time and receipts, in the console's own small capitals. */
+.bubble { flex-wrap: wrap; }
+.bubble__meta {
+  flex-basis: 100%;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-faint); margin-top: 3px;
+}
+.bubble--them .bubble__meta { padding-left: 32px; }
+.bubble--me .bubble__meta { text-align: right; }
+.bubble__meta[data-read="1"] { color: var(--contact-accent, var(--primary)); }
+.messages__more { align-self: center; font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; color: var(--text-faint); text-transform: uppercase; }
+
+/* Personnel file: reach them from here. */
+.dossier__reach { display: flex; gap: 8px; justify-content: center; margin: -6px 0 20px; }
+.dossier__btn {
+  background: transparent; border: 1px solid var(--contact-accent, var(--hairline-2));
+  color: var(--contact-accent, var(--text-dim)); padding: 7px 16px; cursor: pointer;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+}
+.dossier__btn:hover { background: rgba(79, 168, 224, 0.08); }
+.dossier__btn:disabled { opacity: 0.4; cursor: default; }
+
+/* --- notifications -------------------------------------------------------- */
+
+.toasts {
+  position: fixed; top: calc(var(--bar-h) + 12px); right: 16px; z-index: 40;
+  display: flex; flex-direction: column; gap: 8px; width: min(320px, calc(100% - 32px));
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto; cursor: pointer;
+  display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: center;
+  padding: 10px 12px; background: var(--raised);
+  border: 1px solid var(--hairline-2); border-left: 2px solid var(--contact-accent, var(--primary));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  animation: toast-in 0.35s var(--ease) both;
+}
+.toast[data-leaving] { animation: toast-out 0.3s var(--ease) both; }
+@keyframes toast-in { from { opacity: 0; transform: translateX(16px); } }
+@keyframes toast-out { to { opacity: 0; transform: translateX(16px); } }
+.toast__name { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--contact-accent, var(--primary)); }
+.toast__text { display: block; font-size: 13px; color: var(--text); margin-top: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toast .bubble__avatar { width: 34px; height: 34px; }

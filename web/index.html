@@ -42,6 +42,10 @@
 
   <!-- ── Console ──────────────────────────────────────────────────────── -->
   <header class="bar">
+    <div class="bar__left">
+    <button class="bar__btn" id="rail-toggle" type="button" title="Show or hide the directory" aria-label="Toggle directory">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h16"/></svg>
+    </button>
     <div class="bar__brand">
       <svg viewBox="0 0 32 32" width="15" height="15" aria-hidden="true">
         <g fill="none" stroke="currentColor" stroke-width="2">
@@ -52,8 +56,13 @@
       </svg>
       <span>WayneTech</span>
     </div>
+    </div>
     <div class="bar__title" id="bar-title"></div>
     <div class="bar__status">
+      <button class="bar__btn bar__inbox" id="inbox" type="button" title="Messages" aria-label="Messages">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span class="bar__count" id="inbox-count" hidden></span>
+      </button>
       <span class="bar__clock" id="clock">--:--:--</span>
     </div>
   </header>
@@ -61,7 +70,8 @@
   <main class="shell">
 
     <!-- Directory -->
-    <aside class="rail">
+    <aside class="rail" id="rail">
+      <div class="rail__resize" id="rail-resize" title="Drag to resize"></div>
       <section class="panel panel--book">
         <h2 class="panel__label">Directory</h2>
         <ul class="book" id="book"></ul>
@@ -86,6 +96,10 @@
         <label class="dossier__label" for="dossier-text">Who he is to me</label>
         <textarea class="dossier__text" id="dossier-text" spellcheck="false"
                   rows="10"></textarea>
+        <div class="dossier__reach">
+          <button class="dossier__btn" id="dossier-call" type="button">Call</button>
+          <button class="dossier__btn" id="dossier-message" type="button">Message</button>
+        </div>
         <div class="dossier__actions">
           <span class="dossier__saved" id="dossier-saved"></span>
           <button class="dossier__save" id="dossier-save" type="button">Save</button>
@@ -95,9 +109,10 @@
 
     <!-- Messages: a text thread with one contact -->
     <aside class="messages" id="messages" hidden>
+      <div class="messages__resize" id="messages-resize" title="Drag to resize"></div>
       <header class="messages__head">
-        <span class="messages__avatar" id="messages-avatar"></span>
-        <div class="messages__who">
+        <button class="messages__avatar" id="messages-avatar" type="button" title="Open personnel file"></button>
+        <div class="messages__who" id="messages-who" title="Open personnel file">
           <span class="messages__name" id="messages-name"></span>
           <span class="messages__role" id="messages-role"></span>
         </div>
@@ -153,6 +168,7 @@
 
   </main>
 
+  <div class="toasts" id="toasts" aria-live="polite"></div>
   <div class="grain" aria-hidden="true"></div>
 
   <script src="/static/js/visualizer.js"></script>

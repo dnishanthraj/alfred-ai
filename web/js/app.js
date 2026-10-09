@@ -52,7 +52,7 @@
     messagesWith: null, // whose text thread is open
     unread: {},       // contacts with a text reply not yet seen
     typing: {},       // contacts writing a reply
-    typingBubble: null,
+    thread: null,     // the open text thread: {id, messages, more, loading}
     lastSpeaker: null // who said the line on screen, on a call with company
   };
 
@@ -111,7 +111,9 @@
      'mode-ptt', 'mode-ambient', 'dossier', 'dossier-close', 'dossier-name',
      'dossier-role', 'dossier-text', 'dossier-save', 'dossier-saved',
      'dossier-portrait', 'messages', 'messages-avatar', 'messages-name', 'messages-role',
-     'messages-close', 'messages-thread', 'messages-compose', 'messages-input'].forEach(function (id) { el[id] = $(id); });
+     'messages-close', 'messages-thread', 'messages-compose', 'messages-input',
+     'messages-resize', 'messages-who', 'rail-toggle', 'rail-resize', 'inbox', 'inbox-count',
+     'toasts', 'dossier-call', 'dossier-message'].forEach(function (id) { el[id] = $(id); });
   }
 
   /* --- the spoken line ---------------------------------------------------- */
@@ -408,6 +410,11 @@
       var dot = document.createElement('span');
       dot.className = 'book__dot';
       avatar.appendChild(dot);
+      avatar.title = contact.full_name;
+      avatar.addEventListener('click', function () {
+        el.dossier.dataset.contact = id;
+        openDossier(id);
+      });
 
       var text = document.createElement('button');
       text.type = 'button';
@@ -456,53 +463,143 @@
   }
 
   /* --- messages ------------------------------------------------------------
-     A text thread with one contact. Written, never spoken, and kept in the
-     same memory as their calls — they know what you texted when you next ring.
+     A text thread with one contact. Written, never spoken, kept in the same
+     memory as their calls, and paced like a person: delivered, read when they
+     get to it, typed, answered. Scroll up for older messages.
      ------------------------------------------------------------------------ */
 
-  function bubble(from, textBody, contact, typing) {
+  function clock(at) {
+    var d = new Date(at * 1000);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  function dayLabel(at) {
+    var d = new Date(at * 1000), today = new Date();
+    var yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+    if (d.toDateString() === today.toDateString()) return 'Today';
+    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+
+  function bubbleNode(message, contact) {
     var li = document.createElement('li');
-    li.className = 'bubble bubble--' + from + (typing ? ' bubble--typing' : '');
+    var from = message.from === 'me' ? 'me' : 'them';
+    li.className = 'bubble bubble--' + from + (message.typing ? ' bubble--typing' : '');
+    if (message.id) li.dataset.id = message.id;
     if (from === 'them') {
       var av = document.createElement('span');
       av.className = 'bubble__avatar';
       portraitStyle(av, contact, 'center 22%');
-      li.style.setProperty('--contact-accent', contact.accent);
       li.appendChild(av);
     }
     var t = document.createElement('span');
     t.className = 'bubble__text';
-    t.textContent = textBody;
+    t.textContent = message.text;
     li.appendChild(t);
-    el['messages-thread'].appendChild(li);
-    el['messages-thread'].scrollTop = el['messages-thread'].scrollHeight;
+    if (!message.typing && message.at) {
+      var meta = document.createElement('span');
+      meta.className = 'bubble__meta';
+      meta.textContent = clock(message.at);
+      li.appendChild(meta);
+    }
     return li;
+  }
+
+  /* Draw the whole thread: day separators, bubbles, and — on your last
+     message — whether it's been delivered or read. */
+  function renderThread() {
+    var th = state.thread;
+    if (!th) return;
+    var contact = state.contacts[th.id];
+    var box = el['messages-thread'];
+    box.innerHTML = '';
+    if (th.more) {
+      var more = document.createElement('li');
+      more.className = 'messages__more';
+      more.textContent = 'Scroll for earlier';
+      box.appendChild(more);
+    }
+    var lastDay = null, lastMine = null;
+    th.messages.forEach(function (m) {
+      var day = dayLabel(m.at);
+      if (day !== lastDay) {
+        var sep = document.createElement('li');
+        sep.className = 'messages__day';
+        sep.textContent = day;
+        box.appendChild(sep);
+        lastDay = day;
+      }
+      var node = bubbleNode(m, contact);
+      box.appendChild(node);
+      if (m.from === 'me') lastMine = { node: node, m: m };
+    });
+    if (lastMine) {
+      var meta = lastMine.node.querySelector('.bubble__meta');
+      if (meta && lastMine.m === th.messages[th.messages.length - 1]) {
+        meta.textContent = lastMine.m.read_at
+          ? 'Read ' + clock(lastMine.m.read_at) : 'Delivered ' + clock(lastMine.m.at);
+        if (lastMine.m.read_at) meta.dataset.read = '1';
+      }
+    }
+    if (state.typing[th.id]) box.appendChild(bubbleNode({ from: 'them', text: '•••', typing: true }, contact));
+  }
+
+  function scrollThreadToEnd() {
+    el['messages-thread'].scrollTop = el['messages-thread'].scrollHeight;
   }
 
   function openMessages(id) {
     var contact = state.contacts[id];
     if (!contact) return;
     state.messagesWith = id;
+    state.lastThread = id;
     delete state.unread[id];
+    updateInbox();
     el.messages.style.setProperty('--contact-accent', contact.accent);
     portraitStyle(el['messages-avatar'], contact, 'center 22%');
     el['messages-name'].textContent = contact.full_name;
     el['messages-role'].textContent = contact.role;
-    el['messages-thread'].innerHTML = '';
+    state.thread = { id: id, messages: [], more: false, loading: true };
+    renderThread();
     el.messages.hidden = false;
     renderDirectory();
-    fetch('/api/contacts/' + id + '/messages')
+    fetch('/api/contacts/' + id + '/messages?limit=40')
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (state.messagesWith !== id) return;
-        (d.messages || []).forEach(function (m) { bubble(m.from, m.text, contact); });
-        if (state.typing[id]) state.typingBubble = bubble('them', '•••', contact, true);
+        if (!state.thread || state.thread.id !== id) return;
+        state.thread.messages = d.messages || [];
+        state.thread.more = (d.messages || []).length >= 40;
+        state.thread.loading = false;
+        if (d.typing) state.typing[id] = state.typing[id] || false;
+        renderThread();
+        scrollThreadToEnd();
       });
     el['messages-input'].focus();
   }
 
+  /* Scrolled to the top: fetch the page before the oldest message shown, and
+     keep the view where it was. */
+  function loadEarlier() {
+    var th = state.thread;
+    if (!th || th.loading || !th.more || !th.messages.length) return;
+    th.loading = true;
+    var box = el['messages-thread'];
+    var fromBottom = box.scrollHeight - box.scrollTop;
+    fetch('/api/contacts/' + th.id + '/messages?limit=40&before=' + th.messages[0].at)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (state.thread !== th) return;
+        th.messages = (d.messages || []).concat(th.messages);
+        th.more = (d.messages || []).length >= 40;
+        th.loading = false;
+        renderThread();
+        box.scrollTop = box.scrollHeight - fromBottom;
+      });
+  }
+
   function closeMessages() {
     state.messagesWith = null;
+    state.thread = null;
     el.messages.hidden = true;
   }
 
@@ -512,26 +609,181 @@
     var id = state.messagesWith;
     if (!body || !id) return;
     el['messages-input'].value = '';
-    bubble('me', body, state.contacts[id]);
     send({ type: 'text', id: id, text: body });
+  }
+
+  function threadOpenFor(id) {
+    return state.thread && state.thread.id === id && !el.messages.hidden;
+  }
+
+  function onTextSent(event) {
+    if (!threadOpenFor(event.speaker)) return;
+    state.thread.messages.push(event.message);
+    renderThread();
+    scrollThreadToEnd();
+  }
+
+  function onTextRead(event) {
+    if (!threadOpenFor(event.speaker)) return;
+    state.thread.messages.forEach(function (m) {
+      if (event.ids.indexOf(m.id) !== -1) m.read_at = event.at;
+    });
+    renderThread();
   }
 
   function onTextTyping(event) {
     state.typing[event.speaker] = true;
-    if (state.messagesWith === event.speaker && !state.typingBubble) {
-      state.typingBubble = bubble('them', '•••', state.contacts[event.speaker], true);
-    }
+    if (threadOpenFor(event.speaker)) { renderThread(); scrollThreadToEnd(); }
+  }
+
+  function onTextIdle(event) {
+    delete state.typing[event.speaker];
+    if (threadOpenFor(event.speaker)) renderThread();
   }
 
   function onTextReply(event) {
     delete state.typing[event.speaker];
-    if (state.typingBubble) { state.typingBubble.remove(); state.typingBubble = null; }
-    if (state.messagesWith === event.speaker && !el.messages.hidden) {
-      bubble('them', event.text, state.contacts[event.speaker]);
+    if (threadOpenFor(event.speaker)) {
+      state.thread.messages.push(event.message);
+      renderThread();
+      scrollThreadToEnd();
     } else {
       state.unread[event.speaker] = true;
+      updateInbox();
       renderDirectory();
+      notify(event.speaker, event.message.text);
     }
+  }
+
+  function updateInbox() {
+    var n = Object.keys(state.unread).length;
+    el['inbox-count'].hidden = !n;
+    el['inbox-count'].textContent = n;
+  }
+
+  /* --- notifications -------------------------------------------------------
+     A message from someone whose thread isn't open: a card slides in with
+     their portrait and the first line, a soft tone, and clicking it opens the
+     thread. They leave on their own after a few seconds.
+     ------------------------------------------------------------------------ */
+
+  function notify(id, textBody) {
+    var contact = state.contacts[id];
+    if (!contact) return;
+    var card = document.createElement('div');
+    card.className = 'toast';
+    card.style.setProperty('--contact-accent', contact.accent);
+    var av = document.createElement('span');
+    av.className = 'bubble__avatar';
+    portraitStyle(av, contact, 'center 22%');
+    var words = document.createElement('div');
+    var who = document.createElement('span');
+    who.className = 'toast__name';
+    who.textContent = contact.name;
+    var line = document.createElement('span');
+    line.className = 'toast__text';
+    line.textContent = textBody;
+    words.appendChild(who);
+    words.appendChild(line);
+    card.appendChild(av);
+    card.appendChild(words);
+    var dismiss = function () {
+      card.dataset.leaving = '1';
+      setTimeout(function () { card.remove(); }, 300);
+    };
+    card.addEventListener('click', function () { dismiss(); openMessages(id); });
+    el.toasts.appendChild(card);
+    if (ConsoleTones.message) ConsoleTones.message();
+    setTimeout(dismiss, 6500);
+  }
+
+  /* --- layout ----------------------------------------------------------------
+     The directory can be dragged wider or narrower — narrow enough and it
+     becomes portraits only — or hidden. The messages panel drags too. Both
+     remember where you left them.
+     ------------------------------------------------------------------------ */
+
+  var COMPACT_BELOW = 150;
+
+  function remember(key, value) { try { localStorage.setItem('console.' + key, value); } catch (e) {} }
+  function recall(key) { try { return localStorage.getItem('console.' + key); } catch (e) { return null; } }
+
+  function setRailWidth(px) {
+    px = Math.max(76, Math.min(px, 420));
+    document.documentElement.style.setProperty('--rail-w', px + 'px');
+    var compact = px < COMPACT_BELOW;
+    if (document.documentElement.dataset.rail !== 'hidden') {
+      document.documentElement.dataset.rail = compact ? 'compact' : 'open';
+    }
+    remember('railWidth', px);
+  }
+
+  function toggleRail() {
+    var hidden = document.documentElement.dataset.rail === 'hidden';
+    if (hidden) {
+      document.documentElement.dataset.rail = 'open';
+      setRailWidth(parseInt(recall('railWidth') || '270', 10));
+    } else {
+      document.documentElement.dataset.rail = 'hidden';
+    }
+    remember('railHidden', hidden ? '0' : '1');
+  }
+
+  function dragToResize(handle, onMove) {
+    handle.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      document.documentElement.dataset.resizing = '1';
+      var move = function (ev) { onMove(ev.clientX); };
+      var up = function () {
+        delete document.documentElement.dataset.resizing;
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    });
+  }
+
+  function wireLayout() {
+    setRailWidth(parseInt(recall('railWidth') || '270', 10));
+    if (recall('railHidden') === '1') document.documentElement.dataset.rail = 'hidden';
+    var w = parseInt(recall('msgWidth') || '400', 10);
+    document.documentElement.style.setProperty('--msg-w', w + 'px');
+    el['rail-toggle'].addEventListener('click', toggleRail);
+    dragToResize(el['rail-resize'], function (x) { setRailWidth(x); });
+    dragToResize(el['messages-resize'], function (x) {
+      var width = Math.max(300, Math.min(window.innerWidth - x, 720));
+      document.documentElement.style.setProperty('--msg-w', width + 'px');
+      remember('msgWidth', width);
+    });
+    el.inbox.addEventListener('click', function () {
+      var first = Object.keys(state.unread)[0];
+      if (first) openMessages(first);
+      else if (!el.messages.hidden) closeMessages();
+      else openMessages(state.connectedId || state.lastThread || state.order[0]);
+    });
+    el['messages-thread'].addEventListener('scroll', function () {
+      if (el['messages-thread'].scrollTop < 40) loadEarlier();
+    });
+    var openFile = function () {
+      if (!state.messagesWith) return;
+      el.dossier.dataset.contact = state.messagesWith;
+      openDossier(state.messagesWith);
+    };
+    el['messages-avatar'].addEventListener('click', openFile);
+    el['messages-who'].addEventListener('click', openFile);
+    el['dossier-call'].addEventListener('click', function () {
+      var id = el.dossier.dataset.contact;
+      el.dossier.hidden = true;
+      if (!id) return;
+      if (state.party.length && !onCall(id)) addToCall(id);
+      else if (!state.party.length) placeCall(id);
+    });
+    el['dossier-message'].addEventListener('click', function () {
+      var id = el.dossier.dataset.contact;
+      el.dossier.hidden = true;
+      if (id) openMessages(id);
+    });
   }
 
   /* Patch someone into the call in progress. The console announces it and
@@ -675,7 +927,8 @@
     // mid-reply leaves the rest of the turn still arriving: sentences queue,
     // audio plays, and a contact you just cut off keeps talking.
     // Texts arrive whether or not anyone is on a call.
-    var conversational = ['notice', 'text_typing', 'text_reply'].indexOf(event.type) === -1;
+    var conversational = ['notice', 'text_sent', 'text_read', 'text_typing', 'text_idle',
+                          'text_reply'].indexOf(event.type) === -1;
     if (!state.connectedId && conversational) return;
 
     switch (event.type) {
@@ -731,8 +984,20 @@
         }
         break;
 
+      case 'text_sent':
+        onTextSent(event);
+        break;
+
+      case 'text_read':
+        onTextRead(event);
+        break;
+
       case 'text_typing':
         onTextTyping(event);
+        break;
+
+      case 'text_idle':
+        onTextIdle(event);
         break;
 
       case 'text_reply':
@@ -960,6 +1225,11 @@
     el['dossier-name'].textContent = contact.full_name;
     el['dossier-role'].textContent = contact.role;
     el['dossier-saved'].dataset.show = '0';
+    // Reach them from their file: call (or add them to the call in progress).
+    var already = onCall(contactId);
+    el['dossier-call'].textContent = state.party.length ? (already ? 'On the call' : 'Add to call') : 'Call';
+    el['dossier-call'].disabled = already || !contact.available
+      || (state.party.length >= MAX_PARTY && !already);
     document.documentElement.style.setProperty('--contact-accent', contact.accent);
 
     // A supplied portrait wins; otherwise the generated silhouette stands in.
@@ -1032,5 +1302,6 @@
   wireAudio();
   wireMic();
   wireSystem();
+  wireLayout();
   loadSession().then(startBoot, startBoot);
 })();
