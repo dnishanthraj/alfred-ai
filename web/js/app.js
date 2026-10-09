@@ -386,14 +386,19 @@
     el['ringing-label'].textContent = 'Connecting to ' + contact.name + '…';
     setLink('ringing');
     setState('idle');
-    ConsoleTones.startRinging();
+    // Connect first, so the model loads while the console announces the call;
+    // the ring follows the announcement rather than talking over it.
     send({ type: 'connect', id: contactId });
+    ConsoleSystem.say('call', contactId).then(function () {
+      if (state.ringingId === contactId) ConsoleTones.startRinging();
+    });
     el.input.focus();
   }
 
   /** He has picked up: stop the ring, mark the link live, go blue. */
   function answered() {
     if (document.documentElement.dataset.link === 'on') return;
+    ConsoleSystem.stop();   // he's picked up; the machine stops talking
     ConsoleTones.connected();
     state.ringingId = null;
     var contact = state.contacts[state.connectedId];
@@ -408,6 +413,7 @@
     ConsoleAudio.stop();
     ConsoleTones.stopRinging();
     ConsoleTones.disconnected();
+    ConsoleSystem.say('end');
     ConsoleMic.close();
     setMode('ptt');
     clearTimeout(state.idleTimer);
@@ -620,6 +626,7 @@
 
     el.lock.addEventListener('click', function () {
       if (state.connectedId) hangUp();
+      ConsoleSystem.say('lock');
       ConsoleBoot.lock();
       startBoot();
     });
@@ -667,6 +674,18 @@
     });
   }
 
+  function wireSystem() {
+    // What the console just said, in the status line for a moment.
+    ConsoleSystem.on('onLine', function (text) {
+      el.status.textContent = text;
+      setTimeout(function () {
+        if (el.status.textContent === text) {
+          el.status.textContent = STATE_COPY[document.documentElement.dataset.state] || '';
+        }
+      }, 3200);
+    });
+  }
+
   function wireMic() {
     ConsoleMic.on('onLevel', function (level) { if (state.viz) state.viz.setLevel(level); });
     ConsoleMic.on('onUtterance', submitAudio);
@@ -706,6 +725,12 @@
     // covers the rest. The silhouette is last, so it shows only if none do.
     // Keep this list in step with the per-layer sizes in `.dossier__portrait`.
     var base = "/static/portraits/" + contactId;
+    // Each contact's crop, if the profile gives one; otherwise the stylesheet's.
+    var frame = contact.portrait || {};
+    el['dossier-portrait'].style.backgroundSize = frame.size
+      ? [frame.size, frame.size, frame.size, 'cover'].join(', ') : '';
+    el['dossier-portrait'].style.backgroundPosition = frame.position
+      ? [frame.position, frame.position, frame.position, 'center 22%'].join(', ') : '';
     el['dossier-portrait'].style.backgroundImage =
       "url('" + base + ".png'), url('" + base + ".jpg'), url('" + base + ".webp'), " +
       "url('/static/portraits/_silhouette.svg')";
@@ -750,6 +775,7 @@
     ConsoleBoot.start({
       contactCount: state.order.length,
       onAuthenticated: function () {
+        ConsoleSystem.say('unlock');
         el.input.focus();
         if (!state.socket || state.socket.readyState > WebSocket.OPEN) connectSocket();
       }
@@ -773,5 +799,6 @@
   wireInput();
   wireAudio();
   wireMic();
+  wireSystem();
   loadSession().then(startBoot, startBoot);
 })();

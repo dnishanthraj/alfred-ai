@@ -119,8 +119,14 @@ REGISTER_DIRECTIVE = (
 PRESENCE_DIRECTIVE = (
     "You are not in the room — a voice link from your own location. You cannot "
     "see him, hand him anything, or know where he is. Never offer food or drink, "
-    "describe his surroundings or how he looks, or name the device he is on. You "
-    "are at a working terminal with records, so looking things up is ordinary."
+    "describe his surroundings or how he looks, or name the device he is on."
+)
+
+# Only for contacts who can search. It used to be part of the presence line —
+# "you are at a working terminal" — which suits Alfred and not everyone.
+LOOKUP_DIRECTIVE = (
+    "You can look things up as you talk, in whatever way is natural to you, so "
+    "doing so is ordinary."
 )
 
 # The rule that matters most and is easiest to break.
@@ -197,8 +203,10 @@ def register_hint(prompt):
     if _WEIGHT.search(text):
         # "No cleverness" alone produced melodrama instead — "a heavy thing to
         # carry all by yourself in the dark". Plain is the instruction.
-        tone = (" This one is serious. Plain, warm, steady words — no jokes, and "
-                "no poetry or drama either. Stay with him.")
+        # "In your own voice": without it every contact answered a bad day
+        # with the same counsellor's line — "Talk to me. I'm listening."
+        tone = (" This one is serious. Plain, warm, steady words in your own voice "
+                "— no jokes, and no poetry or drama either. Stay with him.")
     elif _SINCERE.search(text):
         tone = (" He means this sincerely. Let it land: be touched, briefly and "
                 "plainly, before any dryness. Don't deflect it with a joke.")
@@ -253,7 +261,7 @@ def standing_directives(contact):
     if delivery.supported():
         parts.insert(1, VOICE_DIRECTIVE)
     if contact.can_search:
-        parts.append(SEARCH_DIRECTIVE)
+        parts += [LOOKUP_DIRECTIVE, SEARCH_DIRECTIVE]
     return "\n\n".join(parts)
 
 

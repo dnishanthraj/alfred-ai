@@ -7,6 +7,33 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Added
 
+- **Lucius Fox and Selina Kyle.** Two new contacts, written from a researched
+  bible of the comics, the films and the Arkham games. Lucius: the engineer who
+  became Wayne Enterprises' CEO and never stopped being an engineer — calm, wry,
+  a mentor who takes the operator's tech career seriously, with a firm ethical
+  line ("too much power for one person") and a preference for plausible
+  deniability. Selina: a self-made master thief from the East End — cool, quick,
+  teasing, a code of her own and a hidden heart; flirtation all timing and
+  implication, never explicit, and she won't help him do anything that would land
+  him in real trouble. Both play along when he plays Bruce, knowing it's him. Each
+  has their own examples, life, backup lines, judge brief and evaluation
+  scenarios; first marks 78.8 (Lucius) and 75.5 (Selina) against Alfred's 81.
+- **What each contact calls him is private to that contact** — a gitignored
+  `Modelfile.<id>` per contact beside the shared `Modelfile` of facts — and used
+  sparingly: the first pass put a name in nearly every reply.
+- **`WAYNE_PRONOUNCE`** — respellings for names the voice gets wrong, applied to
+  speech only; the screen keeps the real spelling.
+- **The Batcomputer.** The console's own voice (`BATCOMPUTER_VOICE_ID`) for
+  unlocking, locking, placing a call and ending one — written lines, the one voice
+  that should sound like a system, with variants so it isn't a recording. Each is
+  synthesised once and cached on disk, so it plays instantly; a call's ring
+  follows the announcement, and a contact picking up cuts it short.
+- **Per-contact portrait framing**, for supplied images that aren't square.
+- **The engine is character-neutral.** Alfred's garden, army years and backup
+  lines moved from the engine into his profile; the lookup line no longer assumes
+  a terminal; the evaluation judge reads its brief from the profile, and
+  scenarios split into a common set and one per contact.
+
 - **He'll play Bruce Wayne with you, knowing it's you.** Start the game —
   the cave, the cowl, a patrol — and he plays the Alfred of the manor
   wholeheartedly, without stopping to call it a game; Killer Croc becomes a
@@ -64,6 +91,12 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 - **Two stage cues on one line** ("[laughs] [sarcastic]"). One per piece of text.
 
 ### Changed
+
+- **The console's settings are the console's.** It began as Alfred and named its
+  settings after him; console-wide ones are now `WAYNE_*` (`WAYNE_LOCATION`,
+  `WAYNE_TTS_MODEL`, …). The old `ALFRED_*` names still work. Settings that are
+  genuinely Alfred's (`ALFRED_VOICE_ID`) keep his name. The README is the
+  WayneTech Console's.
 
 - **Silences behave like a call.** A question he asked and you left hanging gets
   a prod after 9–15s, in different words. Otherwise the line is open and nobody is

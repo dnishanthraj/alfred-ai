@@ -45,3 +45,11 @@ def test_word_timings_skip_cues():
 def test_only_one_cue_per_piece_of_text(monkeypatch):
     monkeypatch.setattr(delivery.config, "ELEVENLABS_MODEL", "eleven_v4_turbo")
     assert delivery.voiced("[laughs] [sarcastic] Delusions.") == "[laughs] Delusions."
+
+
+def test_pronunciations_change_the_voice_not_the_screen(monkeypatch):
+    from wayne import events
+    monkeypatch.setattr(delivery.config, "PRONUNCIATIONS", {"Fox": "Focks"})
+    event = events.sentence(0, "Mr. Fox will see you.")
+    assert event["text"] == "Mr. Fox will see you."
+    assert event["voice"] == "Mr. Focks will see you."

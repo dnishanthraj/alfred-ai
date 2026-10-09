@@ -7,10 +7,10 @@ whether the last exchange was ten minutes or three weeks ago, which is most of
 the difference between "Evening again" and "It's been a while."
 """
 import json
-import os
 import time
 
 from .. import delivery, paths
+from ..config import setting
 from .store import atomic_write, read_text
 
 # Full exchanges kept on disk as short-term memory.
@@ -40,7 +40,7 @@ MAX_HISTORY_MESSAGES = MAX_HISTORY_PAIRS * 2
 # A word budget rather than a turn count, because turns are wildly uneven — one
 # long answer costs as much as ten short ones, and a cap on pairs lets that
 # through. Oldest whole exchanges are dropped first.
-HISTORY_WORD_BUDGET = int(os.getenv("ALFRED_HISTORY_WORDS", "260"))
+HISTORY_WORD_BUDGET = int(setting("HISTORY_WORDS", "260"))
 
 # When the window has to move, how far down to trim it, as a share of the
 # budget.

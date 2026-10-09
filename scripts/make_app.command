@@ -19,7 +19,7 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$DIR/WayneTech Console.app"
-PORT="${ALFRED_WEB_PORT:-8420}"
+PORT="${WAYNE_WEB_PORT:-${ALFRED_WEB_PORT:-8420}}"
 
 echo "Building $APP"
 rm -rf "$APP"

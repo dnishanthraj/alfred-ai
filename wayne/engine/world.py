@@ -125,7 +125,7 @@ def describe_weather(data, place):
 
 
 class Weather(Feed):
-    """Open-Meteo, for ALFRED_LOCATION. Free and keyless."""
+    """Open-Meteo, for WAYNE_LOCATION. Free and keyless."""
 
     name = "weather"
     # Framed as a reading from a feed, not a view out of a window: it says
@@ -176,7 +176,7 @@ class Weather(Feed):
 # --- headlines ---------------------------------------------------------------
 
 class Headlines(Feed):
-    """Top stories from any RSS feed (ALFRED_NEWS_FEED). Titles only."""
+    """Top stories from any RSS feed (WAYNE_NEWS_FEED). Titles only."""
 
     name = "headlines"
     label = ("Top headlines on your terminal (for awareness; raise one only if "
@@ -222,7 +222,7 @@ def describe_events(events, now):
 class Calendar(Feed):
     """
     macOS Calendar via EventKit — every account Calendar knows about (iCloud,
-    Google, Exchange). ALFRED_CALENDAR=1 to enable. The first fetch asks for
+    Google, Exchange). WAYNE_CALENDAR=1 to enable. The first fetch asks for
     permission; the titles stay on this machine except for whatever he says
     aloud.
     """

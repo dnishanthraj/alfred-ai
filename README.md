@@ -1,12 +1,14 @@
-# Alfred AI
+# WayneTech Console
 
 **Status:** `v0.10.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
 
 A local, voice-driven console for macOS — speech in, a locally-run LLM (via
 [Ollama](https://ollama.com)) for thinking, and natural-sounding
 [ElevenLabs](https://elevenlabs.io) speech out, wrapped in a WayneTech-styled
-web interface. Alfred Pennyworth ships as the first contact; the console is
-built as a directory, so adding another character is a JSON profile.
+web interface. It is a phone book of characters — Alfred Pennyworth, Lucius Fox
+and Selina Kyle ship with it — each with their own voice, memory and life, and
+the console has a voice of its own for logging in and placing calls. Adding a
+character is a JSON profile.
 
 Everything but speech synthesis runs on your machine, and each contact keeps
 their own memory on disk.
@@ -78,8 +80,8 @@ their own memory on disk.
 1. **Clone and install dependencies**
 
    ```bash
-   git clone https://github.com/<your-username>/alfred-ai.git
-   cd alfred-ai
+   git clone https://github.com/<your-username>/alfred-ai.git wayne-console
+   cd wayne-console
    python3.11 -m venv venv       # 3.11 or 3.12 — see the note below
    source venv/bin/activate
    pip install -r requirements.txt
@@ -124,18 +126,18 @@ their own memory on disk.
    |---|---|---|
    | `ELEVENLABS_API_KEY` | Yes | Your ElevenLabs API key |
    | `ALFRED_VOICE_ID` | Yes | Voice ID from your ElevenLabs voice library |
-   | `ALFRED_USER_NAME` | Yes | Your name — shown in the console and used as a Whisper hint |
+   | `WAYNE_USER_NAME` | Yes | Your name — shown in the console and used as a Whisper hint |
    | `ALFRED_OLLAMA_MODEL` | No | Ollama model tag for Alfred (default: `gemma4:26b-a4b-it-qat`, from step 2) |
    | `WAYNE_PASSCODE` | No | Lock-screen passcode (default: `zorro`). Theatre, not security |
-   | `ALFRED_WEB_PORT` | No | Console port (default: `8420`) |
-   | `ALFRED_PTT_KEY` | No | [pynput](https://pynput.readthedocs.io) key for `--cli` push-to-talk (default: `Key.cmd_r`) |
-   | `ALFRED_WHISPER_HINTS` | No | Comma-separated proper nouns to bias speech recognition |
-   | `ALFRED_CONTEXT_WINDOW` | No | Model context in tokens (default: `8192`). See [Latency](#latency) |
-   | `ALFRED_HISTORY_WORDS` | No | Conversation words sent to the model (default: `260`). The main latency dial |
-   | `ALFRED_TTS_MODEL` | No | ElevenLabs model (default: `eleven_v4_turbo`; `eleven_v4` is more expressive and ~0.5s slower to start) |
-   | `ALFRED_LOCATION` | No | Your town or city, for a live weather feed |
-   | `ALFRED_NEWS_FEED` | No | An RSS feed URL for headlines he has glanced at |
-   | `ALFRED_CALENDAR` | No | `1` to let him see today's and tomorrow's events in macOS Calendar |
+   | `WAYNE_WEB_PORT` | No | Console port (default: `8420`) |
+   | `WAYNE_PTT_KEY` | No | [pynput](https://pynput.readthedocs.io) key for `--cli` push-to-talk (default: `Key.cmd_r`) |
+   | `WAYNE_WHISPER_HINTS` | No | Comma-separated proper nouns to bias speech recognition |
+   | `WAYNE_CONTEXT_WINDOW` | No | Model context in tokens (default: `8192`). See [Latency](#latency) |
+   | `WAYNE_HISTORY_WORDS` | No | Conversation words sent to the model (default: `260`). The main latency dial |
+   | `WAYNE_TTS_MODEL` | No | ElevenLabs model (default: `eleven_v4_turbo`; `eleven_v4` is more expressive and ~0.5s slower to start) |
+   | `WAYNE_LOCATION` | No | Your town or city, for a live weather feed |
+   | `WAYNE_NEWS_FEED` | No | An RSS feed URL for headlines he has glanced at |
+   | `WAYNE_CALENDAR` | No | `1` to let him see today's and tomorrow's events in macOS Calendar |
 
    Display name, role, voice, and sampling parameters are per-contact and live in
    [`wayne/contacts/profiles/alfred.json`](wayne/contacts/profiles/alfred.json).
@@ -248,7 +250,7 @@ M-series Mac, where a model four times the size was three times slower and no
 more accurate. The accuracy is instead in the hints — the console tells the
 decoder who is on the line and what was just said, which took word accuracy on
 hard audio from 83% to 100%. If a name is still coming out wrong, add it to
-`ALFRED_WHISPER_HINTS`.
+`WAYNE_WHISPER_HINTS`.
 
 Whisper does not fail by going quiet — it fails by producing a confident
 sentence nobody said, which then steers the conversation somewhere it was never
@@ -335,47 +337,43 @@ global hotkey; the web console needs only a microphone permission).
 
 ## Contacts
 
-The console is a phone book, not a single assistant. A contact is a JSON
-profile in [`wayne/contacts/profiles/`](wayne/contacts/profiles/) declaring who
-answers, in what voice, with what sampling parameters, and when they are
-reachable. Each has its own memory under `data/<id>/`.
+The console is a phone book, not a single assistant. Three contacts ship:
 
-Adding one is a file, not a code change:
+| Contact | Who | Voice variable |
+|---|---|---|
+| **Alfred Pennyworth** | The butler who raised him — dry, British, warm underneath | `ALFRED_VOICE_ID` |
+| **Lucius Fox** | Wayne Enterprises' engineer-CEO — calm, wry, a mentor with an ethical line | `LUCIUS_VOICE_ID` |
+| **Selina Kyle** | Catwoman — a self-made thief from the East End; teasing, guarded, loyal | `CATWOMAN_VOICE_ID` |
 
-```json
-{
-  "id": "lucius",
-  "name": "Lucius",
-  "full_name": "Lucius Fox",
-  "role": "Applied Sciences",
-  "accent": "#5FC9A8",
-  "model": "qwen2.5:14b",
-  "voice_env": "LUCIUS_VOICE_ID",
-  "system": "You are Lucius Fox — dry, brilliant, and unimpressed by theatrics.",
-  "availability": { "kind": "hours", "days": [0,1,2,3,4], "start_hour": 9, "end_hour": 18 },
-  "primer": [{ "user": "Can you build it?", "assistant": "I can. Whether you should is your problem." }]
-}
-```
+Each is a JSON profile in [`wayne/contacts/profiles/`](wayne/contacts/profiles/)
+with its own memory under `data/<id>/`. A contact without a voice ID still
+works, in text. All three share the same model, so switching does not load a
+second one.
 
-A contact declares its personality one of three ways: `system` inline (as above),
-`system_file` pointing at a Modelfile whose `SYSTEM` block is read at startup (what
-Alfred does, so the prompt can stay gitignored), or a pre-built Ollama model carrying
-it internally. Only the third needs `ollama create`, and it is the one to avoid unless
-you have reason to: a derived build can silently return empty replies.
+Adding one is a file, not a code change. The fields that matter:
 
-`max_reply_sentences` is a runaway ceiling, not a style control — length is
-steered by the prompt and, far more effectively, by the range demonstrated in
-`primer`. A primer whose replies are all the same length teaches exactly that.
+- **`system`** — the character, as a list of paragraphs: who they are, their
+  temperament, what the operator is to them, their own life, their lines. Written
+  as a person, not a list of prohibitions.
+- **`system_file`** — one or more gitignored files read at startup: `Modelfile`
+  holds facts about the operator every contact shares; `Modelfile.<id>` holds
+  what is private to one contact (what they call him, say). Real names never go
+  in a committed profile.
+- **`primer`** — worked examples, sent as a labelled script inside the system
+  prompt, never as turns (a model cannot tell a sample turn from a real one).
+  Varied in length and register; never the same as an evaluation scenario.
+- **`own_life`** — corners of their own life a silence can be broken from.
+- **`deflections`** — last-resort lines when two attempts in a row echo him.
+- **`judge`** — one sentence telling the evaluation judge who this should be.
+- **`forbidden_address`** — enforced in code, because one "lad" undoes a great
+  deal of careful prompting.
+- **`availability`** — `always`, or `hours` (which may run past midnight).
+- **`order`** — position in the console's directory.
 
-`forbidden_address` is enforced in code rather than left to the prompt: a
-smaller, faster model will ignore "never call him lad" often enough to matter,
-and one slip undoes a great deal of careful prompting.
-
-**`primer` is the important field.** Those exchanges are injected as real
-user/assistant turns at the head of every context rather than described in
-prose inside the system prompt. A model imitates a conversation it can see far
-more reliably than a description of one, and it is the single cheapest way to
-make a character sound like themselves.
+The relationship in the operator's own words — the bio in the console's personnel
+file — rides in the prompt too, so editing it there changes how they treat him.
+Each contact also gets `eval/scenarios/<id>.json`, marked alongside the common
+scenarios (see [Evaluation](#evaluation)).
 
 ## Latency
 
@@ -420,8 +418,8 @@ The rest of the pipeline:
   turns rather than shifting every turn.
 - **Ambient feeds never block.** Weather, headlines and calendar refresh on
   background threads; a turn reads whatever is cached.
-- **`ALFRED_HISTORY_WORDS`** (default `260`), **`ALFRED_CONTEXT_WINDOW`**
-  (default `8192`) and **`ALFRED_MODEL_KEEP_ALIVE`** (default `1h`) are the dials.
+- **`WAYNE_HISTORY_WORDS`** (default `260`), **`WAYNE_CONTEXT_WINDOW`**
+  (default `8192`) and **`WAYNE_MODEL_KEEP_ALIVE`** (default `1h`) are the dials.
   The server warms the model with the real prompt prefix at startup, so the
   first reply is not the one that pays for loading.
 
@@ -433,7 +431,7 @@ budget on reasoning tokens, emit no speakable content, and appear to hang.
 
 Changes to the character, the prompt or the engine are measured, not eyeballed.
 [`eval/rubric.md`](eval/rubric.md) is the marking scheme;
-[`eval/scenarios.json`](eval/scenarios.json) holds the situations, several taken
+[`eval/scenarios/`](eval/scenarios) holds the situations — `common.json` for every contact, plus one file per contact, several taken
 from real conversations that went wrong.
 
 ```bash
@@ -460,7 +458,7 @@ transcripts behind a change before believing it.
 ## Project structure
 
 ```
-alfred-ai/
+wayne-console/
 ├── run.py                        # entry point — web console, --cli, --list
 ├── pyproject.toml
 ├── wayne/

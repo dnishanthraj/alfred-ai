@@ -5,7 +5,7 @@ this, with `scripts/evaluate.py`, before it is kept. The point is not a single
 number to admire; it is to see what moved, and to catch a fix in one place that
 broke another.
 
-Each scenario in `scenarios.json` is a short scripted conversation started from
+Each scenario in `scenarios/` (common.json, plus the contact's own file) is a short scripted conversation started from
 an empty history. Two kinds of marking are applied to what he says.
 
 ## 1. Automatic checks (pass / fail, no judgement involved)

@@ -87,12 +87,12 @@ _PROMISE_TO_LOOK = re.compile(
 
 # Corners of his own life for an unprompted remark to come from. Chosen in code,
 # so that a silence on Tuesday is not the boiler again; the words are still his.
+# Used when a profile does not list its own (see `Contact.own_life`).
 _OWN_CORNERS = [
-    "the garden", "the kitchen and what you're cooking", "a book you're reading",
-    "something on the radio", "the post or a letter", "the cricket",
-    "a memory from your army years", "a memory from the stage",
+    "something you're doing right now", "something you've been reading or watching",
+    "something you heard today", "a memory of your own",
     "something you've been mulling over about him, from this conversation only",
-    "the weather outside your own window", "the house and its noises",
+    "the weather outside your own window",
 ]
 
 # What he does with a silence, by kind (see `ContactSession.check_in`).
@@ -580,7 +580,7 @@ class ContactSession:
                      for item in line.split(": ", 1)[-1].split(" | ") if item.strip()]
             context.append("From your terminal: " + random.choice(items))
         elif kind == "own":
-            move += f" Let it come from {random.choice(_OWN_CORNERS)}."
+            move += f" Let it come from {random.choice(self.contact.own_life or _OWN_CORNERS)}."
         context.append(prompting.SPEECH_CONSTRAINT)
         instruction = (
             "[REFERENCE — context only]\n" + "\n".join(context) + "\n[END REFERENCE]\n\n"
@@ -945,8 +945,9 @@ class ContactSession:
         and never the one used last, so the fallback cannot itself become the
         repetition it exists to prevent.
         """
-        options = [o for o in _DEFLECTIONS if o != self._last_deflection]
-        choice = random.choice(options or _DEFLECTIONS)
+        pool = self.contact.deflections or _DEFLECTIONS
+        options = [o for o in pool if o != self._last_deflection]
+        choice = random.choice(options or pool)
         self._last_deflection = choice
         return choice
 

@@ -35,7 +35,7 @@ from wayne.contacts import directory  # noqa: E402
 from wayne.engine import ContactSession, guards  # noqa: E402
 from wayne.memory import History, Vault  # noqa: E402
 
-SCENARIOS = ROOT / "eval" / "scenarios.json"
+SCENARIOS = ROOT / "eval" / "scenarios"
 RESULTS = ROOT / "eval" / "results"
 SILENCE, HANG_UP = "…", "<rings off>"
 
@@ -44,13 +44,13 @@ WEIGHTS = {"persona": 0.25, "human": 0.20, "register": 0.20, "substance": 0.15,
            "grounded": 0.10, "checks": 0.10}
 
 JUDGE_PROMPT = """You are marking a voice character's replies against a strict rubric.
-The character is Alfred Pennyworth — the Wayne family's butler from the comics, films
-and games — speaking over a voice link to the man he helped raise. Mark only what
-ALFRED says. Be severe: 5 is rare and means you could not tell it from the real
-character played well; 3 is passable; 1 is a failure.
+The character is {who} — speaking over a voice link to a man they know well, who
+sometimes plays at being Bruce Wayne. Mark only what {name} says. Be severe: 5 is
+rare and means you could not tell it from the real character played well; 3 is
+passable; 1 is a failure.
 
-persona   — Is this unmistakably Alfred? Dry, British, warm underneath, opinions of his
-            own. Low if generic, servile, cruel, an assistant, or out of character.
+persona   — Is this unmistakably {name}, true to the character? Opinions of their own.
+            Low if generic, servile, an assistant, or out of character.
 human     — Does it sound like a real person talking on a call? Low if robotic,
             stilted, over-written, cryptic, scripted, lecturing, or the wrong length.
 register  — Does it meet him where he is? Teasing met with teasing, gravity with
@@ -58,12 +58,12 @@ register  — Does it meet him where he is? Teasing met with teasing, gravity wi
             misreads the moment.
 substance — Does it actually answer or engage with what was said? Low if it dodges,
             refuses, goes vague, or is wrong.
-grounded  — false ONLY if Alfred asserts something specific about what the operator
+grounded  — false ONLY if {name} asserts something specific about what the operator
             did, said, ate or felt — today or in a shared past — that this conversation
             does not establish. These are all fine and must NOT fail it: using his name;
-            Alfred's own past, memories and day (his to invent); general knowledge of
-            the man he raised (his job, training, interests); and anything the operator
-            himself said above.
+            {name}'s own past, memories and day (theirs to invent); general knowledge of
+            him (his job, training, interests); anything the operator himself said
+            above; and their usual name for him (a nickname, or "Mr." and his surname).
 
 What a good reply looks like here: {good}
 
@@ -75,6 +75,16 @@ and not "out of character".
 Return JSON only:
 {{"persona": 1-5, "human": 1-5, "register": 1-5, "substance": 1-5,
   "grounded": true|false, "note": "one short sentence on the weakest point"}}"""
+
+
+def load_scenarios(contact_id):
+    """Everyone's scenarios, then this contact's own."""
+    scenarios = []
+    for name in ("common", contact_id):
+        path = SCENARIOS / f"{name}.json"
+        if path.exists():
+            scenarios += json.loads(path.read_text())["scenarios"]
+    return scenarios
 
 
 # --- running --------------------------------------------------------------
@@ -108,7 +118,11 @@ def run_scenario(contact, scenario):
             elif kind == "sentence":
                 if first is None:
                     first = time.time() - started
-                voiced.append(event.get("voice") or event["text"])
+                # What was shown, with any stage cue put back: the voice text
+                # carries pronunciation respellings, and the judge marked
+                # a respelled name down as a wrong one.
+                cue = re.match(r"\s*(\[[a-z ]+\])", event.get("voice") or "")
+                voiced.append(f"{cue.group(1)} {event['text']}" if cue else event["text"])
             elif kind == "reply_end" and event.get("interim"):
                 voiced.append("(looking)")
         turns.append({"him": said, "alfred": " ".join(voiced), "first_s": first,
@@ -168,10 +182,11 @@ def check(scenario, turns, primer_lines):
 
 # --- judging --------------------------------------------------------------
 
-def judge(model, scenario, turns, options):
+def judge(model, scenario, turns, options, contact):
+    name = contact.name.upper()
     transcript = "\n".join(
         f"HIM: {t['him'] if t['him'] not in (SILENCE, HANG_UP) else '(silence)'}\n"
-        f"ALFRED: {delivery.clean(t['alfred'])}" for t in turns)
+        f"{name}: {delivery.clean(t['alfred'])}" for t in turns)
     try:
         response = ollama.chat(
             model=model, format="json", think=False,
@@ -179,7 +194,9 @@ def judge(model, scenario, turns, options):
             # and judging at another size reloaded the model between every
             # scenario — ten seconds that landed inside the next reply's timing.
             options={**options, "temperature": 0},
-            messages=[{"role": "system", "content": JUDGE_PROMPT.format(good=scenario["good"])},
+            messages=[{"role": "system", "content": JUDGE_PROMPT.format(
+                good=scenario["good"], name=contact.name,
+                who=contact.judge or f"{contact.full_name}, {contact.role}")},
                       {"role": "user", "content": transcript}])
         marks = json.loads(response["message"]["content"])
         for dim in DIMENSIONS:
@@ -238,7 +255,7 @@ def report(name, contact, summary, results, baseline=None):
         for t in r["turns"]:
             him = "*(silence)*" if t["him"] == SILENCE else "*(still nothing)*" if t["him"] == HANG_UP else t["him"]
             timing = "search" if t["searched"] else f"{t['first_s']:.2f}s" if t["first_s"] else "—"
-            lines += [f"- **him:** {him}", f"- **alfred** ({timing}): {t['alfred']}"]
+            lines += [f"- **him:** {him}", f"- **{contact.name.lower()}** ({timing}): {t['alfred']}"]
         lines.append("")
     return "\n".join(lines)
 
@@ -271,7 +288,7 @@ def main():
     judge_model = args.judge or contact.model
     primer_lines = [ex["assistant"] for ex in contact.primer]
 
-    scenarios = json.loads(SCENARIOS.read_text())["scenarios"]
+    scenarios = load_scenarios(contact.id)
     if args.only:
         scenarios = [s for s in scenarios if args.only in s["id"] or args.only in s["trait"]]
 
@@ -279,12 +296,12 @@ def main():
         # The transcripts are kept, so a better judge can be applied to old
         # runs and comparisons stay like for like.
         old = json.loads((RESULTS / f"{args.rejudge}.json").read_text())
-        by_id = {s["id"]: s for s in json.loads(SCENARIOS.read_text())["scenarios"]}
+        by_id = {s["id"]: s for s in load_scenarios(contact.id)}
         results = []
         for r in old["results"]:
             scenario = by_id.get(r["id"], {"good": r["good"]})
             r["failures"] = check(scenario, r["turns"], primer_lines)
-            r["marks"] = judge(judge_model, scenario, r["turns"], contact.options)
+            r["marks"] = judge(judge_model, scenario, r["turns"], contact.options, contact)
             results.append(r)
         scenarios = []
         args.save = args.save or args.rejudge
@@ -296,7 +313,7 @@ def main():
             results.append({"id": scenario["id"], "trait": scenario["trait"],
                             "good": scenario["good"], "turns": turns,
                             "failures": check(scenario, turns, primer_lines),
-                            "marks": judge(judge_model, scenario, turns, contact.options)})
+                            "marks": judge(judge_model, scenario, turns, contact.options, contact)})
             r = results[-1]
             print(f"  {r['id']:24} " + " ".join(f"{d[0]}{r['marks'].get(d, '?')}" for d in DIMENSIONS)
                   + ("" if r["marks"].get("grounded", True) else "  UNGROUNDED")

@@ -13,8 +13,20 @@ from .paths import ENV_FILE
 
 load_dotenv(ENV_FILE)
 
+
+def setting(name, default=""):
+    """
+    A console-wide setting: WAYNE_<name>, or the ALFRED_<name> it used to be.
+
+    The console began as one character and its settings were named after him;
+    it is a directory of contacts now, so the console's own settings say so.
+    The old names still work, so an existing .env does not break. Settings that
+    really are one character's (ALFRED_VOICE_ID) keep that character's name.
+    """
+    return os.getenv(f"WAYNE_{name}") or os.getenv(f"ALFRED_{name}") or default
+
 # --- Operator identity ---
-USER_NAME = os.getenv("ALFRED_USER_NAME") or os.getenv("WAYNE_USER_NAME") or "Operator"
+USER_NAME = setting("USER_NAME", "Operator")
 
 # How long Ollama holds the model in memory after a reply. The default of five
 # minutes means a conversation resumed after a coffee pays a full model load —
@@ -25,11 +37,11 @@ USER_NAME = os.getenv("ALFRED_USER_NAME") or os.getenv("WAYNE_USER_NAME") or "Op
 # machine, holding it all evening put the rest of the Mac into swap and kept it
 # hot. The console now loads the model as a call rings and releases it after
 # hang-up (see HANG_UP_RELEASE); this is only the backstop for anything else.
-MODEL_KEEP_ALIVE = os.getenv("ALFRED_MODEL_KEEP_ALIVE", "10m")
+MODEL_KEEP_ALIVE = setting("MODEL_KEEP_ALIVE", "10m")
 
 # How long after hanging up the model is released, unless another call comes
 # in first. Long enough to ring straight back without a reload.
-HANG_UP_RELEASE = int(os.getenv("ALFRED_HANG_UP_RELEASE", "300"))
+HANG_UP_RELEASE = int(setting("HANG_UP_RELEASE", "300"))
 
 # Ollama's default context is 4096 tokens. A persona, a primer and a few turns
 # of history clear that easily, and once the prompt outgrows the window Ollama
@@ -41,29 +53,39 @@ HANG_UP_RELEASE = int(os.getenv("ALFRED_HANG_UP_RELEASE", "300"))
 # Sized so the whole stable prefix fits with room for the conversation to grow,
 # which is what makes it cacheable. The same request then answers in 1.8s.
 # Raise it for longer histories at the cost of memory.
-CONTEXT_WINDOW = int(os.getenv("ALFRED_CONTEXT_WINDOW", "8192"))
+CONTEXT_WINDOW = int(setting("CONTEXT_WINDOW", "8192"))
 
 # Where the operator is, as a place name ("London"). Optional: when set, the
 # contact is handed a live weather reading for it (see wayne/engine/world.py)
 # instead of being left to imagine one. Personal, so it lives in .env.
-LOCATION = os.getenv("ALFRED_LOCATION", "").strip()
+LOCATION = setting("LOCATION", "").strip()
 
 # An RSS feed of headlines he has glanced at (e.g. a national news front page).
 # Optional; titles only, refreshed every half hour in the background.
-NEWS_FEED = os.getenv("ALFRED_NEWS_FEED", "").strip()
+NEWS_FEED = setting("NEWS_FEED", "").strip()
 
 # Read today's and tomorrow's events from macOS Calendar. Off unless set to 1;
 # the first read asks for Calendar permission.
-CALENDAR = os.getenv("ALFRED_CALENDAR", "").strip().lower() in ("1", "true", "yes")
+CALENDAR = setting("CALENDAR", "").strip().lower() in ("1", "true", "yes")
 
 # --- Speech-to-text ---
-WHISPER_HINT_PROMPT = os.getenv("ALFRED_WHISPER_HINTS", USER_NAME)
+WHISPER_HINT_PROMPT = setting("WHISPER_HINTS", USER_NAME)
 
 # Speech-to-text model. `small.en` is the default on measurement, not habit: on
 # an M-series Mac it runs in ~0.2s, and a model four times its size was three
 # times slower without being more accurate on the same audio. Change it if your
 # room or accent says otherwise.
-WHISPER_MODEL = os.getenv("ALFRED_WHISPER_MODEL", "mlx-community/whisper-small.en-mlx")
+WHISPER_MODEL = setting("WHISPER_MODEL", "mlx-community/whisper-small.en-mlx")
+
+# The console's own voice, for logging in and out and placing and ending calls.
+# Optional; without it those moments stay silent.
+BATCOMPUTER_VOICE_ID = os.getenv("BATCOMPUTER_VOICE_ID", "").strip()
+
+# How the voice should say words it would otherwise get wrong — names, mostly.
+# "Word:Spelling;Other:Spelling", applied to what is spoken and never to what is
+# shown. Personal, so it lives in .env.
+PRONUNCIATIONS = dict(
+    pair.split(":", 1) for pair in setting("PRONOUNCE", "").split(";") if ":" in pair)
 
 # --- ElevenLabs ---
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
@@ -71,14 +93,14 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 # 0.2s on the streaming endpoint. eleven_v4 is the more expressive flagship at
 # 0.6–0.9s to first audio and about a second per sentence; eleven_turbo_v2_5 is
 # the previous generation, a touch faster still.
-ELEVENLABS_MODEL = os.getenv("ALFRED_TTS_MODEL", "eleven_v4_turbo")
+ELEVENLABS_MODEL = setting("TTS_MODEL", "eleven_v4_turbo")
 
 # --- Push-to-talk (terminal frontend only; the console has its own controls) ---
-PTT_KEY_STR = os.getenv("ALFRED_PTT_KEY", "Key.cmd_r")
+PTT_KEY_STR = setting("PTT_KEY", "Key.cmd_r")
 
 # --- Web console ---
-WEB_HOST = os.getenv("ALFRED_WEB_HOST", "127.0.0.1")
-WEB_PORT = int(os.getenv("ALFRED_WEB_PORT", "8420"))
+WEB_HOST = setting("WEB_HOST", "127.0.0.1")
+WEB_PORT = int(setting("WEB_PORT", "8420"))
 
 # The lock screen is deliberately theatre, not security: it is enforced in the
 # page, the server does not check it, and anyone with shell access can read it
@@ -107,7 +129,7 @@ def missing_requirements():
         problems.append("Voice link unavailable — text only. (ELEVENLABS_API_KEY is unset.)")
     if USER_NAME == "Operator":
         problems.append(
-            "Operator unidentified. Set ALFRED_USER_NAME in .env so the console knows who you are."
+            "Operator unidentified. Set WAYNE_USER_NAME in .env so the console knows who you are."
         )
     if not MEMORY_KEY:
         problems.append(

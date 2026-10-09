@@ -28,7 +28,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .. import config, events, paths
-from ..audio import stt
+from ..audio import stt, system_voice
 from ..audio.tts import get_voice_engine
 from ..contacts import directory
 from ..engine import ContactSession, guards, world
@@ -306,6 +306,9 @@ class Console:
 
             for problem in config.missing_requirements():
                 await self.broadcast(events.notice(problem, "warn"))
+            if self.voice.available and not contact.has_voice:
+                await self.broadcast(events.notice(
+                    f"No voice set for {contact.name} yet — text only.", "warn"))
             if self.migrated:
                 await self.broadcast(events.notice(
                     f"Migrated existing {' and '.join(self.migrated)} into "
@@ -454,6 +457,8 @@ async def lifespan(_app):
         asyncio.create_task(asyncio.to_thread(_warm_model)),
         asyncio.create_task(asyncio.to_thread(_warm_speech)),
         asyncio.create_task(asyncio.to_thread(world.prime)),
+        asyncio.create_task(asyncio.to_thread(
+            system_voice.prime, console.voice, [c.full_name for c in console.directory])),
     ]
     yield
     for task in warm:
@@ -475,6 +480,7 @@ def _contact_payload(contact):
         "tagline": contact.tagline,
         "accent": contact.accent,
         "available": contact.availability.is_available(),
+        "portrait": contact.portrait,
     }
 
 
@@ -560,6 +566,26 @@ async def write_bio(contact_id: str, request: Request):
     body = await request.json()
     atomic_write(paths.bio_file(contact_id), (body.get("bio") or "").strip())
     return JSONResponse({"ok": True})
+
+
+@app.get("/api/system/{event}")
+async def system_line(event: str, contact: str = ""):
+    """
+    The Batcomputer's line for a moment, as mp3, with its text in a header so
+    the page can show what was said. 204 when there is no system voice.
+    """
+    if not system_voice.available():
+        return Response(status_code=204)
+    found = console.directory.get(contact) if contact else None
+    text = system_voice.line(event, found.full_name if found else "")
+    if not text:
+        return Response(status_code=404)
+    try:
+        clip = await asyncio.to_thread(system_voice.audio, text, console.voice)
+    except Exception:
+        return Response(status_code=204)
+    return Response(content=clip, media_type="audio/mpeg",
+                    headers={"X-Line": text, "Cache-Control": "no-store"})
 
 
 @app.get("/api/audio/{clip_id}")

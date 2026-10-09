@@ -34,7 +34,12 @@ class Availability:
         if self.kind == "always":
             return True
         now = now or time.localtime()
-        return now.tm_wday in self.days and self.start_hour <= now.tm_hour < self.end_hour
+        if self.start_hour <= self.end_hour:
+            return now.tm_wday in self.days and self.start_hour <= now.tm_hour < self.end_hour
+        # Hours that run past midnight ("20" to "4") belong to the day they began.
+        if now.tm_hour >= self.start_hour:
+            return now.tm_wday in self.days
+        return now.tm_hour < self.end_hour and (now.tm_wday - 1) % 7 in self.days
 
 
 @dataclass(frozen=True)
@@ -73,6 +78,17 @@ class Contact:
     bio: str = ""
     primer: tuple = ()
     availability: Availability = field(default_factory=Availability)
+    # Corners of their own life for an unprompted remark to come from when a
+    # silence wants breaking — Alfred's garden is not Selina's rooftops.
+    own_life: tuple = ()
+    # Last-resort lines when two attempts in a row echoed the operator.
+    deflections: tuple = ()
+    # One sentence telling the evaluation judge who this is meant to be.
+    judge: str = ""
+    # How the personnel-file portrait is cropped: {"size": "180%", "position":
+    # "50% 18%"}. Supplied images vary — a square render, a tall full-length
+    # shot — and one crop does not suit them all.
+    portrait: dict = field(default_factory=dict)
 
     @property
     def has_voice(self):
@@ -135,8 +151,12 @@ def _system_prompt(raw):
     character = raw.get("system") or ""
     if isinstance(character, list):
         character = "\n\n".join(character)
-    private = _read_system_file(raw.get("system_file", ""))
-    return "\n\n".join(part for part in (character.strip(), private) if part)
+    # One private file or several: the facts every contact shares, then what is
+    # private to this one (what they call him, say) — both gitignored.
+    files = raw.get("system_file") or []
+    files = [files] if isinstance(files, str) else files
+    private = [text for text in (_read_system_file(name) for name in files) if text]
+    return "\n\n".join(part for part in (character.strip(), *private) if part)
 
 
 def _load_profile(path):
@@ -169,6 +189,10 @@ def _load_profile(path):
         bio=raw.get("bio", ""),
         primer=tuple(raw.get("primer", [])),
         availability=availability,
+        own_life=tuple(raw.get("own_life", [])),
+        deflections=tuple(raw.get("deflections", [])),
+        judge=raw.get("judge", ""),
+        portrait=raw.get("portrait", {}),
     )
 
 
@@ -182,11 +206,14 @@ class Directory:
 
     def reload(self):
         self._contacts = {}
+        loaded = []
         for path in sorted(self.profile_dir.glob("*.json")):
             try:
-                contact = _load_profile(path)
+                loaded.append((json.loads(path.read_text()).get("order", 100), _load_profile(path)))
             except Exception as exc:
                 raise ValueError(f"Could not load contact profile {path.name}: {exc}") from exc
+        # The directory's order is the console's: Alfred first, not alphabetical.
+        for _, contact in sorted(loaded, key=lambda item: item[0]):
             self._contacts[contact.id] = contact
 
     def __iter__(self):

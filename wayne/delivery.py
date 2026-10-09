@@ -49,8 +49,15 @@ def clean(text):
     return _tidy(_ANY_CUE.sub(" ", text or ""))
 
 
+def _pronounce(text):
+    for word, spelling in config.PRONUNCIATIONS.items():
+        text = re.sub(rf"\b{re.escape(word.strip())}\b", spelling.strip(), text)
+    return text
+
+
 def voiced(text, model=None):
     """What the synthesiser gets: the words, plus any cue it can perform."""
+    text = _pronounce(text or "")
     if not supported(model):
         return clean(text)
 
