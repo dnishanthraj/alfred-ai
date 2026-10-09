@@ -1813,7 +1813,7 @@ async def session_info():
         "current": console.current_id,
         "default": config.DEFAULT_CONTACT,
         # Gotham, for the little map on a status card.
-        "map": {k: v for k, v in places.gazetteer().items() if not k.startswith("_")},
+        "map": {k: v for k, v in places.gazetteer().items() if k in ("places", "regions")},
     })
 
 

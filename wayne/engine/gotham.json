@@ -1,109 +1,3128 @@
 {
- "_doc": "Gotham as the console maps it, after Eliot R. Brown's canon map (No Man's Land, 1999): three islands — Uptown, Midtown, Downtown — split by the Sprang and Finger rivers; the mainland across the Gotham River, with Wayne Manor out in Gotham County over the Robert Kane Memorial Bridge; Arkham on its island in the river; Tricorner and Blackgate offshore; Blüdhaven a short ride up the coast (its neighbourhoods from the Nightwing comics). The Narrows, Burnside and the East End come from later canon. Coordinates are 0–100 on a stylised map, north up. 'match' lists other ways people name a place; 'kind' is district or landmark.",
- "land": [
-  {"name": "Gotham County", "label": [5.5, 44], "mainland": true, "coast": [[-40, -40], [23, -40], [23, 0], [24.5, 6], [23, 13], [24, 22], [21, 28], [19.5, 38], [18.5, 50], [19.5, 61], [17.5, 71], [19, 82], [18, 92], [16, 100], [16, 140], [-40, 140]]},
-  {"name": "Uptown", "label": [56, 16.4], "coast": [[31, 14], [37, 12.2], [46, 11.6], [56, 11.2], [66, 11.8], [75, 12.6], [80.5, 14.5], [82.8, 19], [81.6, 24.5], [78.4, 30.2], [71, 32.2], [61, 32.6], [50, 32], [40, 32.6], [33, 31.4], [29.8, 26.6], [29.4, 20.5]]},
-  {"name": "Midtown", "label": [56, 38.8], "coast": [[31.6, 37.2], [39, 36.2], [48, 35.7], [59, 35.9], [69, 36.4], [76, 37.4], [80, 40.6], [79.6, 46.5], [77, 52.6], [70, 55.2], [61, 55.6], [50, 55.1], [40, 55.6], [33.6, 54.8], [30.4, 50.4], [29.8, 43.4]]},
-  {"name": "Downtown", "label": [38, 62.4], "coast": [[30.5, 60], [37, 58.9], [46, 58.6], [56, 58.8], [66, 59.2], [75, 59.6], [81.5, 61.4], [84.6, 66.5], [85.2, 72.5], [83.4, 79.5], [79.4, 86.6], [72, 91.6], [63, 94.2], [53, 95.4], [43, 95.6], [35, 94.6], [28.6, 91.4], [26.6, 86], [27.2, 79], [28, 71.5], [28.8, 65]]},
-  {"name": "Arkham Island", "label": [22.6, 39.2], "coast": [[20.2, 31.6], [23.2, 30.6], [25.2, 32.6], [24.6, 35.6], [22.2, 37], [20, 35.4]]},
-  {"name": "The Narrows", "label": [22.8, 56.6], "coast": [[20.8, 42.2], [23.4, 41.2], [25.2, 43.6], [25.4, 48.6], [24.4, 53], [22, 54.4], [20.6, 51], [20.2, 46]]},
-  {"name": "Tricorner", "label": [90, 33.2], "coast": [[86.2, 36.4], [90.6, 35.2], [93.6, 37.6], [93.2, 42], [89.4, 44.4], [86.4, 42.6]]},
-  {"name": "Burnside", "label": [93.4, 51], "mainland": true, "coast": [[86.6, 48.2], [92, 47], [140, 46.2], [140, 74], [93, 73.2], [87.4, 71], [85.8, 64], [86.2, 56]]},
-  {"name": "Blackgate", "label": [89.4, 93.2], "coast": [[86, 84], [90, 82.8], [93, 84.4], [92.6, 88.6], [89.4, 90.6], [86.2, 89.2], [85.4, 86.4]]},
-  {"name": "Blüdhaven", "label": [92.4, 1.8], "mainland": true, "coast": [[84.6, -40], [140, -40], [140, 11.4], [96, 12], [91, 11.4], [87.6, 10.2], [85.2, 7], [84.6, 0]]}
+ "_doc": "Gotham as the console maps it. One island in the shape later canon settled on — the old north (Cherry Hills, Otisburg, Amusement Mile, New Town, Burnley, Crime Alley, the Bowery, Robinsville, Arkham Island) cut from the middle (Coventry, the University District, Robinson Park, the Upper East and West Sides) by the Sprang River, and the south (Diamond, Fashion and City Hall districts, Chinatown, Old Gotham, Tricorner) below; Blackgate Isle offshore, the Narrows in the Gotham River, Gotham County and the Manor on the mainland across it, Burnside to the east, Blüdhaven up the coast. Units: x east, y south; the island is about 75 × 115. 'places' is what people are matched to (kind: district, quarter or landmark; icon picks the map symbol); everything else is drawn by scripts/build_map.py into web/map/gotham.geojson.",
+ "coast": [
+  [
+   38.2,
+   17.0
+  ],
+  [
+   42.4,
+   16.8
+  ],
+  [
+   46.0,
+   19.6
+  ],
+  [
+   50.0,
+   21.0
+  ],
+  [
+   56.6,
+   22.4
+  ],
+  [
+   63.6,
+   21.7
+  ],
+  [
+   70.7,
+   22.4
+  ],
+  [
+   77.8,
+   23.1
+  ],
+  [
+   80.6,
+   24.5
+  ],
+  [
+   78.5,
+   26.3
+  ],
+  [
+   74.0,
+   27.6
+  ],
+  [
+   72.0,
+   29.4
+  ],
+  [
+   76.0,
+   29.8
+  ],
+  [
+   80.0,
+   28.0
+  ],
+  [
+   84.0,
+   27.3
+  ],
+  [
+   86.6,
+   29.4
+  ],
+  [
+   87.3,
+   33.6
+  ],
+  [
+   86.0,
+   38.5
+  ],
+  [
+   84.9,
+   43.4
+  ],
+  [
+   85.5,
+   49.0
+  ],
+  [
+   84.2,
+   55.0
+  ],
+  [
+   85.0,
+   57.4
+  ],
+  [
+   88.0,
+   58.1
+  ],
+  [
+   88.4,
+   61.6
+  ],
+  [
+   85.6,
+   63.0
+  ],
+  [
+   82.3,
+   61.6
+  ],
+  [
+   79.9,
+   62.3
+  ],
+  [
+   74.6,
+   64.4
+  ],
+  [
+   73.9,
+   68.6
+  ],
+  [
+   74.9,
+   73.5
+  ],
+  [
+   72.8,
+   76.3
+  ],
+  [
+   69.3,
+   78.4
+  ],
+  [
+   66.5,
+   81.2
+  ],
+  [
+   68.6,
+   84.0
+  ],
+  [
+   72.8,
+   85.4
+  ],
+  [
+   78.5,
+   87.5
+  ],
+  [
+   82.3,
+   89.6
+  ],
+  [
+   84.2,
+   94.5
+  ],
+  [
+   83.4,
+   100.0
+  ],
+  [
+   81.3,
+   105.0
+  ],
+  [
+   77.8,
+   109.9
+  ],
+  [
+   71.4,
+   112.0
+  ],
+  [
+   65.0,
+   112.7
+  ],
+  [
+   60.1,
+   114.1
+  ],
+  [
+   55.1,
+   113.4
+  ],
+  [
+   50.2,
+   114.8
+  ],
+  [
+   45.3,
+   117.6
+  ],
+  [
+   41.0,
+   116.2
+  ],
+  [
+   39.6,
+   118.3
+  ],
+  [
+   38.2,
+   124.6
+  ],
+  [
+   35.4,
+   128.8
+  ],
+  [
+   29.0,
+   130.2
+  ],
+  [
+   22.6,
+   130.9
+  ],
+  [
+   19.8,
+   128.1
+  ],
+  [
+   19.1,
+   121.8
+  ],
+  [
+   21.2,
+   114.8
+  ],
+  [
+   23.3,
+   111.3
+  ],
+  [
+   20.5,
+   107.8
+  ],
+  [
+   17.0,
+   103.6
+  ],
+  [
+   15.6,
+   99.4
+  ],
+  [
+   15.6,
+   94.5
+  ],
+  [
+   13.4,
+   89.6
+  ],
+  [
+   13.4,
+   84.0
+  ],
+  [
+   15.6,
+   79.1
+  ],
+  [
+   17.7,
+   74.9
+  ],
+  [
+   17.0,
+   70.0
+  ],
+  [
+   19.8,
+   65.1
+  ],
+  [
+   23.3,
+   60.9
+  ],
+  [
+   28.3,
+   57.4
+  ],
+  [
+   31.1,
+   54.6
+  ],
+  [
+   27.6,
+   51.1
+  ],
+  [
+   26.9,
+   47.6
+  ],
+  [
+   28.3,
+   44.8
+  ],
+  [
+   31.8,
+   42.0
+  ],
+  [
+   33.9,
+   39.2
+  ],
+  [
+   32.5,
+   35.0
+  ],
+  [
+   33.9,
+   30.8
+  ],
+  [
+   35.4,
+   25.9
+  ],
+  [
+   36.8,
+   21.0
+  ]
  ],
- "water": [
-  {"name": "Gotham River", "at": [23.2, 74], "rotate": -86},
-  {"name": "Sprang River", "at": [55, 34.2], "rotate": 0},
-  {"name": "Finger River", "at": [55, 57.2], "rotate": 0},
-  {"name": "Gotham Harbor", "at": [60, 98.4], "rotate": 0},
-  {"name": "Atlantic", "at": [93, 24], "rotate": 0}
+ "islands": [
+  {
+   "name": "The Narrows",
+   "coast": [
+    [
+     18.6,
+     30.6
+    ],
+    [
+     21.8,
+     29.2
+    ],
+    [
+     24.4,
+     31.4
+    ],
+    [
+     24.8,
+     36.4
+    ],
+    [
+     23.6,
+     41.0
+    ],
+    [
+     21.2,
+     42.6
+    ],
+    [
+     19.0,
+     40.6
+    ],
+    [
+     18.0,
+     35.6
+    ]
+   ]
+  },
+  {
+   "name": "Blackgate Isle",
+   "coast": [
+    [
+     61.6,
+     118.6
+    ],
+    [
+     66.0,
+     116.8
+    ],
+    [
+     71.6,
+     117.2
+    ],
+    [
+     75.8,
+     119.4
+    ],
+    [
+     76.4,
+     123.4
+    ],
+    [
+     72.8,
+     127.6
+    ],
+    [
+     67.6,
+     128.4
+    ],
+    [
+     63.2,
+     125.6
+    ],
+    [
+     61.2,
+     122.0
+    ]
+   ]
+  },
+  {
+   "name": "Paris Island",
+   "coast": [
+    [
+     46.4,
+     120.2
+    ],
+    [
+     49.6,
+     119.4
+    ],
+    [
+     52.8,
+     120.4
+    ],
+    [
+     52.6,
+     122.6
+    ],
+    [
+     49.2,
+     123.4
+    ],
+    [
+     46.6,
+     122.4
+    ]
+   ]
+  }
+ ],
+ "mainland": [
+  {
+   "name": "Gotham County",
+   "coast": [
+    [
+     -400,
+     400
+    ],
+    [
+     4,
+     400
+    ],
+    [
+     3,
+     140
+    ],
+    [
+     6,
+     125
+    ],
+    [
+     5,
+     110
+    ],
+    [
+     8,
+     100
+    ],
+    [
+     7,
+     90
+    ],
+    [
+     10,
+     80
+    ],
+    [
+     9,
+     70
+    ],
+    [
+     12,
+     60
+    ],
+    [
+     10,
+     50
+    ],
+    [
+     13,
+     40
+    ],
+    [
+     11,
+     30
+    ],
+    [
+     14,
+     20
+    ],
+    [
+     12,
+     10
+    ],
+    [
+     16,
+     4
+    ],
+    [
+     24,
+     6
+    ],
+    [
+     32,
+     4
+    ],
+    [
+     40,
+     7
+    ],
+    [
+     47,
+     9
+    ],
+    [
+     54,
+     10
+    ],
+    [
+     62,
+     10.5
+    ],
+    [
+     70,
+     11
+    ],
+    [
+     78,
+     12
+    ],
+    [
+     86,
+     14
+    ],
+    [
+     92,
+     13
+    ],
+    [
+     98,
+     10
+    ],
+    [
+     106,
+     8
+    ],
+    [
+     112,
+     5
+    ],
+    [
+     118,
+     3
+    ],
+    [
+     126,
+     2
+    ],
+    [
+     134,
+     0
+    ],
+    [
+     400,
+     -2
+    ],
+    [
+     400,
+     -400
+    ],
+    [
+     -400,
+     -400
+    ]
+   ]
+  },
+  {
+   "name": "Burnside",
+   "coast": [
+    [
+     400,
+     14
+    ],
+    [
+     140,
+     11.5
+    ],
+    [
+     122,
+     10.5
+    ],
+    [
+     108,
+     11.5
+    ],
+    [
+     101.5,
+     13.2
+    ],
+    [
+     99,
+     20
+    ],
+    [
+     97,
+     33
+    ],
+    [
+     95,
+     44
+    ],
+    [
+     97.5,
+     57
+    ],
+    [
+     95.5,
+     70
+    ],
+    [
+     97.5,
+     84
+    ],
+    [
+     95,
+     98
+    ],
+    [
+     97,
+     112
+    ],
+    [
+     99,
+     126
+    ],
+    [
+     101,
+     150
+    ],
+    [
+     104,
+     400
+    ],
+    [
+     400,
+     400
+    ]
+   ]
+  }
+ ],
+ "rivers": [
+  {
+   "name": "Sprang River",
+   "width": 1.7,
+   "line": [
+    [
+     24.2,
+     52.0
+    ],
+    [
+     27.5,
+     52.9
+    ],
+    [
+     31.0,
+     53.6
+    ],
+    [
+     35.0,
+     53.2
+    ],
+    [
+     38.6,
+     52.4
+    ],
+    [
+     42.4,
+     52.9
+    ],
+    [
+     46.0,
+     53.6
+    ],
+    [
+     49.6,
+     53.0
+    ],
+    [
+     53.0,
+     52.4
+    ],
+    [
+     56.4,
+     52.9
+    ],
+    [
+     59.8,
+     52.9
+    ]
+   ]
+  },
+  {
+   "name": "Kane River",
+   "width": 1.5,
+   "line": [
+    [
+     -160,
+     18
+    ],
+    [
+     -130,
+     26
+    ],
+    [
+     -104,
+     22
+    ],
+    [
+     -82,
+     34
+    ],
+    [
+     -64,
+     30
+    ],
+    [
+     -48,
+     42
+    ],
+    [
+     -34,
+     40
+    ],
+    [
+     -22,
+     50
+    ],
+    [
+     -12,
+     49
+    ],
+    [
+     -4,
+     57
+    ],
+    [
+     3,
+     58
+    ],
+    [
+     8,
+     62
+    ],
+    [
+     11,
+     63.5
+    ]
+   ]
+  },
+  {
+   "name": "Blüd Creek",
+   "width": 0.9,
+   "line": [
+    [
+     104,
+     -80
+    ],
+    [
+     109,
+     -62
+    ],
+    [
+     106,
+     -48
+    ],
+    [
+     111,
+     -36
+    ],
+    [
+     109,
+     -24
+    ],
+    [
+     113,
+     -14
+    ],
+    [
+     112,
+     -6
+    ],
+    [
+     115,
+     2
+    ],
+    [
+     116,
+     6
+    ]
+   ]
+  }
+ ],
+ "lakes": [
+  {
+   "name": "The Reservoir",
+   "at": [
+    44.2,
+    72.6
+   ],
+   "rx": 3.6,
+   "ry": 2.6
+  },
+  {
+   "name": "Wayne Lake",
+   "at": [
+    -3.0,
+    6.0
+   ],
+   "rx": 3.2,
+   "ry": 1.8
+  },
+  {
+   "name": "Bristol Lake",
+   "at": [
+    -6.0,
+    30.0
+   ],
+   "rx": 4.6,
+   "ry": 2.4
+  },
+  {
+   "name": "",
+   "at": [
+    48.6,
+    91.6
+   ],
+   "rx": 1.0,
+   "ry": 0.7
+  },
+  {
+   "name": "",
+   "at": [
+    65.6,
+    110.0
+   ],
+   "rx": 1.4,
+   "ry": 0.8
+  },
+  {
+   "name": "",
+   "at": [
+    78.2,
+    87.6
+   ],
+   "rx": 1.0,
+   "ry": 1.2
+  },
+  {
+   "name": "",
+   "at": [
+    47.6,
+    80.0
+   ],
+   "rx": 1.1,
+   "ry": 0.7
+  }
  ],
  "parks": [
-  {"name": "Robinson Park", "coast": [[43, 40.4], [55.6, 40.2], [56.4, 47.6], [55, 50.6], [43.4, 50.8], [42.4, 44]]},
-  {"name": "Gotham Cemetery", "coast": [[12, 18], [17, 17.6], [17.4, 22], [12.4, 22.6]]},
-  {"name": "Thrawn Park", "coast": [[94, 4.4], [97.6, 4.2], [97.8, 7], [94.2, 7.2]]},
-  {"name": "Old Gotham Square", "coast": [[44.6, 79.6], [48.4, 79.4], [48.6, 82], [44.8, 82.2]]}
+  {
+   "name": "Robinson Park",
+   "coast": [
+    [
+     37.5,
+     62.3
+    ],
+    [
+     45.3,
+     61.6
+    ],
+    [
+     49.5,
+     64.4
+    ],
+    [
+     53.7,
+     70.0
+    ],
+    [
+     54.5,
+     77.0
+    ],
+    [
+     53.7,
+     84.0
+    ],
+    [
+     50.9,
+     86.8
+    ],
+    [
+     45.3,
+     86.1
+    ],
+    [
+     39.6,
+     84.0
+    ],
+    [
+     37.5,
+     77.0
+    ],
+    [
+     36.8,
+     68.6
+    ]
+   ]
+  },
+  {
+   "name": "Arkham Grounds",
+   "coast": [
+    [
+     28.6,
+     44.6
+    ],
+    [
+     32.4,
+     41.6
+    ],
+    [
+     37.6,
+     41.2
+    ],
+    [
+     42.0,
+     44.2
+    ],
+    [
+     43.4,
+     48.6
+    ],
+    [
+     42.0,
+     51.0
+    ],
+    [
+     34.0,
+     51.2
+    ],
+    [
+     28.4,
+     50.2
+    ],
+    [
+     27.4,
+     47.6
+    ]
+   ]
+  },
+  {
+   "name": "Gotham Cemetery",
+   "coast": [
+    [
+     2.0,
+     33.0
+    ],
+    [
+     8.0,
+     32.2
+    ],
+    [
+     8.6,
+     37.6
+    ],
+    [
+     3.0,
+     38.4
+    ]
+   ]
+  },
+  {
+   "name": "Old Gotham Common",
+   "coast": [
+    [
+     42.0,
+     108.0
+    ],
+    [
+     46.6,
+     107.4
+    ],
+    [
+     47.4,
+     110.6
+    ],
+    [
+     42.6,
+     111.2
+    ]
+   ]
+  },
+  {
+   "name": "Gotham Zoo",
+   "coast": [
+    [
+     63.4,
+     93.6
+    ],
+    [
+     68.6,
+     93.2
+    ],
+    [
+     69.0,
+     96.6
+    ],
+    [
+     63.8,
+     97.0
+    ]
+   ]
+  }
+ ],
+ "districts": [
+  {
+   "name": "Cherry Hills",
+   "at": [
+    38.4,
+    28.6
+   ],
+   "angle": 18,
+   "block": 1.15,
+   "tall": 14,
+   "warp": 0.5
+  },
+  {
+   "name": "Otisburg",
+   "at": [
+    49.0,
+    30.2
+   ],
+   "angle": 6,
+   "block": 1.0,
+   "tall": 46
+  },
+  {
+   "name": "Amusement Mile",
+   "at": [
+    64.0,
+    24.6
+   ],
+   "angle": -6,
+   "block": 1.3,
+   "tall": 10
+  },
+  {
+   "name": "New Town",
+   "at": [
+    65.0,
+    34.2
+   ],
+   "angle": -22,
+   "block": 0.95,
+   "tall": 34
+  },
+  {
+   "name": "Burnley",
+   "at": [
+    52.0,
+    42.0
+   ],
+   "angle": 12,
+   "block": 1.05,
+   "tall": 18
+  },
+  {
+   "name": "Crime Alley",
+   "at": [
+    67.4,
+    44.6
+   ],
+   "angle": -14,
+   "block": 0.85,
+   "tall": 15,
+   "warp": 0.35
+  },
+  {
+   "name": "The Bowery",
+   "at": [
+    67.0,
+    50.2
+   ],
+   "angle": -14,
+   "block": 0.9,
+   "tall": 14
+  },
+  {
+   "name": "Robinsville",
+   "at": [
+    80.4,
+    44.0
+   ],
+   "angle": 30,
+   "block": 1.2,
+   "tall": 16
+  },
+  {
+   "name": "Arkham Island",
+   "at": [
+    34.2,
+    46.4
+   ],
+   "angle": 0,
+   "block": 2.6,
+   "tall": 8
+  },
+  {
+   "name": "Coventry",
+   "at": [
+    39.0,
+    57.8
+   ],
+   "angle": 0,
+   "block": 1.1,
+   "tall": 18
+  },
+  {
+   "name": "University District",
+   "at": [
+    28.4,
+    69.4
+   ],
+   "angle": 25,
+   "block": 1.15,
+   "tall": 20
+  },
+  {
+   "name": "Upper East Side",
+   "at": [
+    62.4,
+    70.2
+   ],
+   "angle": -13,
+   "block": 0.95,
+   "tall": 40
+  },
+  {
+   "name": "Upper West Side",
+   "at": [
+    24.6,
+    88.0
+   ],
+   "angle": 28,
+   "block": 1.0,
+   "tall": 24
+  },
+  {
+   "name": "Diamond District",
+   "at": [
+    46.0,
+    95.0
+   ],
+   "angle": 6,
+   "block": 0.85,
+   "tall": 72
+  },
+  {
+   "name": "Fashion District",
+   "at": [
+    64.0,
+    90.4
+   ],
+   "angle": -10,
+   "block": 0.9,
+   "tall": 54
+  },
+  {
+   "name": "City Hall District",
+   "at": [
+    70.4,
+    103.4
+   ],
+   "angle": 20,
+   "block": 0.95,
+   "tall": 44,
+   "warp": 0.45
+  },
+  {
+   "name": "Chinatown",
+   "at": [
+    27.0,
+    103.6
+   ],
+   "angle": 35,
+   "block": 0.75,
+   "tall": 22
+  },
+  {
+   "name": "Old Gotham",
+   "at": [
+    47.0,
+    108.6
+   ],
+   "angle": 0,
+   "block": 0.8,
+   "tall": 30,
+   "warp": 0.7
+  },
+  {
+   "name": "Tricorner",
+   "at": [
+    29.0,
+    121.0
+   ],
+   "angle": -25,
+   "block": 1.1,
+   "tall": 15
+  },
+  {
+   "name": "Bristol",
+   "at": [
+    5.0,
+    22.0
+   ],
+   "angle": 10,
+   "block": 1.8,
+   "tall": 9,
+   "warp": 0.8,
+   "limit": [
+    [
+     -10,
+     12
+    ],
+    [
+     12.6,
+     12.6
+    ],
+    [
+     11.4,
+     28
+    ],
+    [
+     -8,
+     30
+    ]
+   ]
+  },
+  {
+   "name": "Burnside",
+   "at": [
+    106.0,
+    66.0
+   ],
+   "angle": 4,
+   "block": 1.0,
+   "tall": 20,
+   "limit": [
+    [
+     96.8,
+     50
+    ],
+    [
+     122,
+     48
+    ],
+    [
+     124,
+     84
+    ],
+    [
+     96.8,
+     86
+    ]
+   ]
+  },
+  {
+   "name": "Central Business District",
+   "at": [
+    122.0,
+    -9.0
+   ],
+   "angle": 12,
+   "block": 0.85,
+   "tall": 46,
+   "city": "Blüdhaven"
+  },
+  {
+   "name": "Waterloo Docks",
+   "at": [
+    118.0,
+    -0.5
+   ],
+   "angle": 12,
+   "block": 1.2,
+   "tall": 12,
+   "city": "Blüdhaven"
+  },
+  {
+   "name": "Avalon Heights",
+   "at": [
+    131.0,
+    -17.0
+   ],
+   "angle": -8,
+   "block": 1.2,
+   "tall": 18,
+   "city": "Blüdhaven"
+  },
+  {
+   "name": "Halyard Square",
+   "at": [
+    127.0,
+    -2.5
+   ],
+   "angle": 12,
+   "block": 0.95,
+   "tall": 26,
+   "city": "Blüdhaven"
+  },
+  {
+   "name": "Port's Park",
+   "at": [
+    135.5,
+    -5.0
+   ],
+   "angle": 20,
+   "block": 1.2,
+   "tall": 14,
+   "city": "Blüdhaven"
+  },
+  {
+   "name": "Fort Joseph",
+   "at": [
+    109.5,
+    -8.0
+   ],
+   "angle": 0,
+   "block": 1.3,
+   "tall": 12,
+   "city": "Blüdhaven"
+  }
+ ],
+ "bluedhaven_limits": [
+  [
+   100.0,
+   -28.0
+  ],
+  [
+   140.0,
+   -28.0
+  ],
+  [
+   140.0,
+   0.4
+  ],
+  [
+   126.0,
+   2.0
+  ],
+  [
+   118.0,
+   3.0
+  ],
+  [
+   110.0,
+   6.0
+  ],
+  [
+   101.0,
+   8.2
+  ]
+ ],
+ "roads": [
+  {
+   "name": "Park Row",
+   "class": "primary",
+   "line": [
+    [
+     59.0,
+     43.0
+    ],
+    [
+     63.0,
+     44.2
+    ],
+    [
+     67.0,
+     45.4
+    ],
+    [
+     71.6,
+     46.8
+    ],
+    [
+     76.0,
+     47.6
+    ]
+   ]
+  },
+  {
+   "name": "Grand Avenue",
+   "class": "primary",
+   "line": [
+    [
+     57.4,
+     54.6
+    ],
+    [
+     57.0,
+     62.0
+    ],
+    [
+     56.6,
+     70.0
+    ],
+    [
+     56.4,
+     78.0
+    ],
+    [
+     56.0,
+     86.0
+    ],
+    [
+     54.6,
+     94.0
+    ],
+    [
+     52.6,
+     102.0
+    ],
+    [
+     50.6,
+     110.0
+    ]
+   ]
+  },
+  {
+   "name": "Broadway",
+   "class": "primary",
+   "line": [
+    [
+     34.0,
+     55.8
+    ],
+    [
+     33.2,
+     62.0
+    ],
+    [
+     33.6,
+     70.0
+    ],
+    [
+     34.4,
+     78.0
+    ],
+    [
+     35.6,
+     86.0
+    ],
+    [
+     38.4,
+     93.0
+    ],
+    [
+     41.6,
+     100.0
+    ],
+    [
+     44.0,
+     106.0
+    ]
+   ]
+  },
+  {
+   "name": "Fifth Avenue",
+   "class": "primary",
+   "line": [
+    [
+     63.6,
+     55.6
+    ],
+    [
+     64.2,
+     63.0
+    ],
+    [
+     64.0,
+     72.0
+    ],
+    [
+     63.2,
+     80.0
+    ],
+    [
+     62.0,
+     87.0
+    ]
+   ]
+  },
+  {
+   "name": "Kane Avenue",
+   "class": "primary",
+   "line": [
+    [
+     37.0,
+     26.6
+    ],
+    [
+     43.0,
+     27.4
+    ],
+    [
+     50.0,
+     28.2
+    ],
+    [
+     57.0,
+     29.0
+    ],
+    [
+     65.0,
+     30.4
+    ],
+    [
+     72.0,
+     31.8
+    ],
+    [
+     80.0,
+     33.6
+    ]
+   ]
+  },
+  {
+   "name": "Old Gotham Boulevard",
+   "class": "primary",
+   "line": [
+    [
+     34.0,
+     107.4
+    ],
+    [
+     40.0,
+     109.6
+    ],
+    [
+     46.0,
+     111.0
+    ],
+    [
+     52.0,
+     111.2
+    ],
+    [
+     58.0,
+     110.6
+    ],
+    [
+     64.0,
+     108.6
+    ],
+    [
+     70.0,
+     105.0
+    ]
+   ]
+  },
+  {
+   "name": "Diamond Avenue",
+   "class": "primary",
+   "line": [
+    [
+     38.0,
+     96.6
+    ],
+    [
+     44.0,
+     96.2
+    ],
+    [
+     50.0,
+     96.6
+    ],
+    [
+     56.0,
+     96.0
+    ],
+    [
+     62.0,
+     94.6
+    ],
+    [
+     70.0,
+     94.8
+    ],
+    [
+     77.0,
+     96.4
+    ]
+   ]
+  },
+  {
+   "name": "Coventry Road",
+   "class": "primary",
+   "line": [
+    [
+     31.0,
+     59.4
+    ],
+    [
+     36.0,
+     59.6
+    ],
+    [
+     41.0,
+     59.2
+    ],
+    [
+     46.0,
+     59.6
+    ],
+    [
+     52.0,
+     59.2
+    ],
+    [
+     58.0,
+     59.6
+    ],
+    [
+     66.0,
+     59.4
+    ],
+    [
+     72.0,
+     61.0
+    ]
+   ]
+  },
+  {
+   "name": "Tricorner Way",
+   "class": "primary",
+   "line": [
+    [
+     33.4,
+     112.6
+    ],
+    [
+     31.0,
+     116.0
+    ],
+    [
+     29.0,
+     120.0
+    ],
+    [
+     27.8,
+     124.0
+    ],
+    [
+     27.0,
+     128.0
+    ]
+   ]
+  },
+  {
+   "name": "Pioneers Expressway",
+   "class": "highway",
+   "line": [
+    [
+     83.4,
+     31.6
+    ],
+    [
+     79.0,
+     35.0
+    ],
+    [
+     74.0,
+     38.4
+    ],
+    [
+     68.0,
+     40.8
+    ],
+    [
+     62.0,
+     43.4
+    ],
+    [
+     57.4,
+     47.0
+    ],
+    [
+     55.0,
+     51.4
+    ],
+    [
+     53.6,
+     55.0
+    ],
+    [
+     52.6,
+     60.0
+    ]
+   ]
+  },
+  {
+   "name": "Chinatown Expressway",
+   "class": "highway",
+   "line": [
+    [
+     16.0,
+     100.6
+    ],
+    [
+     20.0,
+     101.0
+    ],
+    [
+     25.0,
+     100.8
+    ],
+    [
+     30.0,
+     99.6
+    ],
+    [
+     35.0,
+     98.0
+    ],
+    [
+     39.6,
+     97.2
+    ]
+   ]
+  },
+  {
+   "name": "Kane Memorial Parkway",
+   "class": "highway",
+   "line": [
+    [
+     35.8,
+     24.0
+    ],
+    [
+     39.0,
+     24.6
+    ],
+    [
+     43.0,
+     25.6
+    ],
+    [
+     47.0,
+     27.0
+    ]
+   ]
+  },
+  {
+   "name": "Gotham County Highway",
+   "class": "highway",
+   "line": [
+    [
+     14.6,
+     20.4
+    ],
+    [
+     10.0,
+     18.6
+    ],
+    [
+     5.0,
+     15.0
+    ],
+    [
+     0.0,
+     10.0
+    ],
+    [
+     -8.0,
+     4.0
+    ],
+    [
+     -20.0,
+     -2.0
+    ],
+    [
+     -60.0,
+     -10.0
+    ]
+   ]
+  },
+  {
+   "name": "Riverside Expressway",
+   "class": "highway",
+   "line": [
+    [
+     -2.0,
+     160.0
+    ],
+    [
+     0.0,
+     130.0
+    ],
+    [
+     2.0,
+     110.0
+    ],
+    [
+     4.6,
+     100.6
+    ],
+    [
+     5.0,
+     90.0
+    ],
+    [
+     6.6,
+     76.0
+    ],
+    [
+     7.0,
+     62.0
+    ],
+    [
+     8.4,
+     48.0
+    ],
+    [
+     8.6,
+     38.0
+    ],
+    [
+     9.6,
+     28.0
+    ],
+    [
+     11.2,
+     21.6
+    ],
+    [
+     14.6,
+     20.4
+    ]
+   ]
+  },
+  {
+   "name": "Coast Line",
+   "class": "rail",
+   "line": [
+    [
+     76.0,
+     48.0
+    ],
+    [
+     80.0,
+     40.0
+    ],
+    [
+     83.0,
+     33.0
+    ],
+    [
+     88.0,
+     26.0
+    ],
+    [
+     94.0,
+     19.0
+    ],
+    [
+     100.0,
+     12.6
+    ],
+    [
+     106.0,
+     6.0
+    ],
+    [
+     112.0,
+     0.0
+    ],
+    [
+     118.0,
+     -5.0
+    ],
+    [
+     124.0,
+     -9.0
+    ]
+   ]
+  },
+  {
+   "name": "Gotham Central Line",
+   "class": "rail",
+   "line": [
+    [
+     39.6,
+     97.2
+    ],
+    [
+     42.0,
+     88.0
+    ],
+    [
+     44.0,
+     76.0
+    ],
+    [
+     45.6,
+     64.0
+    ],
+    [
+     48.0,
+     52.6
+    ],
+    [
+     51.0,
+     42.0
+    ],
+    [
+     56.0,
+     32.0
+    ],
+    [
+     62.0,
+     25.0
+    ]
+   ]
+  }
  ],
  "bridges": [
-  {"name": "Robert Kane Memorial Bridge", "line": [[21.6, 17.5], [31, 18.5]]},
-  {"name": "Trigate Bridge", "line": [[24.4, 32.4], [30.6, 29], [24.4, 32.4], [30.6, 40]]},
-  {"name": "Narrows Bridge", "line": [[25, 47], [30.2, 47]]},
-  {"name": "Vincefinkel Bridge", "line": [[18.6, 84], [27, 84]]},
-  {"name": "Sprang Bridge", "line": [[49, 32.2], [49, 36]]},
-  {"name": "Westward Bridge", "line": [[36, 32.4], [35.6, 36.4]]},
-  {"name": "Finger Bridge", "line": [[56, 55.4], [56, 58.8]]},
-  {"name": "Grand Avenue Bridge", "line": [[70, 55.2], [70.4, 59.4]]},
-  {"name": "Burnside Bridge", "line": [[84.9, 63], [86.4, 63]]},
-  {"name": "Tricorner Causeway", "line": [[79.6, 40.4], [86.4, 39.4]]},
-  {"name": "Coast Line to Blüdhaven", "line": [[23.4, 4], [40, 7], [62, 8], [80, 7], [85.4, 5.6]], "rail": true}
+  {
+   "name": "Robert Kane Memorial Bridge",
+   "line": [
+    [
+     14.6,
+     20.4
+    ],
+    [
+     25.0,
+     22.4
+    ],
+    [
+     35.8,
+     24.0
+    ]
+   ]
+  },
+  {
+   "name": "Trigate Bridge",
+   "line": [
+    [
+     12.4,
+     37.6
+    ],
+    [
+     18.4,
+     36.2
+    ]
+   ]
+  },
+  {
+   "name": "Trigate Bridge",
+   "line": [
+    [
+     24.6,
+     35.0
+    ],
+    [
+     29.0,
+     34.4
+    ],
+    [
+     33.4,
+     33.8
+    ]
+   ]
+  },
+  {
+   "name": "Trigate Bridge",
+   "line": [
+    [
+     24.2,
+     38.6
+    ],
+    [
+     26.6,
+     42.0
+    ],
+    [
+     28.8,
+     44.8
+    ]
+   ]
+  },
+  {
+   "name": "Vincefinkel Bridge",
+   "line": [
+    [
+     5.2,
+     100.8
+    ],
+    [
+     10.0,
+     100.7
+    ],
+    [
+     16.0,
+     100.6
+    ]
+   ]
+  },
+  {
+   "name": "Pioneers Bridge",
+   "line": [
+    [
+     83.4,
+     31.6
+    ],
+    [
+     88.0,
+     26.0
+    ],
+    [
+     94.0,
+     19.0
+    ],
+    [
+     99.0,
+     13.6
+    ]
+   ]
+  },
+  {
+   "name": "Otisburg Bridge",
+   "line": [
+    [
+     50.0,
+     21.4
+    ],
+    [
+     50.4,
+     15.0
+    ],
+    [
+     50.8,
+     9.6
+    ]
+   ]
+  },
+  {
+   "name": "Burnside Bridge",
+   "line": [
+    [
+     86.6,
+     40.6
+    ],
+    [
+     91.0,
+     40.2
+    ],
+    [
+     95.6,
+     39.8
+    ]
+   ]
+  },
+  {
+   "name": "Gotham Harbor Bridge",
+   "line": [
+    [
+     83.8,
+     97.0
+    ],
+    [
+     90.0,
+     97.2
+    ],
+    [
+     95.8,
+     97.4
+    ]
+   ]
+  },
+  {
+   "name": "Blackgate Causeway",
+   "line": [
+    [
+     66.0,
+     112.8
+    ],
+    [
+     66.4,
+     115.0
+    ],
+    [
+     66.8,
+     117.2
+    ]
+   ]
+  },
+  {
+   "name": "Sprang Bridge",
+   "line": [
+    [
+     33.0,
+     51.6
+    ],
+    [
+     33.0,
+     55.2
+    ]
+   ]
+  },
+  {
+   "name": "Sprang Bridge",
+   "line": [
+    [
+     41.6,
+     51.6
+    ],
+    [
+     41.6,
+     54.8
+    ]
+   ]
+  },
+  {
+   "name": "Grand Avenue Bridge",
+   "line": [
+    [
+     57.4,
+     51.4
+    ],
+    [
+     57.4,
+     54.6
+    ]
+   ]
+  },
+  {
+   "name": "Sprang Bridge",
+   "line": [
+    [
+     49.4,
+     51.4
+    ],
+    [
+     49.4,
+     54.6
+    ]
+   ]
+  }
  ],
- "avenues": [
-  {"name": "Park Row", "line": [[34, 23], [52, 22]]},
-  {"name": "Grand Avenue", "line": [[50, 59], [50, 95]]},
-  {"name": "Broadway", "line": [[38, 37], [47, 55], [42, 59], [36, 93]]},
-  {"name": "Fifth Avenue", "line": [[64, 36.4], [64, 55.4]]},
-  {"name": "Kane Avenue", "line": [[31, 18.5], [80, 18]]},
-  {"name": "Harbor Drive", "line": [[29, 90], [45, 94.4], [65, 93], [79, 86]]},
-  {"name": "Riverside Drive", "line": [[31, 40], [30.6, 52]]}
+ "piers": [
+  {
+   "name": "Gotham Docks",
+   "box": [
+    [
+     18,
+     116
+    ],
+    [
+     40,
+     132
+    ]
+   ],
+   "length": 1.8
+  },
+  {
+   "name": "Amusement Mile Pier",
+   "box": [
+    [
+     70,
+     24
+    ],
+    [
+     82,
+     31
+    ]
+   ],
+   "length": 1.6
+  },
+  {
+   "name": "East End Docks",
+   "box": [
+    [
+     76,
+     92
+    ],
+    [
+     86,
+     112
+    ]
+   ],
+   "length": 1.6
+  },
+  {
+   "name": "Gotham Marina",
+   "box": [
+    [
+     13,
+     92
+    ],
+    [
+     21,
+     108
+    ]
+   ],
+   "length": 1.2
+  },
+  {
+   "name": "Waterloo Docks",
+   "box": [
+    [
+     110,
+     -2
+    ],
+    [
+     130,
+     6
+    ]
+   ],
+   "length": 1.8
+  },
+  {
+   "name": "Tricorner Naval Yard",
+   "box": [
+    [
+     33,
+     118
+    ],
+    [
+     41,
+     130
+    ]
+   ],
+   "length": 2.2
+  }
+ ],
+ "water": [
+  {
+   "name": "Gotham River",
+   "at": [
+    11.6,
+    76.0
+   ],
+   "rotate": -82
+  },
+  {
+   "name": "Gotham River",
+   "at": [
+    26.0,
+    15.0
+   ],
+   "rotate": 0
+  },
+  {
+   "name": "Sprang River",
+   "at": [
+    45.0,
+    53.0
+   ],
+   "rotate": 0
+  },
+  {
+   "name": "Finger River",
+   "at": [
+    70.0,
+    81.4
+   ],
+   "rotate": -40
+  },
+  {
+   "name": "Gotham Harbor",
+   "at": [
+    52.0,
+    128.0
+   ],
+   "rotate": 0
+  },
+  {
+   "name": "Atlantic Ocean",
+   "at": [
+    104.0,
+    30.0
+   ],
+   "rotate": 0
+  },
+  {
+   "name": "Atlantic Ocean",
+   "at": [
+    110.0,
+    120.0
+   ],
+   "rotate": 0
+  },
+  {
+   "name": "Kane River",
+   "at": [
+    -30.0,
+    52.0
+   ],
+   "rotate": 18
+  }
  ],
  "places": [
-  {"name": "Wayne Manor", "x": 9, "y": 9, "area": "Gotham County", "kind": "landmark", "match": ["the manor", "batcave", "the cave", "manor"]},
-  {"name": "Drake Manor", "x": 15, "y": 12.5, "area": "Gotham County", "kind": "landmark", "match": ["drake manor"]},
-  {"name": "Bristol", "x": 13, "y": 26, "area": "Gotham County", "kind": "district", "match": ["bristol"]},
-  {"name": "Gotham Cemetery", "x": 14.6, "y": 20, "area": "Gotham County", "kind": "landmark", "match": ["cemetery", "graveyard"]},
-  {"name": "Ace Chemicals", "x": 11, "y": 66, "area": "Gotham County", "kind": "landmark", "match": ["ace chemicals"]},
-  {"name": "Sionis Steel Mill", "x": 10, "y": 80, "area": "Gotham County", "kind": "landmark", "match": ["steel mill", "sionis"]},
-  {"name": "Crime Alley", "x": 40, "y": 25, "area": "Uptown", "kind": "district", "match": ["crime alley"]},
-  {"name": "Park Row", "x": 45, "y": 21.8, "area": "Uptown", "kind": "landmark", "match": ["park row"]},
-  {"name": "Monarch Theatre", "x": 43, "y": 23.6, "area": "Uptown", "kind": "landmark", "match": ["monarch"]},
-  {"name": "Thompkins Clinic", "x": 37.6, "y": 27, "area": "Uptown", "kind": "landmark", "match": ["clinic", "leslie", "thompkins"]},
-  {"name": "Burnley", "x": 58, "y": 17, "area": "Uptown", "kind": "district", "match": ["burnley"]},
-  {"name": "Gotham Heights", "x": 64, "y": 26, "area": "Uptown", "kind": "district", "match": ["gotham heights"]},
-  {"name": "Amusement Mile", "x": 74, "y": 21, "area": "Uptown", "kind": "district", "match": ["amusement mile", "funfair", "fairground", "the pier"]},
-  {"name": "Arkham Asylum", "x": 22.4, "y": 33.8, "area": "Arkham Island", "kind": "landmark", "match": ["arkham"]},
-  {"name": "The Narrows", "x": 22.8, "y": 48, "area": "The Narrows", "kind": "district", "match": ["narrows"]},
-  {"name": "Gotham University", "x": 36, "y": 41, "area": "Midtown", "kind": "landmark", "match": ["gotham university", "gotham u", "campus", "university"]},
-  {"name": "Upper West Side", "x": 36, "y": 50, "area": "Midtown", "kind": "district", "match": ["upper west side"]},
-  {"name": "Robinson Park", "x": 49.4, "y": 45.4, "area": "Midtown", "kind": "landmark", "match": ["robinson park", "the park", "central park"]},
-  {"name": "Gotham Reservoir", "x": 51.6, "y": 43, "area": "Midtown", "kind": "landmark", "match": ["reservoir"]},
-  {"name": "Saul Erdel Planetarium", "x": 46, "y": 48.6, "area": "Midtown", "kind": "landmark", "match": ["planetarium"]},
-  {"name": "Gotham Museum", "x": 57.8, "y": 43, "area": "Midtown", "kind": "landmark", "match": ["museum", "gallery", "galleries"]},
-  {"name": "Upper East Side", "x": 67, "y": 41.4, "area": "Midtown", "kind": "district", "match": ["upper east side"]},
-  {"name": "Coventry", "x": 56, "y": 53, "area": "Midtown", "kind": "district", "match": ["coventry"]},
-  {"name": "Wayne Tower", "x": 61.4, "y": 49.6, "area": "Midtown", "kind": "landmark", "match": ["wayne tower", "wayne enterprises", "applied sciences", "r&d", "board meeting", "boardroom"]},
-  {"name": "Otisburg", "x": 73, "y": 49, "area": "Midtown", "kind": "district", "match": ["otisburg"]},
-  {"name": "Theater District", "x": 49, "y": 63.6, "area": "Downtown", "kind": "district", "match": ["theater district", "theatre district", "theatre", "theater", "matinee"]},
-  {"name": "Gotham Opera House", "x": 52.6, "y": 62, "area": "Downtown", "kind": "landmark", "match": ["opera", "ballet", "symphony", "concert hall"]},
-  {"name": "Diamond District", "x": 61, "y": 64, "area": "Downtown", "kind": "district", "match": ["diamond district", "jeweller", "jeweler"]},
-  {"name": "Union Station", "x": 41, "y": 63, "area": "Downtown", "kind": "landmark", "match": ["union station", "train station", "the station"]},
-  {"name": "Iceberg Lounge", "x": 66.4, "y": 67.4, "area": "Downtown", "kind": "landmark", "match": ["iceberg lounge", "iceberg"]},
-  {"name": "Fashion District", "x": 72, "y": 70, "area": "Downtown", "kind": "district", "match": ["fashion district", "boutique"]},
-  {"name": "City Hall", "x": 44, "y": 70.4, "area": "Downtown", "kind": "landmark", "match": ["city hall"]},
-  {"name": "GCPD Central", "x": 40.4, "y": 72.6, "area": "Downtown", "kind": "landmark", "match": ["gcpd", "police headquarters", "precinct", "commissioner"]},
-  {"name": "Gotham Gazette", "x": 55, "y": 70.6, "area": "Downtown", "kind": "landmark", "match": ["gazette", "newsroom"]},
-  {"name": "Gotham General Hospital", "x": 34, "y": 69, "area": "Downtown", "kind": "landmark", "match": ["hospital", "gotham general", "er "]},
-  {"name": "The Clocktower", "x": 47.6, "y": 76.4, "area": "Downtown", "kind": "landmark", "match": ["clocktower", "clock tower"]},
-  {"name": "Gotham Cathedral", "x": 43, "y": 77, "area": "Downtown", "kind": "landmark", "match": ["cathedral", "church"]},
-  {"name": "Old Gotham", "x": 41.6, "y": 80.6, "area": "Downtown", "kind": "district", "match": ["old gotham"]},
-  {"name": "Financial District", "x": 61, "y": 77.4, "area": "Downtown", "kind": "district", "match": ["financial district", "the bank", "stock exchange"]},
-  {"name": "Chinatown", "x": 31.6, "y": 83.4, "area": "Downtown", "kind": "district", "match": ["chinatown", "noodle"]},
-  {"name": "East End", "x": 73, "y": 82, "area": "Downtown", "kind": "district", "match": ["east end"]},
-  {"name": "The Bowery", "x": 51, "y": 87, "area": "Downtown", "kind": "district", "match": ["bowery"]},
-  {"name": "Gotham Docks", "x": 40, "y": 92.6, "area": "Downtown", "kind": "landmark", "match": ["docks", "dixon docks", "harbor", "harbour", "pier", "waterfront", "shipyard"]},
-  {"name": "Gotham Marina", "x": 30, "y": 89.4, "area": "Downtown", "kind": "landmark", "match": ["marina", "houseboat"]},
-  {"name": "Tricorner Naval Yard", "x": 90, "y": 39.6, "area": "Tricorner", "kind": "landmark", "match": ["tricorner", "naval yard"]},
-  {"name": "Burnside", "x": 92, "y": 58, "area": "Burnside", "kind": "district", "match": ["burnside"]},
-  {"name": "Blackgate Penitentiary", "x": 89.4, "y": 86.6, "area": "Blackgate", "kind": "landmark", "match": ["blackgate"]},
-  {"name": "Central Business District", "x": 92, "y": 4.4, "area": "Blüdhaven", "kind": "district", "match": ["central business district", "downtown blüdhaven", "downtown bludhaven"]},
-  {"name": "Waterloo Docks", "x": 87.6, "y": 8.6, "area": "Blüdhaven", "kind": "landmark", "match": ["waterloo", "docks", "waterfront", "harbor", "harbour"]},
-  {"name": "Avalon Heights", "x": 97, "y": 2.6, "area": "Blüdhaven", "kind": "district", "match": ["avalon", "heights"]},
-  {"name": "Halyard Square", "x": 93.6, "y": 8.2, "area": "Blüdhaven", "kind": "landmark", "match": ["halyard"]},
-  {"name": "Blüdhaven Precinct", "x": 89.6, "y": 5.4, "area": "Blüdhaven", "kind": "landmark", "match": ["precinct", "police", "station"]},
-  {"name": "Port's Park", "x": 98, "y": 9.6, "area": "Blüdhaven", "kind": "district", "match": ["port's park", "ports park"]},
-  {"name": "Haly's Circus Winter Quarters", "x": 86.4, "y": 3, "area": "Blüdhaven", "kind": "landmark", "match": ["circus", "big top", "trapeze"]}
+  {
+   "name": "Wayne Manor",
+   "x": 1.0,
+   "y": 10.0,
+   "area": "Gotham County",
+   "kind": "landmark",
+   "icon": "manor",
+   "match": [
+    "the manor",
+    "batcave",
+    "the cave",
+    "manor"
+   ]
+  },
+  {
+   "name": "Drake Manor",
+   "x": 7.6,
+   "y": 16.4,
+   "area": "Bristol",
+   "kind": "landmark",
+   "icon": "manor",
+   "match": [
+    "drake manor"
+   ]
+  },
+  {
+   "name": "Bristol",
+   "x": 5.0,
+   "y": 22.0,
+   "area": "Bristol",
+   "kind": "district",
+   "match": [
+    "bristol"
+   ]
+  },
+  {
+   "name": "Gotham Cemetery",
+   "x": 5.2,
+   "y": 35.4,
+   "area": "Gotham County",
+   "kind": "landmark",
+   "icon": "cemetery",
+   "match": [
+    "cemetery",
+    "graveyard"
+   ]
+  },
+  {
+   "name": "Sionis Steel Mill",
+   "x": 2.0,
+   "y": 92.0,
+   "area": "Gotham County",
+   "kind": "landmark",
+   "icon": "industry",
+   "match": [
+    "steel mill",
+    "sionis"
+   ]
+  },
+  {
+   "name": "The Narrows",
+   "x": 21.6,
+   "y": 36.0,
+   "area": "The Narrows",
+   "kind": "district",
+   "match": [
+    "narrows"
+   ]
+  },
+  {
+   "name": "Cherry Hills",
+   "x": 38.4,
+   "y": 28.6,
+   "area": "Cherry Hills",
+   "kind": "district",
+   "match": [
+    "cherry hills"
+   ]
+  },
+  {
+   "name": "Otisburg",
+   "x": 49.0,
+   "y": 30.2,
+   "area": "Otisburg",
+   "kind": "district",
+   "match": [
+    "otisburg"
+   ]
+  },
+  {
+   "name": "Knightsdome",
+   "x": 52.4,
+   "y": 26.4,
+   "area": "Otisburg",
+   "kind": "landmark",
+   "icon": "stadium",
+   "match": [
+    "knightsdome",
+    "stadium",
+    "arena"
+   ]
+  },
+  {
+   "name": "S.T.A.R. Labs",
+   "x": 47.4,
+   "y": 33.4,
+   "area": "Otisburg",
+   "kind": "landmark",
+   "icon": "lab",
+   "match": [
+    "star labs",
+    "s.t.a.r."
+   ]
+  },
+  {
+   "name": "Amusement Mile",
+   "x": 64.0,
+   "y": 24.6,
+   "area": "Amusement Mile",
+   "kind": "district",
+   "match": [
+    "amusement mile",
+    "funfair",
+    "fairground",
+    "the pier"
+   ]
+  },
+  {
+   "name": "New Town",
+   "x": 65.0,
+   "y": 34.2,
+   "area": "New Town",
+   "kind": "district",
+   "match": [
+    "new town"
+   ]
+  },
+  {
+   "name": "Burnley",
+   "x": 52.0,
+   "y": 42.0,
+   "area": "Burnley",
+   "kind": "district",
+   "match": [
+    "burnley"
+   ]
+  },
+  {
+   "name": "Crime Alley",
+   "x": 67.4,
+   "y": 44.6,
+   "area": "Crime Alley",
+   "kind": "district",
+   "match": [
+    "crime alley"
+   ]
+  },
+  {
+   "name": "Park Row",
+   "x": 63.4,
+   "y": 44.4,
+   "area": "Crime Alley",
+   "kind": "quarter",
+   "match": [
+    "park row"
+   ]
+  },
+  {
+   "name": "Monarch Theatre",
+   "x": 65.4,
+   "y": 43.0,
+   "area": "Crime Alley",
+   "kind": "landmark",
+   "icon": "theatre",
+   "match": [
+    "monarch"
+   ]
+  },
+  {
+   "name": "Thompkins Clinic",
+   "x": 70.4,
+   "y": 46.8,
+   "area": "Crime Alley",
+   "kind": "landmark",
+   "icon": "hospital",
+   "match": [
+    "clinic",
+    "leslie",
+    "thompkins"
+   ]
+  },
+  {
+   "name": "The Bowery",
+   "x": 67.0,
+   "y": 50.2,
+   "area": "The Bowery",
+   "kind": "district",
+   "match": [
+    "bowery"
+   ]
+  },
+  {
+   "name": "Robinsville",
+   "x": 80.4,
+   "y": 44.0,
+   "area": "Robinsville",
+   "kind": "district",
+   "match": [
+    "robinsville"
+   ]
+  },
+  {
+   "name": "Iceberg Lounge",
+   "x": 85.4,
+   "y": 60.2,
+   "area": "Robinsville",
+   "kind": "landmark",
+   "icon": "nightlife",
+   "match": [
+    "iceberg lounge",
+    "iceberg"
+   ]
+  },
+  {
+   "name": "Arkham Island",
+   "x": 34.2,
+   "y": 46.4,
+   "area": "Arkham Island",
+   "kind": "district",
+   "match": [
+    "arkham island"
+   ]
+  },
+  {
+   "name": "Arkham Asylum",
+   "x": 36.0,
+   "y": 47.6,
+   "area": "Arkham Island",
+   "kind": "landmark",
+   "icon": "asylum",
+   "match": [
+    "arkham"
+   ]
+  },
+  {
+   "name": "Coventry",
+   "x": 39.0,
+   "y": 57.8,
+   "area": "Coventry",
+   "kind": "district",
+   "match": [
+    "coventry"
+   ]
+  },
+  {
+   "name": "University District",
+   "x": 28.4,
+   "y": 69.4,
+   "area": "University District",
+   "kind": "district",
+   "match": [
+    "university district"
+   ]
+  },
+  {
+   "name": "Gotham University",
+   "x": 25.6,
+   "y": 66.6,
+   "area": "University District",
+   "kind": "landmark",
+   "icon": "university",
+   "match": [
+    "gotham university",
+    "gotham u",
+    "campus",
+    "university"
+   ]
+  },
+  {
+   "name": "Gotham General Hospital",
+   "x": 33.4,
+   "y": 75.0,
+   "area": "University District",
+   "kind": "landmark",
+   "icon": "hospital",
+   "match": [
+    "hospital",
+    "gotham general"
+   ]
+  },
+  {
+   "name": "Robinson Park",
+   "x": 45.6,
+   "y": 79.0,
+   "area": "Robinson Park",
+   "kind": "district",
+   "match": [
+    "robinson park",
+    "the park",
+    "central park"
+   ]
+  },
+  {
+   "name": "Wayne Botanical Garden",
+   "x": 42.4,
+   "y": 65.6,
+   "area": "Robinson Park",
+   "kind": "landmark",
+   "icon": "garden",
+   "match": [
+    "botanical",
+    "garden"
+   ]
+  },
+  {
+   "name": "The Reservoir",
+   "x": 44.2,
+   "y": 72.6,
+   "area": "Robinson Park",
+   "kind": "landmark",
+   "icon": "water",
+   "match": [
+    "reservoir"
+   ]
+  },
+  {
+   "name": "Saul Erdel Planetarium",
+   "x": 49.6,
+   "y": 83.0,
+   "area": "Robinson Park",
+   "kind": "landmark",
+   "icon": "museum",
+   "match": [
+    "planetarium"
+   ]
+  },
+  {
+   "name": "Upper East Side",
+   "x": 62.4,
+   "y": 70.2,
+   "area": "Upper East Side",
+   "kind": "district",
+   "match": [
+    "upper east side"
+   ]
+  },
+  {
+   "name": "Gotham Museum",
+   "x": 58.6,
+   "y": 64.6,
+   "area": "Upper East Side",
+   "kind": "landmark",
+   "icon": "museum",
+   "match": [
+    "museum",
+    "gallery",
+    "galleries"
+   ]
+  },
+  {
+   "name": "Ace Chemicals",
+   "x": 70.4,
+   "y": 66.6,
+   "area": "Upper East Side",
+   "kind": "landmark",
+   "icon": "industry",
+   "match": [
+    "ace chemicals"
+   ]
+  },
+  {
+   "name": "Janus Cosmetics",
+   "x": 69.6,
+   "y": 75.0,
+   "area": "Upper East Side",
+   "kind": "landmark",
+   "icon": "industry",
+   "match": [
+    "janus"
+   ]
+  },
+  {
+   "name": "Upper West Side",
+   "x": 24.6,
+   "y": 88.0,
+   "area": "Upper West Side",
+   "kind": "district",
+   "match": [
+    "upper west side"
+   ]
+  },
+  {
+   "name": "Gotham Heights",
+   "x": 20.6,
+   "y": 93.4,
+   "area": "Upper West Side",
+   "kind": "quarter",
+   "match": [
+    "gotham heights"
+   ]
+  },
+  {
+   "name": "Diamond District",
+   "x": 46.0,
+   "y": 95.0,
+   "area": "Diamond District",
+   "kind": "district",
+   "match": [
+    "diamond district",
+    "jeweller",
+    "jeweler"
+   ]
+  },
+  {
+   "name": "Wayne Tower",
+   "x": 45.2,
+   "y": 100.0,
+   "area": "Diamond District",
+   "kind": "landmark",
+   "icon": "tower",
+   "match": [
+    "wayne tower",
+    "wayne enterprises",
+    "applied sciences",
+    "r&d",
+    "board meeting",
+    "boardroom"
+   ]
+  },
+  {
+   "name": "Theater District",
+   "x": 51.6,
+   "y": 90.0,
+   "area": "Diamond District",
+   "kind": "quarter",
+   "match": [
+    "theater district",
+    "theatre district",
+    "theatre",
+    "theater",
+    "matinee"
+   ]
+  },
+  {
+   "name": "Gotham Opera House",
+   "x": 53.6,
+   "y": 91.6,
+   "area": "Diamond District",
+   "kind": "landmark",
+   "icon": "theatre",
+   "match": [
+    "opera",
+    "ballet",
+    "symphony",
+    "concert hall"
+   ]
+  },
+  {
+   "name": "Union Station",
+   "x": 39.6,
+   "y": 97.2,
+   "area": "Diamond District",
+   "kind": "landmark",
+   "icon": "station",
+   "match": [
+    "union station",
+    "train station",
+    "the station"
+   ]
+  },
+  {
+   "name": "Financial District",
+   "x": 51.0,
+   "y": 99.0,
+   "area": "Diamond District",
+   "kind": "quarter",
+   "match": [
+    "financial district",
+    "the bank",
+    "stock exchange"
+   ]
+  },
+  {
+   "name": "GCPD Central",
+   "x": 54.4,
+   "y": 102.4,
+   "area": "Diamond District",
+   "kind": "landmark",
+   "icon": "police",
+   "match": [
+    "gcpd",
+    "police headquarters",
+    "precinct",
+    "commissioner"
+   ]
+  },
+  {
+   "name": "Fashion District",
+   "x": 64.0,
+   "y": 90.4,
+   "area": "Fashion District",
+   "kind": "district",
+   "match": [
+    "fashion district",
+    "boutique"
+   ]
+  },
+  {
+   "name": "Gotham Zoo",
+   "x": 66.2,
+   "y": 95.2,
+   "area": "Fashion District",
+   "kind": "landmark",
+   "icon": "zoo",
+   "match": [
+    "zoo"
+   ]
+  },
+  {
+   "name": "Gotham Gazette",
+   "x": 60.0,
+   "y": 98.4,
+   "area": "Fashion District",
+   "kind": "landmark",
+   "icon": "news",
+   "match": [
+    "gazette",
+    "newsroom"
+   ]
+  },
+  {
+   "name": "City Hall District",
+   "x": 70.4,
+   "y": 103.4,
+   "area": "City Hall District",
+   "kind": "district",
+   "match": [
+    "city hall district"
+   ]
+  },
+  {
+   "name": "City Hall",
+   "x": 76.0,
+   "y": 96.0,
+   "area": "City Hall District",
+   "kind": "landmark",
+   "icon": "civic",
+   "match": [
+    "city hall"
+   ]
+  },
+  {
+   "name": "Mercy Hospital",
+   "x": 75.6,
+   "y": 100.8,
+   "area": "City Hall District",
+   "kind": "landmark",
+   "icon": "hospital",
+   "match": [
+    "mercy"
+   ]
+  },
+  {
+   "name": "Gotham Superior Courthouse",
+   "x": 71.4,
+   "y": 107.0,
+   "area": "City Hall District",
+   "kind": "landmark",
+   "icon": "civic",
+   "match": [
+    "courthouse",
+    "court"
+   ]
+  },
+  {
+   "name": "East End",
+   "x": 79.0,
+   "y": 104.0,
+   "area": "City Hall District",
+   "kind": "quarter",
+   "match": [
+    "east end"
+   ]
+  },
+  {
+   "name": "Chinatown",
+   "x": 27.0,
+   "y": 103.6,
+   "area": "Chinatown",
+   "kind": "district",
+   "match": [
+    "chinatown",
+    "noodle"
+   ]
+  },
+  {
+   "name": "Gotham Marina",
+   "x": 17.4,
+   "y": 98.0,
+   "area": "Chinatown",
+   "kind": "landmark",
+   "icon": "marina",
+   "match": [
+    "marina",
+    "houseboat"
+   ]
+  },
+  {
+   "name": "Old Gotham",
+   "x": 47.0,
+   "y": 108.6,
+   "area": "Old Gotham",
+   "kind": "district",
+   "match": [
+    "old gotham"
+   ]
+  },
+  {
+   "name": "The Clocktower",
+   "x": 49.0,
+   "y": 104.6,
+   "area": "Old Gotham",
+   "kind": "landmark",
+   "icon": "clock",
+   "match": [
+    "clocktower",
+    "clock tower"
+   ]
+  },
+  {
+   "name": "Gotham Cathedral",
+   "x": 43.6,
+   "y": 106.0,
+   "area": "Old Gotham",
+   "kind": "landmark",
+   "icon": "church",
+   "match": [
+    "cathedral",
+    "church"
+   ]
+  },
+  {
+   "name": "Tricorner",
+   "x": 29.0,
+   "y": 121.0,
+   "area": "Tricorner",
+   "kind": "district",
+   "match": [
+    "tricorner"
+   ]
+  },
+  {
+   "name": "Tricorner Naval Yard",
+   "x": 36.0,
+   "y": 124.6,
+   "area": "Tricorner",
+   "kind": "landmark",
+   "icon": "naval",
+   "match": [
+    "naval yard"
+   ]
+  },
+  {
+   "name": "Gotham Docks",
+   "x": 26.0,
+   "y": 128.6,
+   "area": "Tricorner",
+   "kind": "landmark",
+   "icon": "dock",
+   "match": [
+    "docks",
+    "dixon docks",
+    "harbor",
+    "harbour",
+    "pier",
+    "waterfront",
+    "shipyard"
+   ]
+  },
+  {
+   "name": "Blackgate Penitentiary",
+   "x": 69.0,
+   "y": 122.6,
+   "area": "Blackgate Isle",
+   "kind": "landmark",
+   "icon": "prison",
+   "match": [
+    "blackgate"
+   ]
+  },
+  {
+   "name": "Paris Island",
+   "x": 49.6,
+   "y": 121.2,
+   "area": "Paris Island",
+   "kind": "district",
+   "match": [
+    "paris island"
+   ]
+  },
+  {
+   "name": "Burnside",
+   "x": 106.0,
+   "y": 66.0,
+   "area": "Burnside",
+   "kind": "district",
+   "match": [
+    "burnside"
+   ]
+  },
+  {
+   "name": "Central Business District",
+   "x": 122.0,
+   "y": -9.0,
+   "area": "Blüdhaven",
+   "kind": "district",
+   "match": [
+    "central business district",
+    "downtown blüdhaven",
+    "downtown bludhaven"
+   ]
+  },
+  {
+   "name": "Waterloo Docks",
+   "x": 117.6,
+   "y": 1.0,
+   "area": "Blüdhaven",
+   "kind": "landmark",
+   "icon": "dock",
+   "match": [
+    "waterloo",
+    "docks",
+    "waterfront",
+    "harbor",
+    "harbour"
+   ]
+  },
+  {
+   "name": "Avalon Heights",
+   "x": 131.0,
+   "y": -17.0,
+   "area": "Blüdhaven",
+   "kind": "district",
+   "match": [
+    "avalon",
+    "heights"
+   ]
+  },
+  {
+   "name": "Halyard Square",
+   "x": 127.0,
+   "y": -2.5,
+   "area": "Blüdhaven",
+   "kind": "district",
+   "match": [
+    "halyard"
+   ]
+  },
+  {
+   "name": "Blüdhaven Precinct",
+   "x": 119.4,
+   "y": -6.4,
+   "area": "Blüdhaven",
+   "kind": "landmark",
+   "icon": "police",
+   "match": [
+    "precinct",
+    "police",
+    "station"
+   ]
+  },
+  {
+   "name": "Port's Park",
+   "x": 135.5,
+   "y": -5.0,
+   "area": "Blüdhaven",
+   "kind": "district",
+   "match": [
+    "port's park",
+    "ports park"
+   ]
+  },
+  {
+   "name": "Fort Joseph",
+   "x": 109.5,
+   "y": -8.0,
+   "area": "Blüdhaven",
+   "kind": "district",
+   "match": [
+    "fort joseph"
+   ]
+  },
+  {
+   "name": "Haly's Circus Winter Quarters",
+   "x": 106.0,
+   "y": -16.0,
+   "area": "Blüdhaven",
+   "kind": "landmark",
+   "icon": "circus",
+   "match": [
+    "circus",
+    "big top",
+    "trapeze"
+   ]
+  }
  ],
  "regions": [
-  {"name": "Blüdhaven", "x": 92, "y": 6, "spread": 3.5, "match": ["blüdhaven", "bludhaven"]}
+  {
+   "name": "Blüdhaven",
+   "x": 122.0,
+   "y": -8.0,
+   "spread": 6,
+   "match": [
+    "blüdhaven",
+    "bludhaven"
+   ]
+  }
  ]
 }

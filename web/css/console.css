@@ -1436,45 +1436,27 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm-canvas { flex: 1; min-width: 0; background: var(--void); }
 .gm.is-dropping .gm-canvas { cursor: crosshair; }
 
-/* The city itself. */
-.gm .leaflet-container { background: #04070b; font-family: var(--sans); outline: none; }
-.gm-land { fill: #111c2a; fill-opacity: 1; stroke: rgba(120, 170, 220, 0.34); stroke-width: 1.1; }
-.gm-land--main { fill: #0d1621; }
-.gm-land:hover { fill: #142133; }
-.gm-park { fill: rgba(88, 192, 138, 0.10); fill-opacity: 1; stroke: rgba(88, 192, 138, 0.28); stroke-width: 0.8; }
-.gm-streets { pointer-events: none; }
-.gm-street { fill: none; stroke: rgba(140, 180, 220, 0.075); stroke-width: 0.6; vector-effect: non-scaling-stroke; }
-.gm[data-zoom="far"] .gm-street { stroke: rgba(140, 180, 220, 0.035); }
-.gm-avenue { stroke: rgba(140, 180, 220, 0.22); fill: none; }
-.gm-avenue:hover { stroke: var(--primary); }
-.gm-bridge { stroke: rgba(185, 199, 212, 0.45); fill: none; stroke-linecap: round; }
-.gm-bridge:hover { stroke: var(--primary-lit); }
-.gm-rail { stroke: rgba(185, 199, 212, 0.28); stroke-dasharray: 6 5; fill: none; }
-
-.gm-label { pointer-events: none; white-space: nowrap; }
-.gm-in { position: absolute; left: 0; top: 0; white-space: nowrap; }
-.gm-label .gm-in { transform: translate(-50%, -50%); }
-.gm-label--area { font-family: var(--mono); font-size: 11px; letter-spacing: 0.34em; text-transform: uppercase;
-  color: rgba(194, 204, 214, 0.42); }
-.gm-label--water span { display: inline-block; font-family: Georgia, serif; font-style: italic; font-size: 12px;
-  letter-spacing: 0.18em; color: rgba(79, 168, 224, 0.38); }
-.gm-place { white-space: nowrap; }
-.gm-place b { font-weight: 400; font-size: 11px; color: var(--text-dim); text-shadow: 0 0 6px #060a10, 0 0 2px #060a10; }
-.gm-place--landmark .gm-in { display: flex; align-items: center; gap: 5px; transform: translate(-4px, -50%); }
-.gm-place--landmark i { width: 7px; height: 7px; flex: none; transform: rotate(45deg); background: #060a10;
-  border: 1.2px solid rgba(143, 211, 255, 0.55); }
-.gm-place--landmark:hover i { background: var(--primary); }
-.gm-place--landmark:hover b { color: var(--text); }
-.gm-place--district .gm-in { transform: translate(-50%, -50%); }
-.gm-place--district b { font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--text-faint); }
-.gm[data-zoom="far"] .gm-place b, .gm[data-zoom="far"] .gm-place--district { display: none; }
-.gm[data-zoom="mid"] .gm-place--landmark b { display: none; }
-.gm[data-zoom="mid"] .gm-place--landmark:hover b { display: inline; }
+/* The city itself is drawn by MapLibre (gothammap.js); over it, the hologram:
+   faint scan lines and a vignette, never in the way of a click. */
+.gm-canvas { position: relative; }
+.gm-canvas .maplibregl-canvas { outline: none; }
+.gm-canvas::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  background:
+    repeating-linear-gradient(to bottom, rgba(143, 211, 255, 0.028) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, transparent 55%, rgba(2, 5, 10, 0.55) 100%); }
+.gm-hover { position: absolute; z-index: 20; pointer-events: none; max-width: 260px; padding: 6px 9px;
+  background: var(--raised); border: 1px solid var(--hairline-2); color: var(--text-dim);
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45); }
+.gm-hover[hidden] { display: none; }
+.gm-tool--text { width: auto; padding: 0 9px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; }
+.gm-flash { width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--primary-lit);
+  animation: gm-flash 1.8s ease-out both; pointer-events: none; }
+@keyframes gm-flash { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.8); opacity: 0; } }
 
 /* People, in their own colour. */
-/* Leaflet places the marker (position: absolute); its insides hang off it. */
-.gm-person.is-moving { transition: transform 1.2s var(--ease); }
+/* The map places the marker; it's a 34px disc, and its insides hang off it. */
+.gm-person { width: 34px; height: 34px; cursor: pointer; }
 .gm-person__face { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--accent);
   background-color: var(--surface-2); background-size: cover; background-repeat: no-repeat;
   box-shadow: 0 0 0 3px #060a10, 0 4px 14px rgba(0, 0, 0, 0.6); cursor: pointer; }
@@ -1487,20 +1469,15 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
   font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
   color: var(--accent); white-space: nowrap; text-shadow: 0 0 6px #060a10, 0 0 3px #060a10; }
 .gm-person.is-selected .gm-person__face { box-shadow: 0 0 0 3px #060a10, 0 0 0 5px var(--accent), 0 4px 18px rgba(0, 0, 0, 0.7); }
-.gm-trail { fill: none; opacity: 0.75; }
-.gm-trail__stop { fill: #060a10; fill-opacity: 1; }
-.gm-flash { fill: none; stroke: var(--primary-lit); animation: gm-flash 1.8s ease-out both; }
-@keyframes gm-flash { from { stroke-opacity: 1; } to { stroke-opacity: 0; } }
 
 /* His pins. */
-.gm-pin .gm-in { display: flex; align-items: center; gap: 5px; transform: translate(-6px, -100%); }
+.gm-pin { display: flex; align-items: center; gap: 5px; cursor: grab; white-space: nowrap; }
 .gm-pin i { width: 12px; height: 12px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
   background: var(--operator); border: 2px solid #060a10; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); }
 .gm-pin b { font-weight: 500; font-size: 11px; color: var(--operator); text-shadow: 0 0 6px #060a10, 0 0 3px #060a10; }
-.gm-popup .leaflet-popup-content-wrapper { background: var(--raised); color: var(--text); border-radius: 0;
-  border: 1px solid var(--hairline-2); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55); }
-.gm-popup .leaflet-popup-content { margin: 10px; }
-.gm-popup .leaflet-popup-tip { background: var(--raised); border: 1px solid var(--hairline-2); }
+.gm-popup .maplibregl-popup-content { background: var(--raised); color: var(--text); border-radius: 0;
+  border: 1px solid var(--hairline-2); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55); padding: 10px; }
+.gm-popup .maplibregl-popup-tip { border-top-color: var(--raised); border-bottom-color: var(--raised); }
 .gm-pinform__input { width: 180px; background: var(--surface-2); border: 1px solid var(--hairline-2);
   color: var(--text); font: inherit; font-size: 13px; padding: 6px 8px; outline: none; }
 .gm-pinform__input:focus { border-color: var(--primary-dim); }

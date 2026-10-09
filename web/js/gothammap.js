@@ -1,135 +1,320 @@
 /* ==========================================================================
-   The map of Gotham — the whole city, live.
+   The map of Gotham — the whole city, live, as a holographic map.
 
-   Drawn from the same gazetteer the server places people with
-   (wayne/engine/gotham.json): Eliot R. Brown's canon three islands and the
-   rivers between them, the mainland and Gotham County, the outer islands,
-   Blüdhaven up the coast. Coastlines, parks, avenues, bridges and a street
-   grid are vector layers in the console's own palette — nothing is a picture,
-   so it themes and stays sharp at any zoom.
+   The city is built offline by scripts/build_map.py from the layout in
+   wayne/engine/gotham.json: curved coastlines, the Sprang River and the Kane,
+   lakes, parks, thirty districts with streets of their own, avenues, highways,
+   bridges, rail, piers — and fifteen thousand buildings, extruded in 3D. It is
+   drawn here with MapLibre GL (vendored, web/vendor/maplibre) in the console's
+   own palette: cyan light on deep blue-black, glowing edges, scan lines.
 
    On it: everyone who shares where they are, as their portrait in their own
-   colour, moving as their presence changes; where they've been lately; pins
-   of his own. Hover anything for its name, click someone for who and where,
-   search to fly somewhere, toggle what's shown, follow someone as they move.
+   colour, gliding as their presence changes; the trail of where they've been;
+   pins of his own. Hover for names, click someone for who and where, search to
+   fly somewhere, toggle layers, tilt into 3D, follow someone as they move.
 
-   Leaflet (vendored, web/vendor/leaflet) does the panning and zooming.
+   Coordinates arrive in the layout's units (x east, y south) and are turned
+   into map positions here, around 0°,0° where the projection is flat.
    ========================================================================== */
 (function () {
   'use strict';
 
-  var map = null, opts = null, data = null, root = null;
-  var layers = {}, people = {}, pins = {}, selected = null, following = null;
-  var trailLayer = null;
-  var dropping = false, fitted = false;
-  var SHOWN_KEY = 'gotham-map-layers';
+  var map = null, opts = null, root = null, gazetteer = null;
+  var people = {}, pins = {}, selected = null, following = null;
+  var dropping = false, fitted = false, ready = false, threeD = false;
+  var hover = null, hoverId = null;
+  var SHOWN_KEY = 'gotham-map-layers-v2';
 
-  // Map units: the gazetteer's 0–100, ten to a unit, north up.
-  function ll(x, y) { return [(100 - y) * 10, x * 10]; }
-  function xy(latlng) { return { x: latlng.lng / 10, y: 100 - latlng.lat / 10 }; }
+  // One layout unit is ~150 m; centred on the island so the projection is flat.
+  var K = 0.0013475;
+  function ll(x, y) { return [(x - 55) * K, (65 - y) * K]; }
+  function unit(lngLat) { return { x: lngLat.lng / K + 55, y: 65 - lngLat.lat / K }; }
+  function convert(coords) {
+    if (typeof coords[0] === 'number') return ll(coords[0], coords[1]);
+    return coords.map(convert);
+  }
   function $(sel) { return root.querySelector(sel); }
-
-  function remember(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* private window */ } }
+  function remember(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* private */ } }
   function recall(key, fallback) {
     try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
   }
 
-  function tip(layer, text) {
-    // The console's own tooltip, never Leaflet's or the browser's.
-    var node = layer.getElement && layer.getElement();
-    if (node) node.setAttribute('data-tip', text);
+  /* --- palette ------------------------------------------------------------ */
+
+  var C = {
+    void: '#02050a', land: '#0a131e', mainland: '#08101a', edge: '#4fa8e0', lit: '#8fd3ff',
+    street: '#17344d', secondary: '#24506f', primary: '#3d79a3', highway: '#7cc3ee',
+    park: '#0b2a24', parkEdge: '#2f8f6a', water: '#02050a', label: '#9cb4c9', faint: '#56718a',
+    alert: '#e0574f', good: '#58c08a'
+  };
+  // Every district a quiet shade of the same night.
+  var TINTS = ['#0e1a28', '#0c1826', '#101c2b', '#0d1724', '#0f1b29', '#0b1622',
+               '#111d2d', '#0e1927', '#0c1725', '#101b2a', '#0d1826', '#0f1a29'];
+
+  /* --- icons: drawn here, in the palette, never a picture ------------------ */
+
+  var ICON_TINT = {
+    asylum: C.alert, prison: C.alert, industry: C.alert, nightlife: C.alert,
+    manor: C.lit, clock: C.lit, tower: C.lit,
+    police: '#9fd8ff', hospital: '#9fd8ff', civic: '#9fd8ff',
+    garden: C.good, water: C.edge, cemetery: C.faint
+  };
+  var ICON_KINDS = ['tower', 'manor', 'police', 'hospital', 'asylum', 'prison', 'church', 'theatre', 'university',
+                    'museum', 'industry', 'station', 'stadium', 'lab', 'nightlife', 'civic', 'news', 'zoo', 'marina',
+                    'naval', 'dock', 'clock', 'garden', 'water', 'cemetery', 'circus'];
+
+  function glyph(kind) {
+    var p = new Path2D();
+    switch (kind) {
+      case 'tower': p.rect(-3, -9, 6, 18); p.moveTo(0, -13); p.lineTo(0, -9); p.moveTo(-3, -3); p.lineTo(3, -3); p.moveTo(-3, 3); p.lineTo(3, 3); break;
+      case 'manor': p.moveTo(-8, 7); p.lineTo(-8, -1); p.lineTo(0, -8); p.lineTo(8, -1); p.lineTo(8, 7); p.closePath(); p.rect(-2, 2, 4, 5); break;
+      case 'police': p.moveTo(0, -9); p.lineTo(8, -5); p.quadraticCurveTo(7, 6, 0, 10); p.quadraticCurveTo(-7, 6, -8, -5); p.closePath(); p.moveTo(0, -4); p.lineTo(0, 4); break;
+      case 'hospital': p.moveTo(-2.5, -8); p.lineTo(2.5, -8); p.lineTo(2.5, -2.5); p.lineTo(8, -2.5); p.lineTo(8, 2.5); p.lineTo(2.5, 2.5); p.lineTo(2.5, 8); p.lineTo(-2.5, 8); p.lineTo(-2.5, 2.5); p.lineTo(-8, 2.5); p.lineTo(-8, -2.5); p.lineTo(-2.5, -2.5); p.closePath(); break;
+      case 'asylum': p.rect(-8, -7, 16, 14); [-4, 0, 4].forEach(function (x) { p.moveTo(x, -7); p.lineTo(x, 7); }); p.moveTo(-8, 0); p.lineTo(8, 0); break;
+      case 'prison': p.rect(-8, -8, 16, 16); [-4, 0, 4].forEach(function (x) { p.moveTo(x, -8); p.lineTo(x, 8); }); break;
+      case 'church': p.moveTo(0, -11); p.lineTo(0, -3); p.moveTo(-3, -8); p.lineTo(3, -8); p.moveTo(-6, 9); p.lineTo(-6, 1); p.arc(0, 1, 6, Math.PI, 0); p.lineTo(6, 9); break;
+      case 'theatre': for (var i = 0; i < 5; i++) { var a = -Math.PI / 2 + i * 4 * Math.PI / 5; p[i ? 'lineTo' : 'moveTo'](Math.cos(a) * 9, Math.sin(a) * 9); } p.closePath(); break;
+      case 'university': p.moveTo(-10, -2); p.lineTo(0, -7); p.lineTo(10, -2); p.lineTo(0, 3); p.closePath(); p.moveTo(-6, 0); p.lineTo(-6, 6); p.quadraticCurveTo(0, 9, 6, 6); p.lineTo(6, 0); break;
+      case 'museum': p.moveTo(-9, -4); p.lineTo(0, -9); p.lineTo(9, -4); p.closePath(); [-6, -2, 2, 6].forEach(function (x) { p.moveTo(x, -3); p.lineTo(x, 6); }); p.moveTo(-9, 8); p.lineTo(9, 8); break;
+      case 'industry': p.moveTo(-9, 8); p.lineTo(-9, -1); p.lineTo(-4, 2); p.lineTo(-4, -1); p.lineTo(1, 2); p.lineTo(1, -9); p.lineTo(5, -9); p.lineTo(5, 2); p.lineTo(9, 2); p.lineTo(9, 8); p.closePath(); break;
+      case 'station': p.moveTo(-4, -9); p.lineTo(4, -9); p.quadraticCurveTo(7, -9, 7, -6); p.lineTo(7, 2); p.quadraticCurveTo(7, 5, 4, 5); p.lineTo(-4, 5); p.quadraticCurveTo(-7, 5, -7, 2); p.lineTo(-7, -6); p.quadraticCurveTo(-7, -9, -4, -9); p.moveTo(-7, -2); p.lineTo(7, -2); p.moveTo(-4, 5); p.lineTo(-7, 10); p.moveTo(4, 5); p.lineTo(7, 10); break;
+      case 'stadium': p.ellipse(0, 0, 10, 6, 0, 0, Math.PI * 2); p.moveTo(6, 0); p.ellipse(0, 0, 6, 3, 0, 0, Math.PI * 2); break;
+      case 'lab': p.moveTo(-3, -9); p.lineTo(-3, -2); p.lineTo(-8, 8); p.lineTo(8, 8); p.lineTo(3, -2); p.lineTo(3, -9); p.moveTo(-5, -9); p.lineTo(5, -9); p.moveTo(-5, 3); p.lineTo(5, 3); break;
+      case 'nightlife': p.moveTo(-8, -8); p.lineTo(8, -8); p.lineTo(0, 1); p.closePath(); p.moveTo(0, 1); p.lineTo(0, 8); p.moveTo(-5, 8); p.lineTo(5, 8); break;
+      case 'civic': p.moveTo(-8, 2); p.arc(0, 2, 8, Math.PI, 0); p.moveTo(-10, 2); p.lineTo(10, 2); p.moveTo(-10, 8); p.lineTo(10, 8); [-6, 0, 6].forEach(function (x) { p.moveTo(x, 2); p.lineTo(x, 8); }); break;
+      case 'news': p.rect(-8, -8, 16, 16); [-1, 2.5, 6].forEach(function (y) { p.moveTo(-5, y); p.lineTo(5, y); }); p.rect(-5, -5.5, 10, 2.5); break;
+      case 'zoo': p.ellipse(0, 4, 5, 4, 0, 0, Math.PI * 2); [[-6, -3], [-2, -7], [2, -7], [6, -3]].forEach(function (c) { p.moveTo(c[0] + 2, c[1]); p.arc(c[0], c[1], 2, 0, Math.PI * 2); }); break;
+      case 'marina': case 'naval': case 'dock':
+        p.moveTo(2.5, -7); p.arc(0, -7, 2.5, 0, Math.PI * 2); p.moveTo(0, -4.5); p.lineTo(0, 9); p.moveTo(-8, 3); p.quadraticCurveTo(-7, 9, 0, 9); p.quadraticCurveTo(7, 9, 8, 3); p.moveTo(-4, -1); p.lineTo(4, -1); break;
+      case 'clock': p.arc(0, 0, 9, 0, Math.PI * 2); p.moveTo(0, 0); p.lineTo(0, -6); p.moveTo(0, 0); p.lineTo(4, 3); break;
+      case 'garden': p.moveTo(0, -10); p.quadraticCurveTo(10, 0, 0, 10); p.quadraticCurveTo(-10, 0, 0, -10); p.moveTo(0, -6); p.lineTo(0, 8); break;
+      case 'water': [-4, 2].forEach(function (y) { p.moveTo(-9, y); p.bezierCurveTo(-5, y - 4, -2, y + 4, 2, y); p.bezierCurveTo(5, y - 4, 7, y + 2, 9, y); }); break;
+      case 'cemetery': p.moveTo(-6, 9); p.lineTo(-6, -3); p.arc(0, -3, 6, Math.PI, 0); p.lineTo(6, 9); p.closePath(); p.moveTo(0, -5); p.lineTo(0, 3); p.moveTo(-3, -2); p.lineTo(3, -2); break;
+      case 'circus': p.moveTo(-9, 8); p.lineTo(0, -6); p.lineTo(9, 8); p.closePath(); p.moveTo(0, -6); p.lineTo(0, -11); p.lineTo(4, -9.5); p.lineTo(0, -8); break;
+      default: p.arc(0, 0, 4, 0, Math.PI * 2);
+    }
+    return p;
   }
 
-  function label(cls, html) {
-    // Leaflet positions a marker with its own transform; centring goes on the inside.
-    return L.divIcon({ className: 'gm-label ' + cls, html: '<span class="gm-in">' + html + '</span>', iconSize: [0, 0] });
+  function icon(kind) {
+    var ratio = 2, size = 34 * ratio;
+    var canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    var ctx = canvas.getContext('2d');
+    ctx.scale(ratio, ratio);
+    ctx.translate(17, 17);
+    var tint = ICON_TINT[kind] || C.edge;
+    // A small hexagonal badge, like a marker on a tactical display.
+    ctx.beginPath();
+    for (var i = 0; i < 6; i++) {
+      var a = Math.PI / 6 + i * Math.PI / 3;
+      ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * 14.5, Math.sin(a) * 14.5);
+    }
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(4, 10, 18, 0.94)';
+    ctx.shadowColor = tint;
+    ctx.shadowBlur = 6;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = tint;
+    ctx.stroke();
+    ctx.scale(0.7, 0.7);
+    ctx.lineWidth = 1.9;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.stroke(glyph(kind));
+    return { width: size, height: size, data: ctx.getImageData(0, 0, size, size).data };
   }
 
-  /* --- the city ---------------------------------------------------------- */
+  /* --- the style ------------------------------------------------------------ */
 
-  function streetGrid() {
-    // A grid per landmass, clipped to its coast; Downtown's is set at an
-    // angle, like an old city that grew before the grid did.
-    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 1000 1000');
-    var defs = '', body = '';
-    data.land.forEach(function (land, i) {
-      var pts = land.coast.map(function (p) { return (p[0] * 10) + ',' + (p[1] * 10); }).join(' ');
-      defs += '<clipPath id="gm-clip-' + i + '"><polygon points="' + pts + '"/></clipPath>';
-      var gap = land.mainland ? 26 : 13, cross = land.mainland ? 40 : 22;
-      var angle = land.name === 'Downtown' ? -9 : (land.name === 'Uptown' ? 4 : 0);
-      var d = '';
-      for (var y = -200; y < 1200; y += gap) d += 'M-200 ' + y + 'H1200';
-      for (var x = -200; x < 1200; x += cross) d += 'M' + x + ' -200V1200';
-      body += '<g clip-path="url(#gm-clip-' + i + ')"><path class="gm-street" d="' + d +
-              '" transform="rotate(' + angle + ' 500 500)"/></g>';
-    });
-    svg.innerHTML = '<defs>' + defs + '</defs>' + body;
-    return L.svgOverlay(svg, [[0, 0], [1000, 1000]], { interactive: false, className: 'gm-streets' });
+  function is(layer) { return ['==', ['get', 'l'], layer]; }
+  function road(cls) { return ['all', is('road'), ['==', ['get', 'c'], cls]]; }
+  function z(stops) { return ['interpolate', ['exponential', 1.6], ['zoom']].concat(stops); }
+
+  function style() {
+    var tints = ['match', ['get', 't']];
+    TINTS.forEach(function (c, i) { tints.push(i, c); });
+    tints.push(TINTS[0]);
+    return {
+      version: 8,
+      glyphs: '/static/map/fonts/{fontstack}/{range}.pbf',
+      sources: {
+        city: { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, generateId: true },
+        buildings: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+        trail: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
+      },
+      layers: [
+        { id: 'void', type: 'background', paint: { 'background-color': C.void } },
+        // Light off the coast: the shoreline glows into the water.
+        { id: 'coast-glow', type: 'line', source: 'city', filter: is('land'),
+          paint: { 'line-color': C.edge, 'line-width': z([10, 6, 14, 22, 17, 60]), 'line-blur': z([10, 6, 14, 22, 17, 60]), 'line-opacity': 0.14 } },
+        { id: 'land', type: 'fill', source: 'city', filter: is('land'),
+          paint: { 'fill-color': ['match', ['get', 'k'], 'mainland', C.mainland, C.land] } },
+        { id: 'district', type: 'fill', source: 'city', filter: is('district'),
+          paint: { 'fill-color': tints,
+                   'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1,
+                                    ['==', ['get', 'k'], 'outer'], 0, 0.85] } },
+        { id: 'district-hover', type: 'line', source: 'city', filter: is('district'),
+          paint: { 'line-color': C.lit, 'line-width': 1.6, 'line-blur': 1,
+                   'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.55, 0] } },
+        { id: 'park', type: 'fill', source: 'city', filter: is('park'), paint: { 'fill-color': C.park, 'fill-opacity': 0.9 } },
+        { id: 'park-edge', type: 'line', source: 'city', filter: is('park'),
+          paint: { 'line-color': C.parkEdge, 'line-width': 0.8, 'line-opacity': 0.4 } },
+        { id: 'water', type: 'fill', source: 'city', filter: is('water'), paint: { 'fill-color': C.water } },
+        { id: 'water-edge', type: 'line', source: 'city', filter: is('water'),
+          paint: { 'line-color': C.edge, 'line-width': 1, 'line-opacity': 0.45 } },
+        { id: 'pier', type: 'fill', source: 'city', filter: is('pier'), paint: { 'fill-color': '#163650', 'fill-opacity': 0.95 } },
+        { id: 'coast', type: 'line', source: 'city', filter: is('land'),
+          paint: { 'line-color': C.edge, 'line-width': z([10, 0.8, 14, 1.6, 17, 3]), 'line-opacity': 0.75 } },
+        // Roads, quietest first. Widths grow with the zoom, as on any good map.
+        // Streets show from far out as texture — the city's grain — and widen in.
+        { id: 'street', type: 'line', source: 'city', filter: road('street'), minzoom: 10.6,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': C.street, 'line-width': z([10.6, 0.25, 13, 0.6, 14, 0.9, 16, 3, 18, 10]),
+                   'line-opacity': z([10.6, 0.35, 12.5, 0.75, 13.5, 0.95]) } },
+        { id: 'secondary', type: 'line', source: 'city', filter: road('secondary'),
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': C.secondary, 'line-width': z([10, 0.35, 14, 1.6, 16, 4.5, 18, 14]),
+                   'line-opacity': z([10, 0.45, 13, 0.9]) } },
+        { id: 'primary-glow', type: 'line', source: 'city', filter: road('primary'),
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': C.primary, 'line-width': z([10, 3, 14, 7, 17, 22]), 'line-blur': z([10, 3, 14, 7, 17, 22]), 'line-opacity': 0.35 } },
+        { id: 'primary', type: 'line', source: 'city', filter: road('primary'),
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': C.primary, 'line-width': z([10, 0.7, 14, 2.4, 16, 6, 18, 18]) } },
+        { id: 'rail', type: 'line', source: 'city', filter: road('rail'),
+          paint: { 'line-color': '#5f86a6', 'line-width': z([10, 0.6, 14, 1.4, 17, 3]), 'line-dasharray': [3, 2.2], 'line-opacity': 0.8 } },
+        { id: 'highway-glow', type: 'line', source: 'city', filter: ['any', road('highway'), road('bridge')],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': C.highway, 'line-width': z([10, 5, 14, 11, 17, 30]), 'line-blur': z([10, 5, 14, 11, 17, 30]), 'line-opacity': 0.32 } },
+        { id: 'bridge-deck', type: 'line', source: 'city', filter: road('bridge'),
+          layout: { 'line-cap': 'butt', 'line-join': 'round' },
+          paint: { 'line-color': '#0d2133', 'line-width': z([10, 2.4, 14, 6, 16, 12, 18, 30]) } },
+        { id: 'highway', type: 'line', source: 'city', filter: ['any', road('highway'), road('bridge')],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': C.highway, 'line-width': z([10, 1, 14, 2.6, 16, 6, 18, 18]) } },
+        // The city in three dimensions: every block, its height from its district.
+        // Footprints first, as lit outlines — the hologram's crisp edges at street level.
+        { id: 'footprint', type: 'line', source: 'buildings', minzoom: 13.4,
+          paint: { 'line-color': ['case', ['has', 'n'], C.lit, '#2f6f9c'], 'line-width': z([13.4, 0.3, 16, 1, 18, 1.6]),
+                   'line-opacity': z([13.4, 0, 14.2, 0.55]) } },
+        // The city in three dimensions: dark volumes, brightening with height.
+        { id: 'buildings', type: 'fill-extrusion', source: 'buildings', minzoom: 13.2,
+          paint: {
+            'fill-extrusion-color': ['case', ['has', 'n'], '#7ccaf5',
+              ['interpolate', ['linear'], ['get', 'h'], 0, '#0a1c2a', 25, '#0e2a40', 60, '#14405f', 120, '#1f5f8c', 240, '#3f92cc']],
+            'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 13.2, 0, 14.4, ['get', 'h']],
+            'fill-extrusion-base': 0,
+            'fill-extrusion-opacity': 0.88,
+            'fill-extrusion-vertical-gradient': true
+          } },
+        // Where someone has been.
+        { id: 'trail', type: 'line', source: 'trail', filter: ['==', ['geometry-type'], 'LineString'],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': ['get', 'color'], 'line-width': 2.4, 'line-dasharray': [1.5, 1.8], 'line-opacity': 0.9 } },
+        { id: 'trail-stop', type: 'circle', source: 'trail', filter: ['==', ['geometry-type'], 'Point'],
+          paint: { 'circle-radius': 4, 'circle-color': C.void, 'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 1.8 } },
+        // Words on top, laid out so they never collide.
+        { id: 'water-label', type: 'symbol', source: 'city', filter: is('water_label'),
+          layout: { 'text-field': ['get', 'n'], 'text-font': ['Noto Sans Italic'], 'text-size': z([10, 11, 14, 16]),
+                    'text-letter-spacing': 0.35, 'text-rotate': ['get', 'r'], 'text-max-width': 30 },
+          paint: { 'text-color': '#3a7aa8', 'text-opacity': 0.85 } },
+        { id: 'road-label', type: 'symbol', source: 'city', minzoom: 13.6,
+          filter: ['all', is('road'), ['has', 'n'], ['!=', ['get', 'c'], 'street']],
+          layout: { 'symbol-placement': 'line', 'text-field': ['upcase', ['get', 'n']], 'text-font': ['Noto Sans Medium'],
+                    'text-size': z([13.6, 9, 17, 13]), 'text-letter-spacing': 0.18, 'symbol-spacing': 420, 'text-max-angle': 30 },
+          paint: { 'text-color': '#8fb9d8', 'text-halo-color': C.void, 'text-halo-width': 1.6 } },
+        { id: 'area-label', type: 'symbol', source: 'city', filter: is('area_label'),
+          layout: { 'text-field': ['upcase', ['get', 'n']], 'text-font': ['Noto Sans Medium'], 'text-size': z([10, 13, 14, 22]),
+                    'text-letter-spacing': 0.6 },
+          paint: { 'text-color': '#7f98ad', 'text-opacity': 0.55, 'text-halo-color': C.void, 'text-halo-width': 2 } },
+        { id: 'district-label', type: 'symbol', source: 'city',
+          filter: ['all', is('place'), ['==', ['get', 'k'], 'district']],
+          layout: { 'text-field': ['upcase', ['get', 'n']], 'text-font': ['Noto Sans Medium'], 'text-size': z([11, 9, 13.5, 12, 16, 16]),
+                    'text-letter-spacing': 0.32, 'text-max-width': 7, 'text-padding': 6 },
+          paint: { 'text-color': C.label, 'text-halo-color': C.void, 'text-halo-width': 1.8,
+                   'text-opacity': z([10.5, 0.4, 12.5, 0.95]) } },
+        { id: 'quarter-label', type: 'symbol', source: 'city', minzoom: 14.2,
+          filter: ['all', is('place'), ['==', ['get', 'k'], 'quarter']],
+          layout: { 'text-field': ['upcase', ['get', 'n']], 'text-font': ['Noto Sans Regular'], 'text-size': 10.5,
+                    'text-letter-spacing': 0.24 },
+          paint: { 'text-color': C.faint, 'text-halo-color': C.void, 'text-halo-width': 1.5 } },
+        { id: 'landmark', type: 'symbol', source: 'city', minzoom: 12.4,
+          filter: ['all', is('place'), ['==', ['get', 'k'], 'landmark']],
+          layout: { 'icon-image': ['concat', 'gm-', ['get', 'i']], 'icon-size': z([12.4, 0.62, 15, 0.9, 17, 1.1]),
+                    'icon-allow-overlap': false, 'icon-padding': 2,
+                    'text-field': ['step', ['zoom'], '', 14.4, ['get', 'n']], 'text-font': ['Noto Sans Regular'],
+                    'text-size': 11, 'text-offset': [0, 1.5], 'text-anchor': 'top', 'text-optional': true,
+                    'text-max-width': 9 },
+          paint: { 'text-color': '#b9d3e6', 'text-halo-color': C.void, 'text-halo-width': 1.6 } }
+      ]
+    };
   }
 
-  function buildCity() {
-    var city = L.layerGroup(), streets = L.layerGroup(), places = L.layerGroup();
-    data.land.forEach(function (land) {
-      var shape = L.polygon(land.coast.map(function (p) { return ll(p[0], p[1]); }),
-                            { className: 'gm-land' + (land.mainland ? ' gm-land--main' : ''), weight: 1 });
-      shape.on('add', function () { tip(shape, land.name); });
-      city.addLayer(shape);
-    });
-    (data.parks || []).forEach(function (park) {
-      var shape = L.polygon(park.coast.map(function (p) { return ll(p[0], p[1]); }),
-                            { className: 'gm-park', weight: 1 });
-      shape.on('add', function () { tip(shape, park.name); });
-      city.addLayer(shape);
-    });
-    streets.addLayer(streetGrid());
-    (data.avenues || []).forEach(function (road) {
-      var line = L.polyline(road.line.map(function (p) { return ll(p[0], p[1]); }),
-                            { className: 'gm-avenue', weight: 2.2 });
-      line.on('add', function () { tip(line, road.name); });
-      streets.addLayer(line);
-    });
-    (data.bridges || []).forEach(function (bridge) {
-      var line = L.polyline(bridge.line.map(function (p) { return ll(p[0], p[1]); }),
-                            { className: bridge.rail ? 'gm-rail' : 'gm-bridge', weight: bridge.rail ? 1.4 : 3 });
-      line.on('add', function () { tip(line, bridge.name); });
-      city.addLayer(line);
-    });
-    (data.water || []).forEach(function (w) {
-      city.addLayer(L.marker(ll(w.at[0], w.at[1]), {
-        icon: label('gm-label--water', '<span style="transform:rotate(' + (w.rotate || 0) + 'deg)">' + w.name + '</span>'),
-        interactive: false, keyboard: false
-      }));
-    });
-    data.land.forEach(function (land) {
-      if (!land.label) return;
-      city.addLayer(L.marker(ll(land.label[0], land.label[1]), {
-        icon: label('gm-label--area', land.name), interactive: false, keyboard: false
-      }));
-    });
-    (data.places || []).forEach(function (place) {
-      var landmark = place.kind !== 'district';
-      var marker = L.marker(ll(place.x, place.y), {
-        icon: L.divIcon({
-          className: 'gm-place gm-place--' + (landmark ? 'landmark' : 'district'),
-          html: '<span class="gm-in">' + (landmark ? '<i></i>' : '') + '<b>' + place.name + '</b></span>',
-          iconSize: [0, 0]
-        }),
-        keyboard: false, riseOnHover: true
+  function loadCity() {
+    return fetch('/static/map/gotham.geojson').then(function (r) { return r.json(); }).then(function (fc) {
+      fc.features.forEach(function (f) { f.geometry.coordinates = convert(f.geometry.coordinates); });
+      map.getSource('city').setData(fc);
+      return fetch('/static/map/gotham-buildings.json');
+    }).then(function (r) { return r.json(); }).then(function (rows) {
+      var features = rows.map(function (row) {
+        var named = typeof row[row.length - 1] === 'string' ? row[row.length - 1] : null;
+        var nums = named ? row.slice(1, -1) : row.slice(1);
+        var ring = [];
+        for (var i = 0; i < nums.length; i += 2) ring.push(ll(nums[i] / 100, nums[i + 1] / 100));
+        ring.push(ring[0]);
+        var props = { h: row[0] };
+        if (named) props.n = named;
+        return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: props };
       });
-      marker.on('add', function () { tip(marker, place.name + ' · ' + place.area); });
-      marker.on('click', function () { map.flyTo(ll(place.x, place.y), Math.max(map.getZoom(), 1.6), { duration: 0.6 }); });
-      places.addLayer(marker);
-    });
-    layers.city = city.addTo(map);
-    layers.streets = streets;
-    layers.places = places;
-    layers.people = L.layerGroup();
-    layers.trails = L.layerGroup();
-    layers.pins = L.layerGroup();
+      map.getSource('buildings').setData({ type: 'FeatureCollection', features: features });
+    }).catch(function () { /* the city still draws without its buildings */ });
   }
 
-  /* --- people ------------------------------------------------------------ */
+  /* --- hovering: the console's own tooltip, never the map's ----------------- */
+
+  var HOVERABLE = ['landmark', 'district-label', 'quarter-label', 'road-label', 'primary', 'highway',
+                   'secondary', 'park', 'water', 'trail-stop', 'district'];
+
+  function describe(f) {
+    var p = f.properties || {};
+    if (p.l === 'place') return p.n + (p.a && p.a !== p.n ? ' · ' + p.a : '');
+    if (p.l === 'stop') return p.n;
+    if ((p.l === 'road' || p.l === 'park' || p.l === 'water' || p.l === 'district') && p.n) return p.n;
+    return '';
+  }
+
+  function wireHover() {
+    map.on('mousemove', function (e) {
+      var hits = map.queryRenderedFeatures(e.point, { layers: HOVERABLE.filter(function (id) { return map.getLayer(id); }) });
+      var top = null;
+      for (var i = 0; i < hits.length; i++) { if (describe(hits[i])) { top = hits[i]; break; } }
+      var district = hits.filter(function (h) { return h.properties.l === 'district'; })[0];
+      if (hoverId !== null && (!district || district.id !== hoverId)) {
+        map.setFeatureState({ source: 'city', id: hoverId }, { hover: false });
+        hoverId = null;
+      }
+      if (district && hoverId === null) {
+        hoverId = district.id;
+        map.setFeatureState({ source: 'city', id: hoverId }, { hover: true });
+      }
+      if (!top) { hover.hidden = true; map.getCanvas().style.cursor = dropping ? 'crosshair' : ''; return; }
+      hover.textContent = describe(top);
+      hover.hidden = false;
+      hover.style.left = (e.point.x + 14) + 'px';
+      hover.style.top = (e.point.y + 14) + 'px';
+      map.getCanvas().style.cursor = dropping ? 'crosshair' : (top.properties.l === 'place' ? 'pointer' : '');
+    });
+    map.getCanvas().addEventListener('mouseleave', function () { hover.hidden = true; });
+    map.on('click', 'landmark', function (e) {
+      if (dropping) return;
+      map.flyTo({ center: e.features[0].geometry.coordinates, zoom: Math.max(map.getZoom(), 15.4), duration: 900 });
+    });
+  }
+
+  /* --- people ----------------------------------------------------------------- */
 
   function visible() {
     var contacts = opts.contacts();
@@ -137,70 +322,65 @@
       .filter(function (c) { return c.presence && c.presence.spot; });
   }
 
+  function glide(marker, to) {
+    var from = marker.getLngLat(), start = performance.now();
+    if (Math.abs(from.lng - to[0]) + Math.abs(from.lat - to[1]) < 1e-7) return;
+    if (marker._gliding) cancelAnimationFrame(marker._gliding);
+    function step(now) {
+      var t = Math.min(1, (now - start) / 1400), e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      marker.setLngLat([from.lng + (to[0] - from.lng) * e, from.lat + (to[1] - from.lat) * e]);
+      marker._gliding = t < 1 ? requestAnimationFrame(step) : null;
+    }
+    marker._gliding = requestAnimationFrame(step);
+  }
+
   function placePeople() {
-    // Two at the same spot stand side by side, not on top of each other.
+    if (!ready) return;
     var byspot = {};
     visible().forEach(function (c) {
       var key = c.presence.spot.x.toFixed(1) + ',' + c.presence.spot.y.toFixed(1);
       (byspot[key] = byspot[key] || []).push(c);
     });
     var seen = {};
+    var showPeople = layerShown('people');
     Object.keys(byspot).forEach(function (key) {
       var group = byspot[key];
       group.forEach(function (c, i) {
         var s = c.presence.spot;
-        var angle = (i / group.length) * Math.PI * 2;
-        var r = group.length > 1 ? 2.4 : 0;
+        var angle = (i / group.length) * Math.PI * 2, r = group.length > 1 ? 0.55 : 0;
         var at = ll(s.x + Math.cos(angle) * r, s.y + Math.sin(angle) * r);
         seen[c.id] = true;
         var marker = people[c.id];
         if (!marker) {
-          marker = people[c.id] = L.marker(at, {
-            icon: L.divIcon({
-              className: 'gm-person',
-              html: '<span class="gm-person__ring"></span><span class="gm-person__face"></span>' +
-                    '<span class="gm-person__name">' + c.name + '</span>',
-              iconSize: [34, 34], iconAnchor: [17, 17]
-            }),
-            zIndexOffset: 1000, keyboard: false, riseOnHover: true
-          });
-          marker.on('add', function () {
-            var node = marker.getElement();
-            node.style.setProperty('--accent', c.accent);
-            opts.portrait(node.querySelector('.gm-person__face'), c);
-            node.setAttribute('data-tip', c.name);
-          });
-          marker.on('click', function () { select(c.id); });
-          layers.people.addLayer(marker);
+          var el = document.createElement('div');
+          el.className = 'gm-person';
+          el.innerHTML = '<span class="gm-person__ring"></span><span class="gm-person__face"></span>' +
+                         '<span class="gm-person__name"></span>';
+          el.style.setProperty('--accent', c.accent);
+          el.querySelector('.gm-person__name').textContent = c.name;
+          opts.portrait(el.querySelector('.gm-person__face'), c);
+          el.addEventListener('click', function (e) { e.stopPropagation(); select(c.id); });
+          marker = people[c.id] = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat(at).addTo(map);
         } else {
-          var node = marker.getElement();
-          var was = marker.getLatLng();
-          if (node && (Math.abs(was.lat - at[0]) > 0.01 || Math.abs(was.lng - at[1]) > 0.01)) {
-            // Moving: glide there, rather than jump.
-            node.classList.add('is-moving');
-            setTimeout(function () { node.classList.remove('is-moving'); }, 1300);
-          }
-          marker.setLatLng(at);
+          glide(marker, at);
         }
-        var el = marker.getElement();
-        if (el) {
-          el.dataset.status = c.presence.status;
-          el.classList.toggle('is-selected', selected === c.id);
-          el.setAttribute('data-tip', c.name + ' · ' + (c.presence.where || ''));
-        }
+        var node = marker.getElement();
+        node.dataset.status = c.presence.status;
+        node.classList.toggle('is-selected', selected === c.id);
+        node.setAttribute('data-tip', c.name + ' · ' + (c.presence.where || ''));
+        node.style.display = showPeople ? '' : 'none';
       });
     });
     Object.keys(people).forEach(function (id) {
-      if (!seen[id]) { layers.people.removeLayer(people[id]); delete people[id]; }
+      if (!seen[id]) { people[id].remove(); delete people[id]; }
     });
     renderRoster();
     if (selected) renderCard(selected);
-    if (following && people[following]) map.panTo(people[following].getLatLng(), { animate: true, duration: 1 });
+    if (following && people[following]) map.easeTo({ center: people[following].getLngLat(), duration: 1200 });
   }
 
   function renderRoster() {
     var list = $('.gm-roster');
-    if (!list) return;
     var contacts = opts.contacts();
     list.innerHTML = '';
     opts.order().forEach(function (id) {
@@ -229,10 +409,9 @@
   function select(id, fly) {
     selected = id;
     var marker = people[id];
-    if (marker && fly) map.flyTo(marker.getLatLng(), Math.max(map.getZoom(), 1.4), { duration: 0.7 });
+    if (marker && fly) map.flyTo({ center: marker.getLngLat(), zoom: Math.max(map.getZoom(), 14.6), duration: 1000 });
     Object.keys(people).forEach(function (other) {
-      var el = people[other].getElement();
-      if (el) el.classList.toggle('is-selected', other === id);
+      people[other].getElement().classList.toggle('is-selected', other === id);
     });
     renderCard(id);
     renderRoster();
@@ -249,65 +428,62 @@
     opts.portrait(card.querySelector('.gm-card__face'), c);
     card.querySelector('.gm-card__name').textContent = c.full_name;
     card.querySelector('.gm-card__status').textContent = opts.label(c);
-    card.querySelector('.gm-card__status').dataset.status = p.status;
     var company = (p['with'] || []).map(function (cid) { return (opts.contacts()[cid] || {}).name; }).filter(Boolean);
     card.querySelector('.gm-card__where').textContent = (p.where || p.spot.name) +
-      (p.spot.area && p.spot.area !== p.where ? ' · ' + p.spot.area : '') +
+      (p.spot.area && p.spot.area !== p.where && p.spot.area !== p.spot.name ? ' · ' + p.spot.area : '') +
       (company.length ? ' · with ' + company.join(', ') : '');
     card.querySelector('[data-act="follow"]').classList.toggle('is-on', following === id);
   }
 
   function showTrail(id) {
-    layers.trails.clearLayers();
     var c = opts.contacts()[id];
-    if (!c) return;
+    var source = map.getSource('trail');
+    source.setData({ type: 'FeatureCollection', features: [] });
+    if (!c || !layerShown('trails')) return;
     fetch('/api/map/trail/' + encodeURIComponent(id) + '?hours=3').then(function (r) { return r.json(); })
       .then(function (body) {
         if (selected !== id) return;
-        var pts = (body.trail || []);
+        var pts = body.trail || [];
         if (pts.length < 2) return;
-        var line = L.polyline(pts.map(function (p) { return ll(p.x, p.y); }),
-                              { className: 'gm-trail', color: c.accent, weight: 2, dashArray: '4 6' });
-        layers.trails.addLayer(line);
+        var features = [{ type: 'Feature', properties: { color: c.accent },
+                          geometry: { type: 'LineString', coordinates: pts.map(function (p) { return ll(p.x, p.y); }) } }];
         pts.slice(0, -1).forEach(function (p) {
           var when = new Date(p.at * 1000);
-          var dot = L.circleMarker(ll(p.x, p.y), { radius: 3, className: 'gm-trail__stop', color: c.accent, weight: 1.5 });
-          dot.on('add', function () {
-            tip(dot, String(when.getHours()).padStart(2, '0') + ':' + String(when.getMinutes()).padStart(2, '0') + ' · ' + p.where);
-          });
-          layers.trails.addLayer(dot);
+          features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: ll(p.x, p.y) },
+                          properties: { color: c.accent, l: 'stop',
+                                        n: String(when.getHours()).padStart(2, '0') + ':' + String(when.getMinutes()).padStart(2, '0') + ' · ' + p.where } });
         });
-      }).catch(function () { /* the map still works without a trail */ });
+        source.setData({ type: 'FeatureCollection', features: features });
+      }).catch(function () {});
   }
 
-  /* --- pins of his own --------------------------------------------------- */
+  /* --- pins of his own ------------------------------------------------------ */
 
   function loadPins() {
     fetch('/api/map/pins').then(function (r) { return r.json(); }).then(function (body) {
-      layers.pins.clearLayers();
+      Object.keys(pins).forEach(function (id) { pins[id].remove(); });
       pins = {};
       (body.pins || []).forEach(addPin);
     }).catch(function () {});
   }
 
   function addPin(pin) {
-    var marker = L.marker(ll(pin.x, pin.y), {
-      icon: L.divIcon({ className: 'gm-pin', html: '<span class="gm-in"><i></i><b></b></span>', iconSize: [0, 0] }),
-      draggable: true, keyboard: false, zIndexOffset: 500
-    });
-    marker.on('add', function () {
-      var node = marker.getElement();
-      node.querySelector('b').textContent = pin.label;
-      node.setAttribute('data-tip', pin.label + ' — drag to move, click to edit');
-    });
-    marker.on('click', function () { editPin(pin, marker); });
+    var el = document.createElement('div');
+    el.className = 'gm-pin';
+    el.innerHTML = '<i></i><b></b>';
+    el.querySelector('b').textContent = pin.label;
+    el.setAttribute('data-tip', pin.label + ' — drag to move, click to edit');
+    var marker = new maplibregl.Marker({ element: el, anchor: 'bottom-left', draggable: true })
+      .setLngLat(ll(pin.x, pin.y)).addTo(map);
+    marker._pin = pin;
+    el.addEventListener('click', function (e) { e.stopPropagation(); editPin(pin, marker); });
     marker.on('dragend', function () {
-      var at = xy(marker.getLatLng());
+      var at = unit(marker.getLngLat());
       pin.x = +at.x.toFixed(2); pin.y = +at.y.toFixed(2);
       savePin(pin);
     });
+    if (!layerShown('pins')) el.style.display = 'none';
     pins[pin.id] = marker;
-    layers.pins.addLayer(marker);
   }
 
   function savePin(pin) {
@@ -324,33 +500,32 @@
       '<button type="submit" class="gm-btn gm-btn--go">Save</button></div>';
     var input = form.querySelector('input');
     input.value = pin.label;
-    var popup = L.popup({ className: 'gm-popup', closeButton: false, offset: [0, -14] })
-      .setLatLng(marker.getLatLng()).setContent(form).openOn(map);
+    var popup = new maplibregl.Popup({ className: 'gm-popup', closeButton: false, offset: 18, maxWidth: '260px' })
+      .setLngLat(marker.getLngLat()).setDOMContent(form).addTo(map);
     setTimeout(function () { input.focus(); input.select(); }, 30);
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       pin.label = input.value.trim() || 'Pin';
       savePin(pin).then(function () {
-        map.closePopup(popup);
-        var node = marker.getElement();
-        if (node) node.querySelector('b').textContent = pin.label;
+        popup.remove();
+        marker.getElement().querySelector('b').textContent = pin.label;
       });
     });
     form.querySelector('[data-act="delete"]').addEventListener('click', function () {
       fetch('/api/map/pins/' + encodeURIComponent(pin.id), { method: 'DELETE' }).then(function () {
-        map.closePopup(popup);
-        layers.pins.removeLayer(marker);
+        popup.remove();
+        marker.remove();
         delete pins[pin.id];
       });
     });
   }
 
-  function dropPin(latlng) {
-    var at = xy(latlng);
+  function dropPin(lngLat) {
+    var at = unit(lngLat);
     savePin({ label: 'Pin', x: +at.x.toFixed(2), y: +at.y.toFixed(2) }).then(function (pin) {
       if (!pin) return;
       addPin(pin);
-      if (!map.hasLayer(layers.pins)) toggleLayer('pins', true);
+      if (!layerShown('pins')) setLayer('pins', true);
       editPin(pin, pins[pin.id]);
     });
     setDropping(false);
@@ -362,7 +537,7 @@
     $('[data-act="drop"]').classList.toggle('is-on', on);
   }
 
-  /* --- search ------------------------------------------------------------ */
+  /* --- search ----------------------------------------------------------------- */
 
   function wireSearch() {
     var input = $('.gm-search__input'), list = $('.gm-search__list');
@@ -375,7 +550,7 @@
       close();
       input.blur();
       if (o.person) return select(o.person, true);
-      map.flyTo(ll(o.x, o.y), Math.max(map.getZoom(), 1.8), { duration: 0.7 });
+      map.flyTo({ center: ll(o.x, o.y), zoom: Math.max(map.getZoom(), o.district ? 14.2 : 15.6), duration: 1100 });
       flash(ll(o.x, o.y));
     }
     function draw() {
@@ -394,25 +569,22 @@
     input.addEventListener('input', function () {
       var q = input.value.trim().toLowerCase();
       if (!q) return close();
-      var contacts = opts.contacts();
-      var found = [];
+      var contacts = opts.contacts(), found = [];
       Object.keys(contacts).forEach(function (id) {
         var c = contacts[id];
         if (c.presence && c.presence.spot && (c.name + ' ' + c.full_name).toLowerCase().indexOf(q) !== -1) {
           found.push({ name: c.full_name, kind: c.presence.where || 'Person', person: id });
         }
       });
-      (data.places || []).forEach(function (p) {
+      (gazetteer.places || []).forEach(function (p) {
         if ((p.name + ' ' + (p.match || []).join(' ')).toLowerCase().indexOf(q) !== -1) {
-          found.push({ name: p.name, kind: p.area, x: p.x, y: p.y });
+          found.push({ name: p.name, kind: p.kind === 'district' ? 'District' : p.area, x: p.x, y: p.y,
+                       district: p.kind === 'district' });
         }
       });
       Object.keys(pins).forEach(function (id) {
-        var m = pins[id], text = m.getElement() && m.getElement().textContent;
-        if (text && text.toLowerCase().indexOf(q) !== -1) {
-          var at = xy(m.getLatLng());
-          found.push({ name: text, kind: 'Your pin', x: at.x, y: at.y });
-        }
+        var pin = pins[id]._pin;
+        if (pin.label.toLowerCase().indexOf(q) !== -1) found.push({ name: pin.label, kind: 'Your pin', x: pin.x, y: pin.y });
       });
       options = found.slice(0, 8);
       chosen = 0;
@@ -431,38 +603,58 @@
   }
 
   function flash(at) {
-    var ring = L.circleMarker(at, { radius: 18, className: 'gm-flash', weight: 2 }).addTo(map);
-    setTimeout(function () { map.removeLayer(ring); }, 1800);
+    var el = document.createElement('div');
+    el.className = 'gm-flash';
+    var marker = new maplibregl.Marker({ element: el }).setLngLat(at).addTo(map);
+    setTimeout(function () { marker.remove(); }, 2000);
   }
 
-  /* --- layers and zoom --------------------------------------------------- */
+  /* --- layers, 3D, the frame ---------------------------------------------------- */
 
-  function toggleLayer(name, on) {
-    var layer = layers[name];
-    if (!layer) return;
-    if (on === undefined) on = !map.hasLayer(layer);
-    if (on) map.addLayer(layer); else map.removeLayer(layer);
-    var chip = $('[data-layer="' + name + '"]');
-    if (chip) chip.classList.toggle('is-on', on);
+  var LAYER_GROUPS = {
+    places: ['landmark', 'quarter-label'],
+    streets: ['street', 'road-label'],
+    buildings: ['buildings', 'footprint'],
+    trails: ['trail', 'trail-stop']
+  };
+
+  function layerShown(name) { return recall(SHOWN_KEY, {})[name] !== false; }
+
+  function setLayer(name, on) {
+    if (on === undefined) on = !layerShown(name);
     var shown = recall(SHOWN_KEY, {});
     shown[name] = on;
     remember(SHOWN_KEY, shown);
+    (LAYER_GROUPS[name] || []).forEach(function (id) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+    });
+    if (name === 'people') Object.keys(people).forEach(function (id) { people[id].getElement().style.display = on ? '' : 'none'; });
+    if (name === 'pins') Object.keys(pins).forEach(function (id) { pins[id].getElement().style.display = on ? '' : 'none'; });
+    var chip = $('[data-layer="' + name + '"]');
+    if (chip) chip.classList.toggle('is-on', on);
   }
 
-  function zoomClass() {
-    var z = map.getZoom();
-    root.dataset.zoom = z < 0 ? 'far' : (z < 1.1 ? 'mid' : 'near');
+  function setThreeD(on) {
+    threeD = on;
+    $('[data-act="3d"]').classList.toggle('is-on', on);
+    map.easeTo(on ? { pitch: 58, bearing: -17, zoom: Math.max(map.getZoom(), 14), duration: 1200 }
+                  : { pitch: 0, bearing: 0, duration: 900 });
   }
 
-  /* --- the frame --------------------------------------------------------- */
+  function fit() {
+    map.fitBounds([ll(11, 133), ll(90, 14)], { padding: 24, duration: fitted ? 900 : 0, pitch: 0, bearing: 0 });
+    threeD = false;
+    $('[data-act="3d"]').classList.remove('is-on');
+  }
 
   function wireFrame() {
     root.querySelectorAll('[data-layer]').forEach(function (chip) {
-      chip.addEventListener('click', function () { toggleLayer(chip.dataset.layer); });
+      chip.addEventListener('click', function () { setLayer(chip.dataset.layer); });
     });
     $('[data-act="zoom-in"]').addEventListener('click', function () { map.zoomIn(); });
     $('[data-act="zoom-out"]').addEventListener('click', function () { map.zoomOut(); });
     $('[data-act="fit"]').addEventListener('click', fit);
+    $('[data-act="3d"]').addEventListener('click', function () { setThreeD(!threeD); });
     $('[data-act="drop"]').addEventListener('click', function () { setDropping(!dropping); });
     $('[data-act="close"]').addEventListener('click', GothamMap.close);
     $('.gm-card [data-act="message"]').addEventListener('click', function () { if (selected) opts.message(selected); });
@@ -470,44 +662,54 @@
     $('.gm-card [data-act="follow"]').addEventListener('click', function () {
       following = following === selected ? null : selected;
       renderCard(selected);
-      if (following) map.panTo(people[following].getLatLng());
+      if (following) map.easeTo({ center: people[following].getLngLat(), zoom: Math.max(map.getZoom(), 15), duration: 900 });
     });
     $('.gm-card [data-act="dismiss"]').addEventListener('click', function () {
       selected = null; following = null;
       $('.gm-card').hidden = true;
-      layers.trails.clearLayers();
+      map.getSource('trail').setData({ type: 'FeatureCollection', features: [] });
       placePeople();
     });
   }
 
-  function fit() { map.fitBounds([[0, 0], [1000, 1000]], { padding: [16, 16] }); }
-
-  /* --- public ------------------------------------------------------------ */
+  /* --- public ------------------------------------------------------------------- */
 
   var GothamMap = {
     init: function (options) {
       opts = options;
       root = options.root;
-      data = options.data;
-      if (!data || !window.L) return;
-      map = L.map($('.gm-canvas'), {
-        crs: L.CRS.Simple, minZoom: -1.5, maxZoom: 3.2, zoomSnap: 0.25, zoomDelta: 0.5,
-        wheelPxPerZoomLevel: 110, attributionControl: false, zoomControl: false,
-        maxBounds: [[-250, -250], [1250, 1250]], maxBoundsViscosity: 0.7
+      gazetteer = options.data || {};
+      if (!window.maplibregl) return;
+      hover = document.createElement('div');
+      hover.className = 'gm-hover';
+      hover.hidden = true;
+      $('.gm__body').appendChild(hover);
+      map = new maplibregl.Map({
+        container: $('.gm-canvas'), style: style(), center: ll(50, 70), zoom: 12,
+        // Zoomed all the way out, the land and water still run past every edge.
+        minZoom: 10.2, maxZoom: 18.5, maxPitch: 70, attributionControl: false,
+        renderWorldCopies: false, dragRotate: true, pitchWithRotate: true,
+        maxBounds: [ll(-300, 330), ll(330, -300)]
       });
-      buildCity();
-      var shown = recall(SHOWN_KEY, { streets: true, places: true, people: true, trails: true, pins: true });
-      ['streets', 'places', 'people', 'trails', 'pins'].forEach(function (name) {
-        toggleLayer(name, shown[name] !== false);
+      map.on('load', function () {
+        ICON_KINDS.forEach(function (kind) {
+          if (!map.hasImage('gm-' + kind)) map.addImage('gm-' + kind, icon(kind), { pixelRatio: 2 });
+        });
+        ready = true;
+        loadCity();
+        ['places', 'streets', 'buildings', 'trails', 'people', 'pins'].forEach(function (name) {
+          setLayer(name, layerShown(name));
+        });
+        loadPins();
+        if (!root.hidden) { map.resize(); if (!fitted) { fit(); fitted = true; } placePeople(); }
       });
-      map.on('zoomend', zoomClass);
-      map.on('click', function (e) { if (dropping) dropPin(e.latlng); });
-      map.on('contextmenu', function (e) { dropPin(e.latlng); });
-      map.on('dragstart', function () { following = null; if (selected) renderCard(selected); });
+      map.on('click', function (e) { if (dropping) dropPin(e.lngLat); });
+      map.on('contextmenu', function (e) { e.preventDefault(); dropPin(e.lngLat); });
+      map.on('dragstart', function () { if (following) { following = null; if (selected) renderCard(selected); } });
+      map.on('pitchend', function () { threeD = map.getPitch() > 10; $('[data-act="3d"]').classList.toggle('is-on', threeD); });
+      wireHover();
       wireFrame();
       wireSearch();
-      zoomClass();
-      loadPins();
     },
     open: function (focus) {
       if (!map) return;
@@ -515,9 +717,8 @@
       document.documentElement.dataset.map = 'open';
       if (opts.toggled) opts.toggled(true);
       setTimeout(function () {
-        map.invalidateSize();
-        // Built while hidden, it had no size to fit to: the first look is the whole city.
-        if (!fitted) { fit(); fitted = true; }
+        map.resize();
+        if (ready && !fitted) { fit(); fitted = true; }
         placePeople();
         if (focus) select(focus, true);
       }, 30);
@@ -526,6 +727,7 @@
       if (!root) return;
       root.hidden = true;
       setDropping(false);
+      if (hover) hover.hidden = true;
       delete document.documentElement.dataset.map;
       if (opts.toggled) opts.toggled(false);
     },

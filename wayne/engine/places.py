@@ -65,15 +65,7 @@ def resolve(text):
                     "x": round(region["x"] + dx, 1), "y": round(region["y"] + dy, 1)}
     best = (_match([p for p in data["places"] if p["area"] not in regions], lowered)
             or _match([p for p in data["places"] if p["area"] in regions], lowered, by_name_only=True))
-    if best:
-        return _spot(best)
-    for land in data.get("land", []):
-        if re.search(rf"\b{re.escape(land['name'].lower())}\b", lowered):
-            xs, ys = zip(*land["coast"], strict=False)
-            dx, dy = _jitter(lowered, 2.5)
-            return {"name": land["name"], "area": land["name"],
-                    "x": round(sum(xs) / len(xs) + dx, 1), "y": round(sum(ys) / len(ys) + dy, 1)}
-    return None
+    return _spot(best) if best else None
 
 
 def names():
@@ -103,7 +95,7 @@ def patrol_spot(contact, planned, t):
     """
     beat = list(getattr(contact, "beat", ()) or ())
     there = resolve(planned) if planned and "/" not in planned else None
-    if there and there["name"] not in ("Uptown", "Midtown", "Downtown"):
+    if there:
         beat = [b for b in beat if (resolve(b) or {}).get("area") == there["area"]] or []
         if not beat:
             return planned

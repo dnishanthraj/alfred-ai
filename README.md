@@ -287,9 +287,10 @@ as people rather than notifications.
 
 Hover a portrait for their status line, what they're doing and — for those who
 share it — where they are and who with. The map button opens Gotham itself
-(`web/js/gothammap.js`, from `wayne/engine/gotham.json`): canon geography,
-fifty-odd districts and landmarks, everyone's portrait moving live, their recent
-trail, search, layers and pins of your own. Where someone is comes from what
+(`web/js/gothammap.js`, MapLibre GL; the city built from `wayne/engine/gotham.json`
+by `scripts/build_map.py`, which needs `pip install shapely`): districts, streets,
+rivers, parks, 3D buildings and landmarks, everyone's portrait moving live, their
+recent trail, search, layers and pins of your own. Where someone is comes from what
 they're doing (`wayne/engine/places.py`): their plan's place, a spot on their
 beat while they patrol, or home. Jason, Selina and Randy don't share.
 

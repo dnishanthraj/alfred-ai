@@ -102,23 +102,27 @@ A full review of the code turned up, among others:
   what they might know — used only if someone like them would, never as "let
   me check". Alfred and Lucius at a computer still say they're looking.
 - **The map of Gotham, live.** The map button in the top bar opens the whole
-  city over the stage: canon Gotham after Eliot R. Brown's map — three islands
-  split by the Sprang and Finger rivers, the mainland and Gotham County, Arkham,
-  the Narrows, Tricorner, Blackgate, Burnside, and Blüdhaven up the coast with
-  its own neighbourhoods — drawn as vector coastlines, parks, avenues, bridges
-  and a street grid in the console's palette, with fifty-odd districts and
-  landmarks (the Monarch Theatre, GCPD Central, the Clocktower, the Iceberg
-  Lounge...). Scroll or pinch to zoom, drag to pan; hover anything for its name.
+  city as a holographic map, drawn with MapLibre GL in the console's palette:
+  one island in the shape later canon settled on — Cherry Hills, Otisburg, the
+  Amusement Mile, New Town, Burnley, Crime Alley, the Bowery, Robinsville and
+  Arkham Island in the north, cut by the Sprang River from Coventry, the
+  University District, Robinson Park and its Reservoir and the Upper East and
+  West Sides, with the Diamond, Fashion and City Hall districts, Chinatown, Old
+  Gotham and Tricorner below — the Narrows in the Gotham River, Blackgate Isle
+  offshore, Gotham County and the Manor across the water, Burnside to the east,
+  Blüdhaven up the coast. Curved coastlines, rivers, lakes, piers, parks, a
+  street grid of its own in every district, curved avenues, a harbour drive,
+  highways, bridges, rail, fifteen thousand buildings that rise when you tilt
+  into 3D, and fifty-odd landmarks with icons of their own. Labels never
+  collide; road names run along their roads. Hover anything for its name.
   Everyone who shares where they are is their portrait in their own colour,
-  moving as they go: their plan's place, a spot on their beat that changes
+  gliding as they move — their plan's place, a spot on their beat that changes
   every quarter hour on patrol, wherever a conversation sent them, or home.
-  Click someone for where they are and who's with them, the trail of where
-  they've been, and Message, Call or Follow; search flies to a place or a
-  person; layers toggle; right-click (or the pin tool) drops a pin of your own,
-  named, movable, kept. A name clicked in the directory while it's open finds
-  them on it. Plans are written knowing what the rest of the family planned, so
-  a dinner is on both sides. Jason, Selina and Randy don't share. (Leaflet,
-  vendored, does the panning.) The hover card keeps just the place line.
+  Click someone for where they are, who's with them, their trail, and Message,
+  Call or Follow; search flies to a place or a person; layers toggle;
+  right-click drops a pin of your own. Zoomed all the way out, land and water
+  still run past every edge. The city is built from `wayne/engine/gotham.json`
+  by `scripts/build_map.py`; the hover card keeps just the place line.
 - **Tapbacks in DMs too** — double-click their message; and they react to yours,
   with a text or instead of one.
 - **Left on read, as people would.** A question you never answered is chased
