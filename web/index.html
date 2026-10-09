@@ -92,14 +92,15 @@
         <p class="dossier__eyebrow">Personnel file</p>
         <h2 class="dossier__name" id="dossier-name"></h2>
         <p class="dossier__role" id="dossier-role"></p>
-
-        <label class="dossier__label" for="dossier-text">Who he is to me</label>
-        <textarea class="dossier__text" id="dossier-text" spellcheck="false"
-                  rows="10"></textarea>
+        <p class="dossier__status" id="dossier-status"></p>
         <div class="dossier__reach">
           <button class="dossier__btn" id="dossier-call" type="button">Call</button>
           <button class="dossier__btn" id="dossier-message" type="button">Message</button>
         </div>
+
+        <label class="dossier__label" for="dossier-text">Who he is to me</label>
+        <textarea class="dossier__text" id="dossier-text" spellcheck="false"
+                  rows="10"></textarea>
         <div class="dossier__actions">
           <span class="dossier__saved" id="dossier-saved"></span>
           <button class="dossier__save" id="dossier-save" type="button">Save</button>
@@ -169,6 +170,25 @@
   </main>
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <!-- A contact's status, shown on hovering their portrait. -->
+  <div class="hovercard" id="hovercard" hidden>
+    <span class="hovercard__name" id="hovercard-name"></span>
+    <span class="hovercard__status" id="hovercard-status"></span>
+  </div>
+
+  <!-- Someone calling him. -->
+  <div class="incoming" id="incoming" hidden role="alertdialog" aria-labelledby="incoming-name">
+    <div class="incoming__card">
+      <span class="incoming__avatar" id="incoming-avatar"></span>
+      <p class="incoming__label">Incoming secure line</p>
+      <h2 class="incoming__name" id="incoming-name"></h2>
+      <div class="incoming__actions">
+        <button class="incoming__btn incoming__btn--decline" id="incoming-decline" type="button">Decline</button>
+        <button class="incoming__btn incoming__btn--accept" id="incoming-accept" type="button">Answer</button>
+      </div>
+    </div>
+  </div>
   <div class="grain" aria-hidden="true"></div>
 
   <script src="/static/js/visualizer.js"></script>

@@ -98,12 +98,28 @@ class Contact:
     # How quickly they read and answer a text, in seconds: {"read": [min, max],
     # "busy": chance of being tied up, "busy_for": [min, max], "wpm": typing}.
     texting_pace: dict = field(default_factory=dict)
+    # Their texting habits enforced in code — {"lower": chance of all
+    # lowercase, "period": false to drop full stops, "burst": chance of
+    # sending a reply as several messages}. Described to the model as well,
+    # but a model told "lowercase" capitalises anyway often enough to show.
+    texting_style: dict = field(default_factory=dict)
+    # Worked examples of how they text, used in place of the call primer when
+    # the reply is a text: a model texts like the samples it is shown.
+    texting_primer: tuple = ()
+    # Their day: [{"from": 1, "to": 9, "doing": "asleep", "status": "offline",
+    # "chance": 1.0, "days": [...]}]. See wayne.engine.presence.
+    routine: tuple = ()
+    # What they do unprompted: {"per_day": unprompted texts a day,
+    # "double_text": chance of chasing an unanswered question,
+    # "chase_after": [min, max] minutes, "react": chance of texting after a
+    # declined or missed call}.
+    initiative: dict = field(default_factory=dict)
 
     @property
     def has_voice(self):
         return bool(self.voice_id)
 
-    def primer_messages(self):
+    def primer_messages(self, texting=False):
         """
         Worked examples as real user/assistant turns at the head of the context.
 
@@ -112,7 +128,7 @@ class Contact:
         rather than pasted into the system prompt as text.
         """
         messages = []
-        for exchange in self.primer:
+        for exchange in (self.texting_primer if texting and self.texting_primer else self.primer):
             messages.append({"role": "user", "content": exchange["user"]})
             messages.append({"role": "assistant", "content": exchange["assistant"]})
         return messages
@@ -205,6 +221,10 @@ def _load_profile(path):
         texting=raw.get("texting", ""),
         group=raw.get("group", "Contacts"),
         texting_pace=raw.get("texting_pace", {}),
+        texting_style=raw.get("texting_style", {}),
+        texting_primer=tuple(raw.get("texting_primer", [])),
+        routine=tuple(raw.get("routine", [])),
+        initiative=raw.get("initiative", {}),
     )
 
 

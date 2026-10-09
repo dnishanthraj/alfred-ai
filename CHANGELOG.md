@@ -40,8 +40,34 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
   call — and they read it and answer out loud ("Got the address"); the others
   hear the answer, not the text. Threads are kept long-term and scroll back
   through day separators and timestamps.
+- **Presence.** Every contact is online, idle, busy or offline, with what they're
+  doing — set by their routine (asleep, at work, patrol on some nights), by
+  being mid-conversation with you (they stay online while you text), and above
+  all by what the conversation established: send Dick to the docks and he's
+  busy until it's done. It decides how soon texts are read, whether the answer
+  is a proper one or a line from the middle of something, how long a call
+  rings, and what they're in the middle of when they pick up.
+- **They get in touch first.** After each exchange a short model pass notes what
+  they're now doing and any promise made — "call me when you're done", "I'll let
+  you know" — and keeps it: Dick reports back by text when the errand is over,
+  or rings. Incoming calls can be answered or declined; declined and missed
+  calls go in the thread, and they may text instead. Otherwise, the odd text out
+  of nowhere — something you talked about, something from their day, something
+  they heard — or chasing a question you left hanging, within a daily budget and
+  never in your quiet hours.
+- **They end calls too:** once a call has done its job, a contact can say goodbye
+  and hang up, rather than waiting on you.
+- **Texting in character.** Each contact has worked examples of their texts and
+  habits enforced in code — Dick's lowercase bursts and one emoji, Tim's "ngl",
+  Barbara's exact punctuation, Jason's "k", Selina's 😼, Alfred's complete
+  sentences and Lucius's rare, solemn thumbs-up — and a reply goes out as one
+  composed message or several in a row.
 - **Notifications:** a reply that arrives while its thread is closed raises a
-  toast and a soft tone, and counts on the inbox button in the bar.
+  toast and a soft tone, and counts on the inbox button in the bar; with the
+  console in the background, a system notification.
+- **Sounds for the furniture:** a dry tick as the pointer finds a button, a click
+  when it's pressed, a sweep when a text leaves, an inbound ring distinct from
+  the outgoing one. The typing indicator is a wave rather than an ellipsis.
 - **A layout you can arrange:** drag the directory wider or narrower — below a
   point it folds to portraits only — or hide it from the bar; the message panel
   resizes the same way. Click a portrait, or the name at the top of a thread,

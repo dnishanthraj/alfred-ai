@@ -351,7 +351,7 @@ def compose_user_turn(prompt, vault_block, search_context="", awareness=(), spok
     )
 
 
-def build_payload(contact, history, user_turn):
+def build_payload(contact, history, user_turn, texting=False):
     """
     Assemble the full message list for one generation.
 
@@ -391,7 +391,7 @@ def build_payload(contact, history, user_turn):
         if story:
             parts.append(story)
         parts.append(standing_directives(contact))
-        script = _primer_script(contact)
+        script = _primer_script(contact, texting)
         if script:
             parts.append(script)
         messages.append({"role": "system", "content": "\n\n".join(parts)})
@@ -435,7 +435,7 @@ def relationship(contact):
             "don't quote it.\n\n" + text)
 
 
-def _primer_script(contact):
+def _primer_script(contact, texting=False):
     """
     The worked examples, rendered as an explicitly labelled script.
 
@@ -444,7 +444,8 @@ def _primer_script(contact):
     the model reading fifteen exchanges of convincing dialogue and concluding,
     reasonably, that they happened.
     """
-    exchanges = contact.primer_messages()
+    texting = texting and bool(contact.texting_primer)
+    exchanges = contact.primer_messages(texting)
     if not exchanges:
         return ""
     lines = []
@@ -452,8 +453,8 @@ def _primer_script(contact):
         who = "HIM" if message["role"] == "user" else "YOU"
         lines.append(f"{who}: {message['content']}")
     return (
-        "=== HOW YOU SPEAK ===\n"
-        "Invented samples, written to show your voice, timing and range. None of "
+        ("=== HOW YOU TEXT ===\n" if texting else "=== HOW YOU SPEAK ===\n")
+        + "Invented samples, written to show your voice, timing and range. None of "
         "this happened. Nothing here is a fact about him, and you must never "
         "recall, quote or refer to any of it as something he said or did. They "
         "show the range, not the lines: say it your own way each time, never "

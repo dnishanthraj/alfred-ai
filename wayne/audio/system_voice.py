@@ -50,6 +50,11 @@ LINES = {
         "{name} has left the call.",
         "{name} is off the line.",
     ],
+    "incoming": [
+        "Incoming call. {name}.",
+        "{name} is calling.",
+        "Secure line request from {name}.",
+    ],
     "unavailable": [
         "{name} is not available.",
         "No answer from {name}'s line.",

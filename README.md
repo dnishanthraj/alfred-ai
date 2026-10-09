@@ -26,6 +26,10 @@ their own memory on disk.
   on screen before the first syllable.
 - **A directory of characters** — each contact has their own model, voice, sampling
   parameters, availability, worked examples, and memory. Adding one is a JSON file.
+- **People with lives of their own** — each contact is online, idle, busy or
+  offline according to their day and to what you've asked of them; texts are read
+  and answered at that pace, in their own texting style; and they get in touch
+  first — reporting back, chasing a question, ringing you when they said they would.
 - **Local LLM reasoning** — entirely through [Ollama](https://ollama.com); no chat
   transcript leaves your machine except the reply text sent to ElevenLabs.
 - **Speech-to-text on device** — [Whisper](https://github.com/openai/whisper) via
@@ -123,7 +127,7 @@ their own memory on disk.
    |---|---|---|
    | `ELEVENLABS_API_KEY` | Yes | Your ElevenLabs API key |
    | `ALFRED_VOICE_ID` | Yes | Voice ID from your ElevenLabs voice library |
-   | `WAYNE_USER_NAME` | Yes | Your name — shown in the console and used as a Whisper hint |
+   | `WAYNE_OPERATOR` | No | Who you play: an operator profile id or path (default: `bruce`, see `wayne/operators/`) |
    | `ALFRED_OLLAMA_MODEL` | No | Ollama model tag for Alfred (default: `gemma4:26b-a4b-it-qat`, from step 2) |
    | `WAYNE_PASSCODE` | No | Lock-screen passcode (default: `zorro`). Theatre, not security |
    | `WAYNE_WEB_PORT` | No | Console port (default: `8420`) |
@@ -135,6 +139,9 @@ their own memory on disk.
    | `WAYNE_LOCATION` | No | Your town or city, for a live weather feed |
    | `WAYNE_NEWS_FEED` | No | An RSS feed URL for headlines he has glanced at |
    | `WAYNE_CALENDAR` | No | `1` to let him see today's and tomorrow's events in macOS Calendar |
+   | `WAYNE_INITIATIVE_PER_DAY` | No | Most unprompted texts a day, across everyone (default: `6`; `0` turns them off — promises are still kept) |
+   | `WAYNE_QUIET_HOURS` | No | Hours when nobody texts out of the blue (default: `1-8`) |
+   | `WAYNE_DATA_DIR` | No | Where memory lives (default: `data/`) — point it at a sandbox to experiment |
 
    Display name, role, voice, and sampling parameters are per-contact and live in
    [`wayne/contacts/profiles/alfred.json`](wayne/contacts/profiles/alfred.json).
@@ -222,7 +229,7 @@ Also: type and press Enter, or press **Esc** to silence playback. Interrupting
 works — a new message stops him mid-sentence, and the line on screen stops
 where his voice did.
 
-### Presence
+### Silence and attention
 
 He breaks a silence himself after half a minute or so — briefly, generated in
 character so it differs every time, and never written to memory. The second
@@ -239,6 +246,37 @@ A stack of guards runs on every reply before it is spoken, because the failures
 that break the illusion are specific and recurring: handing your own words back
 to you, greeting you twice, repeating himself, inventing a fact rather than
 looking it up, or promising to look and then not looking.
+
+### Their lives
+
+Every contact is doing something, and one state — what, and until when — drives
+everything about how they behave on their phone (see `wayne/engine/presence.py`):
+
+- **The dot** beside their name: green with the phone in hand, amber when it's
+  been put down, red in the middle of something, grey when it's out of reach —
+  with what they're doing ("On patrol in Blüdhaven", "Asleep").
+- **Texts** are read in seconds when they're online and stay online while you're
+  actively texting; in minutes when idle; between things, with a line rather than
+  an answer, when busy; and when they wake up if they're asleep. Delivered, Read,
+  typing, then the reply — sent as one composed message or three in a row, in
+  their own style: Dick's lowercase bursts, Barbara's exact punctuation, Jason's
+  "k", Lucius's rare and solemn thumbs-up.
+- **Calls** to someone busy ring longer, and they answer from where they are.
+
+Three things set it, in order: what the conversation established, being mid-
+conversation with you, and their routine. Send Dick to the docks and he's busy
+for an hour — a short model pass after each exchange reads what was said (see
+`wayne/engine/initiative.py`). That same pass notices promises — "call me when
+you're done", "I'll let you know" — and keeps them: when the errand ends, Dick
+reports back by text, or rings. An incoming call can be answered or declined; a
+declined or missed call goes in the thread, and they may text instead. Either of
+you can end a call: when it has done its job, they say goodbye and hang up.
+
+The rest is life: a thought about something you talked about, something from
+their own day, something they heard from someone else, a question you left
+hanging. Budgeted — a handful a day across everyone, never two within the hour,
+none in your quiet hours, none from someone already waiting on you — so it reads
+as people rather than notifications.
 
 ### Hearing you
 
@@ -334,7 +372,7 @@ global hotkey; the web console needs only a microphone permission).
 
 ## Contacts
 
-The console is a phone book, not a single assistant. Three contacts ship:
+The console is a phone book, not a single assistant. Seven contacts ship:
 
 | Contact | Who | Voice variable |
 |---|---|---|
@@ -371,7 +409,17 @@ Adding one is a file, not a code change. The fields that matter:
   deal of careful prompting.
 - **`availability`** — `always`, or `hours` (which may run past midnight).
 - **`order`** and **`group`** — position and heading in the console's directory.
-- **`texting`** — how they write a text message.
+- **`texting`** — how they write a text message, described for the model.
+- **`texting_style`** — the habits enforced in code: chance of all lowercase,
+  dropping the last full stop, sending several messages, keeping an emoji.
+- **`texting_primer`** — worked examples of their texts, used in place of the
+  call primer when the reply is a text.
+- **`texting_pace`** — how soon they read when online, idle or busy, how fast
+  they type, how much of their free time the phone is in their hand.
+- **`routine`** — their day: asleep, at work, on patrol — each block with the
+  status it gives them and the chance it happens on a given day.
+- **`initiative`** — how often they text unprompted, whether they chase an
+  unanswered question, whether they text after a declined call.
 
 The relationship in the operator's own words — the bio in the console's personnel
 file — rides in the prompt too, so editing it there changes how they treat him.
@@ -471,15 +519,23 @@ wayne-console/
 │   ├── contacts/
 │   │   ├── profile.py            # Contact, Availability, the directory
 │   │   └── profiles/*.json       # one file per character
+│   ├── operator.py               # who the user plays, and who knows what
+│   ├── operators/bruce.json      # the default operator profile
 │   ├── engine/
 │   │   ├── session.py            # one conversation: streaming, sentences, turns
+│   │   ├── party.py              # calls with more than one contact
+│   │   ├── presence.py           # what each contact is doing; their intentions
+│   │   ├── initiative.py         # afterthoughts, impulses, texting style
+│   │   ├── grapevine.py          # what one hears, another may hear of
+│   │   ├── world.py              # weather, headlines, calendar
 │   │   ├── guards.py             # deterministic post-processing (pure functions)
 │   │   ├── prompting.py          # context assembly, primer, speech constraints
-│   │   └── search.py             # search routing + DuckDuckGo lookup
+│   │   └── search.py             # search routing + lookup
 │   ├── memory/
 │   │   ├── history.py            # short-term conversation, per contact
+│   │   ├── texts.py              # the long-term text thread, per contact
 │   │   ├── vault.py              # long-term facts + relevance retrieval
-│   │   └── store.py              # atomic writes
+│   │   └── store.py              # atomic, encrypted writes
 │   ├── audio/
 │   │   ├── stt.py                # capture + Whisper transcription
 │   │   └── tts.py                # ElevenLabs synthesis + local playback
@@ -489,7 +545,7 @@ wayne-console/
 ├── web/                          # the console: no build step, no node toolchain
 │   ├── index.html
 │   ├── css/console.css
-│   └── js/{app,audio,mic,boot,visualizer}.js
+│   └── js/{app,audio,mic,boot,system,tones,visualizer}.js
 ├── tests/
 ├── data/<contact>/               # per-contact memory (gitignored)
 └── scripts/launch.command

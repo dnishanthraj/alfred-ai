@@ -120,7 +120,91 @@
     note(1175, t + 0.07, 0.14, 0.025);
   }
 
+  /* --- the interface ------------------------------------------------------
+     The rest of the console's furniture, in the same instrument: tiny, high
+     and dry, so a pointer moving across the directory sounds like a machine
+     paying attention rather than a toy. Hover ticks are rate-limited — a
+     sweep across seven rows should be a flutter, not a drumroll.
+     ---------------------------------------------------------------------- */
+
+  /** A click-length tone with a near-instant envelope: too short for note(). */
+  function blip(freq, startAt, duration, peak) {
+    var c = ctx();
+    if (c.state !== 'running') return;     // before any gesture: stay silent
+    var osc = c.createOscillator();
+    var gain = c.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, startAt);
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(peak, startAt + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+    osc.connect(gain).connect(c.destination);
+    osc.start(startAt);
+    osc.stop(startAt + duration + 0.01);
+  }
+
+  var lastHover = 0;
+  /** The pointer settles on something you can press. */
+  function hover() {
+    var now = performance.now();
+    if (now - lastHover < 70) return;
+    lastHover = now;
+    blip(2350, ctx().currentTime, 0.025, 0.012);
+  }
+
+  /** Pressed: two ticks, down then up. */
+  function press() {
+    var t = ctx().currentTime;
+    blip(1600, t, 0.03, 0.02);
+    blip(2400, t + 0.035, 0.035, 0.016);
+  }
+
+  /** Sent: a short rising sweep, the message leaving. */
+  function sent() {
+    var c = ctx();
+    if (c.state !== 'running') return;
+    var t = c.currentTime;
+    var osc = c.createOscillator();
+    var gain = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(660, t);
+    osc.frequency.exponentialRampToValueAtTime(1320, t + 0.12);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.03, t + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    osc.connect(gain).connect(c.destination);
+    osc.start(t);
+    osc.stop(t + 0.18);
+  }
+
+  /** A missed call: the message blip, falling — something you didn't get to. */
+  function missed() {
+    var t = ctx().currentTime;
+    note(784, t, 0.1, 0.03);
+    note(523, t + 0.09, 0.18, 0.028);
+  }
+
+  /** Someone calling him: a rising three-note phrase — unmistakably inbound,
+      where the outgoing ring is a low double pulse. */
+  function incomingBurst() {
+    var t = ctx().currentTime;
+    note(523, t, 0.16, 0.05);
+    note(659, t + 0.16, 0.16, 0.05);
+    note(784, t + 0.32, 0.3, 0.05);
+  }
+
+  function startIncoming() {
+    stopRinging();
+    incomingBurst();
+    ringTimer = setInterval(incomingBurst, 2200);
+  }
+
   global.ConsoleTones = {
+    hover: hover,
+    press: press,
+    sent: sent,
+    missed: missed,
+    startIncoming: startIncoming,
     message: message,
     startRinging: startRinging,
     stopRinging: stopRinging,

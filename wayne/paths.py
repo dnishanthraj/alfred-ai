@@ -1,4 +1,5 @@
 """Filesystem locations, anchored to the project root regardless of CWD."""
+import os
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -10,7 +11,9 @@ PROFILE_DIR = PACKAGE_DIR / "contacts" / "profiles"
 
 # Per-contact memory lives under data/<contact id>/. Everything in here is
 # personal and gitignored.
-DATA_DIR = ROOT_DIR / "data"
+# WAYNE_DATA_DIR points it elsewhere — a sandbox to try things in without
+# writing into anyone's real memories.
+DATA_DIR = Path(os.getenv("WAYNE_DATA_DIR") or ROOT_DIR / "data")
 
 # Where single-contact memory lived before the console became a phone book.
 # Kept only so it can be migrated into Alfred's namespace on first run.

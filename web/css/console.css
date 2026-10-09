@@ -641,7 +641,7 @@ html[data-link="ending"] .viz { opacity: 0; transform: scale(1.12); }
 }
 
 .dossier__role {
-  margin: 4px 0 26px;
+  margin: 4px 0 6px;
   text-align: center;
   font-family: var(--mono);
   font-size: 10px;
@@ -916,15 +916,15 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
   display: flex; flex-direction: column; gap: 10px;
 }
 .bubble { display: flex; gap: 8px; align-items: flex-end; max-width: 86%; }
+/* A run of messages from one person sits close together, with one portrait. */
+.bubble[data-run="1"] { margin-bottom: -6px; }
+.bubble[data-run="1"] .bubble__avatar { visibility: hidden; }
 .bubble__avatar { width: 24px; height: 24px; flex: none; }
 .bubble__text {
   padding: 8px 12px; border-radius: 14px; font-size: 14px; line-height: 1.4;
   white-space: pre-wrap; word-wrap: break-word;
 }
 .bubble--them .bubble__text { background: var(--surface-2); color: var(--text); border-bottom-left-radius: 4px; }
-/* Pushed to the right edge of its own row too: the timestamp beneath wraps
-   onto a full-width line, which makes the row wider than the bubble, and a
-   bubble left at the row's start sat stranded away from the edge. */
 .bubble--me { align-self: flex-end; justify-content: flex-end; }
 .bubble--me .bubble__text { background: rgba(79, 168, 224, 0.14); color: var(--operator); border-bottom-right-radius: 4px; }
 .bubble--typing .bubble__text { color: var(--text-faint); letter-spacing: 0.2em; }
@@ -999,20 +999,25 @@ html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
 .messages__who { cursor: pointer; }
 .messages__who:hover .messages__name { color: var(--contact-accent, var(--primary)); }
 
-/* Time and receipts, in the console's own small capitals. */
-.bubble { flex-wrap: wrap; }
-.bubble__meta {
-  flex-basis: 100%;
-  font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--text-faint); margin-top: 3px;
+/* The time sits inside the bubble, bottom right, whatever its length — floated
+   after the text so it shares the last line when there's room for it. */
+.bubble__time {
+  float: right; margin: 5px 0 -3px 12px;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em; color: var(--text-faint);
+  user-select: none;
 }
-.bubble--them .bubble__meta { padding-left: 32px; }
-.bubble--me .bubble__meta { text-align: right; }
-.bubble__meta[data-read="1"] { color: var(--contact-accent, var(--primary)); }
+.bubble--me .bubble__time { color: var(--operator-dim); }
+/* Delivered / Read, once, under your latest message. */
+.messages__receipt {
+  align-self: flex-end; margin-top: -6px;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.messages__receipt[data-read="1"] { color: var(--contact-accent, var(--primary)); }
 .messages__more { align-self: center; font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; color: var(--text-faint); text-transform: uppercase; }
 
 /* Personnel file: reach them from here. */
-.dossier__reach { display: flex; gap: 8px; justify-content: center; margin: -6px 0 20px; }
+.dossier__reach { display: flex; gap: 10px; justify-content: center; margin: 0 0 26px; }
 .dossier__btn {
   background: transparent; border: 1px solid var(--contact-accent, var(--hairline-2));
   color: var(--contact-accent, var(--text-dim)); padding: 7px 16px; cursor: pointer;
@@ -1040,6 +1045,127 @@ html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
 @keyframes toast-in { from { opacity: 0; transform: translateX(16px); } }
 @keyframes toast-out { to { opacity: 0; transform: translateX(16px); } }
 .toast__name { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--contact-accent, var(--primary)); }
-.toast__text { display: block; font-size: 13px; color: var(--text); margin-top: 3px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toast > div { min-width: 0; }   /* lets the text shrink inside the grid, not spill */
+.toast__text {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; font-size: 13px; line-height: 1.4; color: var(--text); margin-top: 3px;
+  overflow-wrap: anywhere;
+}
 .toast .bubble__avatar { width: 34px; height: 34px; }
+
+/* --- presence ---------------------------------------------------------------
+   What each contact is doing, on the dot: green with the phone in hand, amber
+   when it's been put down, red in the middle of something, grey out of reach.
+   The live-call colours above still win while someone is on the line. */
+.book__item[data-presence="online"]:not([data-live="1"]) .book__dot { background: var(--good); }
+.book__item[data-presence="idle"]:not([data-live="1"]) .book__dot { background: #c9a23a; }
+.book__item[data-presence="busy"]:not([data-live="1"]) .book__dot { background: var(--alert); }
+.book__item[data-presence="offline"]:not([data-live="1"]) .book__dot { background: var(--text-faint); }
+.book__item[data-presence="offline"]:not([data-live="1"]) .book__avatar { filter: saturate(0.5) brightness(0.8); }
+.book__doing { color: var(--text-dim); text-transform: none; letter-spacing: 0.02em; }
+.messages__role[data-presence="online"] { color: var(--good); }
+
+/* Typing: three dots in a slow wave, not a static ellipsis. */
+.bubble--typing .bubble__text { display: inline-flex; gap: 4px; align-items: center; padding: 12px 14px; }
+.bubble__dots i {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--contact-accent, var(--text-dim)); opacity: 0.35;
+  animation: typing-wave 1.25s var(--ease) infinite;
+}
+.bubble__dots i:nth-child(2) { animation-delay: 0.16s; }
+.bubble__dots i:nth-child(3) { animation-delay: 0.32s; }
+@keyframes typing-wave {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+.bubble { animation: bubble-in 0.22s var(--ease) both; }
+@keyframes bubble-in { from { opacity: 0; transform: translateY(4px); } }
+
+/* A call in the thread — missed, declined — as a line of its own. */
+.messages__call {
+  align-self: center; font-family: var(--mono); font-size: 9px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--alert); margin: 4px 0;
+  display: inline-flex; gap: 6px; align-items: center;
+}
+.messages__call svg { width: 11px; height: 11px; }
+
+/* --- incoming call ------------------------------------------------------------- */
+.incoming {
+  position: fixed; inset: 0; z-index: 60;
+  display: grid; place-items: center;
+  background: rgba(5, 7, 11, 0.62); backdrop-filter: blur(6px);
+  animation: toast-in 0.3s var(--ease) both;
+}
+.incoming[hidden] { display: none; }
+.incoming__card {
+  width: min(320px, calc(100% - 32px)); padding: 28px 24px 22px; text-align: center;
+  background: var(--raised); border: 1px solid var(--hairline-2);
+  border-top: 2px solid var(--contact-accent, var(--primary));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.incoming__avatar {
+  display: block; margin: 0 auto 16px; width: 84px; height: 84px; border-radius: 50%;
+  border: 1px solid var(--contact-accent, var(--primary));
+  background-color: var(--surface-2); background-repeat: no-repeat;
+  box-shadow: 0 0 0 0 var(--contact-accent, var(--primary));
+  animation: incoming-halo 2.2s ease-out infinite;
+}
+@keyframes incoming-halo {
+  0% { box-shadow: 0 0 0 0 rgba(79, 168, 224, 0.35); }
+  70%, 100% { box-shadow: 0 0 0 18px rgba(79, 168, 224, 0); }
+}
+.incoming__label { margin: 0; font-family: var(--mono); font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-dim); }
+.incoming__name { margin: 6px 0 22px; font-weight: 400; font-size: 20px; color: var(--text); }
+.incoming__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.incoming__btn {
+  padding: 10px 0; background: transparent; cursor: pointer;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+  border: 1px solid var(--hairline-2); color: var(--text);
+  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.incoming__btn--accept { border-color: rgba(88, 192, 138, 0.5); color: var(--good); }
+.incoming__btn--accept:hover { background: rgba(88, 192, 138, 0.1); }
+.incoming__btn--decline { border-color: rgba(224, 87, 79, 0.45); color: var(--alert); }
+.incoming__btn--decline:hover { background: rgba(224, 87, 79, 0.08); }
+
+.dossier__status {
+  margin: 0 0 18px; text-align: center;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.dossier__status::before {
+  content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  margin-right: 8px; vertical-align: 1px; background: var(--status, var(--text-faint));
+}
+
+/* Whose thread is open: marked in the directory, quieter than a live call. */
+.book__item[data-thread="1"]:not([data-live="1"]) .book__row {
+  background: rgba(14, 19, 28, 0.7);
+  border-left-color: color-mix(in srgb, var(--contact-accent, var(--primary)) 55%, transparent);
+}
+
+/* Unread texts, counted on the portrait. */
+.book__badge {
+  position: absolute; top: -4px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; border: 2px solid var(--surface);
+  background: var(--contact-accent, var(--primary)); color: var(--void);
+  font-family: var(--mono); font-size: 9px; font-weight: 600; line-height: 12px; text-align: center;
+  animation: bubble-in 0.25s var(--ease) both;
+}
+
+/* Hovering a portrait: who, and what they're up to. */
+.hovercard {
+  position: fixed; z-index: 70; pointer-events: none;
+  display: flex; flex-direction: column; gap: 3px; padding: 8px 11px; max-width: 240px;
+  background: var(--raised); border: 1px solid var(--hairline-2);
+  border-left: 2px solid var(--contact-accent, var(--primary));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  animation: toast-in 0.16s var(--ease) both;
+}
+.hovercard[hidden] { display: none; }
+.hovercard__name { font-size: 13px; color: var(--text); }
+.hovercard__status { font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); }
+.hovercard__status::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  margin-right: 7px; vertical-align: 1px; background: var(--status, var(--text-faint));
+}

@@ -53,7 +53,8 @@
     unread: {},       // contacts with a text reply not yet seen
     typing: {},       // contacts writing a reply
     thread: null,     // the open text thread: {id, messages, more, loading}
-    lastSpeaker: null // who said the line on screen, on a call with company
+    lastSpeaker: null, // who said the line on screen, on a call with company
+    incomingId: null  // who is calling him right now
   };
 
   // Held keys that count as push-to-talk. Space is the obvious one; Right
@@ -113,7 +114,8 @@
      'dossier-portrait', 'messages', 'messages-avatar', 'messages-name', 'messages-role',
      'messages-close', 'messages-thread', 'messages-compose', 'messages-input',
      'messages-resize', 'messages-who', 'rail-toggle', 'rail-resize', 'inbox', 'inbox-count',
-     'toasts', 'dossier-call', 'dossier-message'].forEach(function (id) { el[id] = $(id); });
+     'toasts', 'dossier-call', 'dossier-message', 'incoming', 'incoming-avatar',
+     'incoming-name', 'incoming-accept', 'incoming-decline'].forEach(function (id) { el[id] = $(id); });
   }
 
   /* --- the spoken line ---------------------------------------------------- */
@@ -355,6 +357,17 @@
 
   function onCall(id) { return state.party.indexOf(id) !== -1; }
 
+  /* What their status reads as, the way a phone would put it — with what
+     they're doing, since this console knows its people. */
+  function presenceLabel(contact) {
+    var p = contact.presence || {};
+    var doing = p.doing ? ' · ' + p.doing : '';
+    if (p.status === 'online') return 'Online';
+    if (p.status === 'busy') return 'Busy' + doing;
+    if (p.status === 'offline') return 'Offline' + doing;
+    return p.last_active ? 'Last seen ' + clock(p.last_active) : 'Away';
+  }
+
   var ICONS = {
     call: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>',
     add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>',
@@ -398,6 +411,8 @@
       var li = document.createElement('li');
       li.className = 'book__item';
       li.dataset.live = live ? '1' : '0';
+      li.dataset.presence = (contact.presence || {}).status || 'idle';
+      li.dataset.thread = state.messagesWith === id && !el.messages.hidden ? '1' : '0';
       if (ringing) li.dataset.state = 'ringing';
       li.style.setProperty('--contact-accent', contact.accent);
 
@@ -410,7 +425,14 @@
       var dot = document.createElement('span');
       dot.className = 'book__dot';
       avatar.appendChild(dot);
-      avatar.title = contact.full_name;
+      if (state.unread[id]) {
+        var badge = document.createElement('span');
+        badge.className = 'book__badge';
+        badge.textContent = state.unread[id] > 9 ? '9+' : state.unread[id];
+        avatar.appendChild(badge);
+      }
+      avatar.addEventListener('mouseenter', function () { showHovercard(id, avatar); });
+      avatar.addEventListener('mouseleave', hideHovercard);
       avatar.addEventListener('click', function () {
         el.dossier.dataset.contact = id;
         openDossier(id);
@@ -428,6 +450,16 @@
       role.textContent = ringing ? 'Connecting'
                        : live ? (group ? 'On the call' : 'Connected')
                        : (contact.available ? contact.role : 'Unavailable');
+      // What they're doing, in place of the role when there's something to say:
+      // the portrait already says who they are.
+      var doing = (contact.presence || {}).doing;
+      if (doing && !ringing && !live) {
+        role.textContent = '';
+        var what = document.createElement('span');
+        what.className = 'book__doing';
+        what.textContent = doing.charAt(0).toUpperCase() + doing.slice(1);
+        role.appendChild(what);
+      }
       text.appendChild(name);
       text.appendChild(role);
       text.addEventListener('click', function () {
@@ -444,7 +476,6 @@
       var actions = document.createElement('div');
       actions.className = 'book__actions';
       var msg = actionButton('text', 'Message ' + contact.name, function () { openMessages(id); });
-      if (state.unread[id]) msg.dataset.unread = '1';
       actions.appendChild(msg);
       actions.appendChild(actionButton(action, ACTION_TITLE[action] + ' — ' + contact.name, function () {
         if (action === 'call') placeCall(id);
@@ -481,8 +512,16 @@
     return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   }
 
+  var CALL_LINE = { missed_call: 'Missed call', declined_call: 'Declined call' };
+
   function bubbleNode(message, contact) {
     var li = document.createElement('li');
+    if (message.kind) {
+      li.className = 'messages__call';
+      li.innerHTML = ICONS.call;
+      li.appendChild(document.createTextNode((CALL_LINE[message.kind] || 'Call') + ' · ' + clock(message.at)));
+      return li;
+    }
     var from = message.from === 'me' ? 'me' : 'them';
     li.className = 'bubble bubble--' + from + (message.typing ? ' bubble--typing' : '');
     if (message.id) li.dataset.id = message.id;
@@ -494,15 +533,26 @@
     }
     var t = document.createElement('span');
     t.className = 'bubble__text';
-    t.textContent = message.text;
-    li.appendChild(t);
-    if (!message.typing && message.at) {
-      var meta = document.createElement('span');
-      meta.className = 'bubble__meta';
-      meta.textContent = clock(message.at);
-      li.appendChild(meta);
+    if (message.typing) {
+      t.classList.add('bubble__dots');
+      t.innerHTML = '<i></i><i></i><i></i>';
+    } else {
+      t.textContent = message.text;
+      if (message.at) {
+        var time = document.createElement('span');
+        time.className = 'bubble__time';
+        time.textContent = clock(message.at);
+        t.appendChild(time);
+      }
     }
+    li.appendChild(t);
     return li;
+  }
+
+  /* Two messages from the same person, close together, read as one run. */
+  function sameRun(a, b) {
+    return a && b && !a.kind && !b.kind && a.from === b.from && Math.abs(b.at - a.at) < 180
+      && dayLabel(a.at) === dayLabel(b.at);
   }
 
   /* Draw the whole thread: day separators, bubbles, and — on your last
@@ -520,7 +570,7 @@
       box.appendChild(more);
     }
     var lastDay = null, lastMine = null;
-    th.messages.forEach(function (m) {
+    th.messages.forEach(function (m, i) {
       var day = dayLabel(m.at);
       if (day !== lastDay) {
         var sep = document.createElement('li');
@@ -530,18 +580,20 @@
         lastDay = day;
       }
       var node = bubbleNode(m, contact);
+      var next = th.messages[i + 1];
+      if (sameRun(m, next) || (!next && m.from === 'them' && state.typing[th.id])) node.dataset.run = '1';
       box.appendChild(node);
-      if (m.from === 'me') lastMine = { node: node, m: m };
+      if (m.from === 'me' && !m.kind) lastMine = m;
     });
-    if (lastMine) {
-      var meta = lastMine.node.querySelector('.bubble__meta');
-      if (meta && lastMine.m === th.messages[th.messages.length - 1]) {
-        meta.textContent = lastMine.m.read_at
-          ? 'Read ' + clock(lastMine.m.read_at) : 'Delivered ' + clock(lastMine.m.at);
-        if (lastMine.m.read_at) meta.dataset.read = '1';
-      }
+    // Delivered or Read, under your message — while it's the latest thing said.
+    if (lastMine && lastMine === th.messages[th.messages.length - 1]) {
+      var receipt = document.createElement('li');
+      receipt.className = 'messages__receipt';
+      receipt.textContent = lastMine.read_at ? 'Read ' + clock(lastMine.read_at) : 'Delivered';
+      if (lastMine.read_at) receipt.dataset.read = '1';
+      box.appendChild(receipt);
     }
-    if (state.typing[th.id]) box.appendChild(bubbleNode({ from: 'them', text: '•••', typing: true }, contact));
+    if (state.typing[th.id]) box.appendChild(bubbleNode({ from: 'them', text: '', typing: true }, contact));
   }
 
   function scrollThreadToEnd() {
@@ -558,7 +610,8 @@
     el.messages.style.setProperty('--contact-accent', contact.accent);
     portraitStyle(el['messages-avatar'], contact, 'center 22%');
     el['messages-name'].textContent = contact.full_name;
-    el['messages-role'].textContent = contact.role;
+    el['messages-role'].textContent = presenceLabel(contact);
+    el['messages-role'].dataset.presence = (contact.presence || {}).status || '';
     state.thread = { id: id, messages: [], more: false, loading: true };
     renderThread();
     el.messages.hidden = false;
@@ -601,7 +654,29 @@
     state.messagesWith = null;
     state.thread = null;
     el.messages.hidden = true;
+    renderDirectory();
   }
+
+  var STATUS_COLOUR = { online: 'var(--good)', idle: '#c9a23a', busy: 'var(--alert)', offline: 'var(--text-faint)' };
+
+  /* Hover a portrait: who, and what they're doing — beside it, in the rail or out. */
+  function showHovercard(id, anchor) {
+    var contact = state.contacts[id];
+    if (!contact) return;
+    var card = $('hovercard');
+    card.style.setProperty('--contact-accent', contact.accent);
+    card.style.setProperty('--status', STATUS_COLOUR[(contact.presence || {}).status] || '');
+    $('hovercard-name').textContent = contact.full_name;
+    var line = onCall(id) ? 'On the call' : presenceLabel(contact);
+    if (state.unread[id]) line += ' · ' + state.unread[id] + ' unread';
+    $('hovercard-status').textContent = line;
+    var r = anchor.getBoundingClientRect();
+    card.style.left = (r.right + 12) + 'px';
+    card.style.top = (r.top + r.height / 2 - 22) + 'px';
+    card.hidden = false;
+  }
+
+  function hideHovercard() { $('hovercard').hidden = true; }
 
   function sendMessage(e) {
     e.preventDefault();
@@ -610,6 +685,7 @@
     if (!body || !id) return;
     el['messages-input'].value = '';
     send({ type: 'text', id: id, text: body });
+    ConsoleTones.sent();
   }
 
   function threadOpenFor(id) {
@@ -648,15 +724,114 @@
       renderThread();
       scrollThreadToEnd();
     } else {
-      state.unread[event.speaker] = true;
+      state.unread[event.speaker] = (state.unread[event.speaker] || 0) + 1;
       updateInbox();
       renderDirectory();
       notify(event.speaker, event.message.text);
     }
+    if (document.hidden) systemNotify(event.speaker, event.message.text);
+  }
+
+  /* Presence changed: the dot, the line under their name, the thread header. */
+  function onPresence(event) {
+    var contact = state.contacts[event.speaker];
+    if (!contact) return;
+    contact.presence = event.presence;
+    renderDirectory();
+    if (state.messagesWith === event.speaker) {
+      el['messages-role'].textContent = presenceLabel(contact);
+      el['messages-role'].dataset.presence = event.presence.status;
+    }
+  }
+
+  /* --- calls to him ----------------------------------------------------------
+     A contact rings: the console announces it, an inbound ring plays, and he
+     answers or declines. Unanswered, it's a missed call in their thread — and
+     they may well text instead.
+     ------------------------------------------------------------------------ */
+
+  function onIncoming(event) {
+    var contact = state.contacts[event.speaker];
+    if (!contact) return;
+    state.incomingId = event.speaker;
+    el.incoming.style.setProperty('--contact-accent', contact.accent);
+    portraitStyle(el['incoming-avatar'], contact, 'center 22%');
+    el['incoming-name'].textContent = contact.full_name;
+    el.incoming.hidden = false;
+    ConsoleSystem.say('incoming', event.speaker).then(function () {
+      if (state.incomingId === event.speaker) ConsoleTones.startIncoming();
+    });
+    if (document.hidden) systemNotify(event.speaker, 'Incoming call');
+  }
+
+  function closeIncoming() {
+    state.incomingId = null;
+    el.incoming.hidden = true;
+    ConsoleTones.stopRinging();
+    ConsoleSystem.stop();
+  }
+
+  function acceptIncoming() {
+    var id = state.incomingId;
+    var contact = state.contacts[id];
+    closeIncoming();
+    if (!contact) return;
+    state.currentId = id;
+    state.ringingId = id;      // until the first word, as with a call he places
+    state.connectedId = id;
+    state.party = [id];
+    state.lastSpeaker = null;
+    el['bar-title'].textContent = contact.full_name;
+    document.title = contact.name + ' · WayneTech Console';
+    clearUtterance();
+    showHeard('');
+    state.fresh = true;
+    state.nudges = 0;
+    state.closing = false;
+    state.hangUpWhenQuiet = false;
+    state.quietUntil = 0;
+    el['ringing-label'].textContent = contact.name + ' on the line…';
+    setLink('ringing');
+    setState('idle');
+    send({ type: 'answer', id: id });
+    renderDirectory();
+    el.input.focus();
+  }
+
+  function declineIncoming() {
+    var id = state.incomingId;
+    closeIncoming();
+    if (id) send({ type: 'decline', id: id });
+  }
+
+  function onUnanswered(event) {
+    if (state.incomingId === event.speaker) closeIncoming();
+    if (threadOpenFor(event.speaker)) {
+      state.thread.messages.push(event.message);
+      renderThread();
+      scrollThreadToEnd();
+    }
+    if (event.how === 'missed') {
+      ConsoleTones.missed();
+      notify(event.speaker, 'Missed call');
+    }
+  }
+
+  /* The system's own notification, for when the console isn't in front. */
+  function systemNotify(id, body) {
+    var contact = state.contacts[id];
+    if (!contact || !('Notification' in window) || Notification.permission !== 'granted') return;
+    try {
+      var n = new Notification(contact.full_name, {
+        body: body, tag: 'wayne-' + id, icon: '/static/portraits/' + id + '.png', silent: true
+      });
+      n.onclick = function () { window.focus(); openMessages(id); n.close(); };
+    } catch (e) {}
   }
 
   function updateInbox() {
-    var n = Object.keys(state.unread).length;
+    var n = Object.keys(state.unread).reduce(function (sum, id) { return sum + (state.unread[id] || 0); }, 0);
+    remember('unread', JSON.stringify(state.unread));
     el['inbox-count'].hidden = !n;
     el['inbox-count'].textContent = n;
   }
@@ -744,7 +919,28 @@
     });
   }
 
+  /* The console's furniture makes small sounds: a tick as the pointer finds
+     something to press, a click when it's pressed. */
+  function wireSounds() {
+    document.addEventListener('pointerover', function (e) {
+      var b = e.target.closest && e.target.closest('button:not(:disabled)');
+      if (b && !(e.relatedTarget && b.contains(e.relatedTarget))) ConsoleTones.hover();
+    });
+    document.addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('button:not(:disabled)')) ConsoleTones.press();
+    });
+    // Ask once, on a gesture, to notify when the console is behind other windows.
+    document.addEventListener('click', function ask() {
+      document.removeEventListener('click', ask);
+      if ('Notification' in window && Notification.permission === 'default') {
+        try { Notification.requestPermission(); } catch (e) {}
+      }
+    });
+  }
+
   function wireLayout() {
+    el['incoming-accept'].addEventListener('click', acceptIncoming);
+    el['incoming-decline'].addEventListener('click', declineIncoming);
     setRailWidth(parseInt(recall('railWidth') || '270', 10));
     if (recall('railHidden') === '1') document.documentElement.dataset.rail = 'hidden';
     var w = parseInt(recall('msgWidth') || '400', 10);
@@ -797,6 +993,7 @@
   function placeCall(contactId) {
     var contact = state.contacts[contactId];
     if (!contact) return;
+    if (state.incomingId) closeIncoming();   // one line at a time: that call is missed
     // Already on a call with someone else: hang that up properly first — the
     // end tone, the console's line — then ring the new one.
     if (state.connectedId && state.connectedId !== contactId) {
@@ -928,7 +1125,8 @@
     // audio plays, and a contact you just cut off keeps talking.
     // Texts arrive whether or not anyone is on a call.
     var conversational = ['notice', 'text_sent', 'text_read', 'text_typing', 'text_idle',
-                          'text_reply'].indexOf(event.type) === -1;
+                          'text_reply', 'presence', 'call_incoming', 'call_unanswered']
+                          .indexOf(event.type) === -1;
     if (!state.connectedId && conversational) return;
 
     switch (event.type) {
@@ -1002,6 +1200,18 @@
 
       case 'text_reply':
         onTextReply(event);
+        break;
+
+      case 'presence':
+        onPresence(event);
+        break;
+
+      case 'call_incoming':
+        onIncoming(event);
+        break;
+
+      case 'call_unanswered':
+        onUnanswered(event);
         break;
 
       case 'party':
@@ -1224,6 +1434,8 @@
     if (!contact) return;
     el['dossier-name'].textContent = contact.full_name;
     el['dossier-role'].textContent = contact.role;
+    $('dossier-status').textContent = onCall(contactId) ? 'On the call' : presenceLabel(contact);
+    $('dossier-status').style.setProperty('--status', STATUS_COLOUR[(contact.presence || {}).status] || '');
     el['dossier-saved'].dataset.show = '0';
     // Reach them from their file: call (or add them to the call in progress).
     var already = onCall(contactId);
@@ -1303,5 +1515,8 @@
   wireMic();
   wireSystem();
   wireLayout();
+  wireSounds();
+  try { state.unread = JSON.parse(recall('unread') || '{}') || {}; } catch (e) { state.unread = {}; }
+  updateInbox();
   loadSession().then(startBoot, startBoot);
 })();

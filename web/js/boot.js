@@ -179,7 +179,9 @@
       delay(620)
     ]).then(function (results) {
       if (results[0].ok) {
-        global.ConsoleAudio.resume().then(grant, grant);
+        // Never wait on audio forever: a browser that won't start it without
+        // a gesture leaves the promise pending, and the gate with it.
+        Promise.race([global.ConsoleAudio.resume(), delay(900)]).then(grant, grant);
       } else {
         deny();
       }

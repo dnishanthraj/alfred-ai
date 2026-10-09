@@ -32,7 +32,11 @@ import ollama  # noqa: E402
 
 from wayne import delivery  # noqa: E402
 from wayne.contacts import directory  # noqa: E402
-from wayne.engine import ContactSession, guards  # noqa: E402
+from wayne.engine import (  # noqa: E402
+    ContactSession,
+    guards,
+    presence,  # noqa: E402
+)
 from wayne.memory import History, Story, Vault  # noqa: E402
 
 SCENARIOS = ROOT / "eval" / "scenarios"
@@ -98,6 +102,11 @@ def _quiet_memory():
     Story.memorize = lambda self, text: text
     Story.entries = lambda self: []
     Story.clear = lambda self: None
+    # What they're doing depends on the hour; scenarios are judged at any hour,
+    # so they're always met in their free time.
+    presence.Presence.note = lambda self, t=None: ""
+    presence.Presence.now = lambda self, t=None: {
+        "status": presence.IDLE, "doing": "", "until": 0, "source": "free", "last_active": 0}
 
 
 def run_scenario(contact, scenario):

@@ -15,6 +15,7 @@ model finishes writing it, several in flight at once, but the resulting clips
 are released to the page strictly in order.
 """
 import asyncio
+import json
 import logging
 import random
 import re
@@ -33,7 +34,7 @@ from .. import operator as wayne_operator
 from ..audio import stt, system_voice
 from ..audio.tts import get_voice_engine
 from ..contacts import directory
-from ..engine import ContactSession, grapevine, guards, world
+from ..engine import ContactSession, grapevine, guards, initiative, presence, world
 from ..engine.party import MAX_CONTACTS, Call
 from ..memory import migrate_legacy
 from ..memory.store import atomic_write, read_text
@@ -62,6 +63,19 @@ ECHO_WINDOW_SECONDS = 25
 # How long a call rings before it is answered. Varied, because a constant delay
 # is only marginally less mechanical than none at all.
 PICKUP_DELAY = (0.9, 3.4)
+# Longer when they're in the middle of something, longer still when the phone
+# was nowhere near them.
+PICKUP_EXTRA = {presence.BUSY: (1.5, 5.0), presence.OFFLINE: (4.0, 9.0)}
+
+# How long an incoming call rings before it counts as missed.
+RING_FOR = 28
+
+# How often the console's clock ticks: presence, promises, the odd text.
+PULSE_SECONDS = 30
+# Nobody texts out of the blue twice within this long, across everyone.
+INITIATIVE_GAP = 45 * 60
+# How often someone whose phone is out of reach is looked at again.
+RECHECK_SECONDS = 15
 
 
 class Console:
@@ -104,6 +118,11 @@ class Console:
         # Texts waiting to be read, and the task answering each contact's.
         self._pending_texts = {}
         self._texters = {}
+        # A contact ringing him: {"id", "about"}, and the timer that gives up.
+        self._incoming = None
+        self._ring_timer = None
+        # The status each contact's dot last showed, to send only changes.
+        self._shown_presence = {}
         self.migrated = migrate_legacy(config.DEFAULT_CONTACT)
 
     # --- contacts ---------------------------------------------------------
@@ -318,14 +337,24 @@ class Console:
 
     # --- turns ------------------------------------------------------------
 
-    async def connect(self, contact_id):
-        """Switch the console to a contact, booting them on first connection."""
+    async def connect(self, contact_id, incoming=None):
+        """
+        Switch the console to a contact, booting them on first connection.
+        `incoming` is why they rang, when it was them who called.
+        """
         contact = self.directory.get(contact_id)
         if contact is None:
             return
         if self._release:
             self._release.cancel()
             self._release = None
+        if self._incoming and not incoming:
+            # He rang someone else while a call was coming in: that one is missed.
+            # One line at a time, in either direction.
+            if self._ring_timer:
+                self._ring_timer.cancel()
+                self._ring_timer = None
+            asyncio.get_running_loop().create_task(self._unanswered("missed"))
         if self.current_id and self.current_id != contact_id:
             # Switching lines mid-call: whoever was on it notices next time.
             for member in (self.call.members if self.call else [self.sessions[self.current_id]]):
@@ -348,7 +377,10 @@ class Console:
             # Nobody answers the instant it rings, so the line rings for a
             # varying moment — but the greeting is generated and synthesised
             # during it rather than after, so the ring is the whole wait.
-            pickup = asyncio.get_running_loop().time() + random.uniform(*PICKUP_DELAY)
+            whereabouts = presence.of(contact).now()["status"]
+            ring = (random.uniform(0.2, 0.6) if incoming else
+                    random.uniform(*PICKUP_DELAY) + random.uniform(*PICKUP_EXTRA.get(whereabouts, (0, 0))))
+            pickup = asyncio.get_running_loop().time() + ring
 
             for problem in config.missing_requirements():
                 await self.broadcast(events.notice(problem, "warn"))
@@ -360,7 +392,9 @@ class Console:
                     f"Migrated existing {' and '.join(self.migrated)} into "
                     f"data/{config.DEFAULT_CONTACT}/.", "info"))
                 self.migrated = []
-            await self.drive(session.boot(), contact, self.interrupt(), release_at=pickup)
+            await self.drive(session.boot(incoming), contact, self.interrupt(), release_at=pickup)
+            presence.of(contact).touch()
+            await self._presence_changed(contact)
 
     def _is_own_echo(self, text):
         """
@@ -394,6 +428,11 @@ class Console:
         present = {m.contact.id for m in members}
         for member in members:
             grapevine.note_call(member, list(self.directory), member.call_start, present)
+            # Just off the phone with him; and whatever the call set in motion.
+            presence.of(member.contact).touch()
+            said = member.history.messages[member.call_start:]
+            if any(m["role"] == "user" for m in said):
+                asyncio.get_running_loop().create_task(self._afterthought(member, said, "call"))
         if self.call:
             for member in list(self.call.members):
                 self.call.leave(member)
@@ -464,44 +503,119 @@ class Console:
             return await self._text_into_call(contact_id, body)
 
         self._pending_texts.setdefault(contact_id, []).append(message)
-        if contact_id not in self._texters:
-            self._texters[contact_id] = asyncio.create_task(self._answer_texts(contact))
+        self._start_answering(contact)
+
+    def _start_answering(self, contact):
+        if contact.id not in self._texters:
+            self._texters[contact.id] = asyncio.create_task(self._answer_texts(contact))
 
     async def _answer_texts(self, contact):
-        """Read, think, type, reply — at the contact's own pace."""
+        """
+        Read when they get to it, then think, type and reply. When they get to
+        it is whatever they're doing (see wayne.engine.presence): seconds if
+        the phone is in their hand, minutes if it's down, an hour in a meeting,
+        the morning if they're asleep — and a glance from the middle of
+        something now and then, which gets a line rather than an answer.
+        """
         loop = asyncio.get_running_loop()
+        whereabouts = presence.of(contact)
         pace = contact.texting_pace or {}
         try:
-            delay = random.uniform(*pace.get("read", [3, 20]))
-            if random.random() < pace.get("busy", 0):
-                delay = random.uniform(*pace.get("busy_for", [60, 600]))
-            await asyncio.sleep(delay)
+            await self._wait_to_read(contact)
             batch = self._pending_texts.pop(contact.id, [])
             if not batch:
                 return
             log = TextLog(contact.id)
-            read_at = log.mark_read([m["id"] for m in batch])
+            ids = [m["id"] for m in batch]
+            read_at = log.mark_read(ids)
             await self.broadcast({"type": "text_read", "speaker": contact.id,
-                                  "ids": [m["id"] for m in batch], "at": read_at})
-            await asyncio.sleep(random.uniform(0.8, 3.0))
+                                  "ids": ids, "at": read_at})
+            glancing = whereabouts.now()["status"] == presence.BUSY
+            if not glancing:
+                whereabouts.touch()
+            await self._presence_changed(contact)
+            if not glancing and random.random() < pace.get("on_read", 0):
+                # Left on read, for a while. Some people do.
+                await asyncio.sleep(random.uniform(*pace.get("on_read_for", [180, 1200])))
+            else:
+                await asyncio.sleep(random.uniform(0.8, 3.0))
             await self.broadcast({"type": "text_typing", "speaker": contact.id})
             started = loop.time()
             reply = await self._write_text(contact, "\n".join(m["text"] for m in batch))
-            # As long as it would take them to type it, less the time spent writing.
-            typing = len(reply) / max(1.0, pace.get("wpm", 50) * 5 / 60)
-            remaining = min(typing, 25) - (loop.time() - started)
-            if remaining > 0:
-                await asyncio.sleep(remaining)
             if reply:
-                sent = log.add("them", reply)
-                await self.broadcast({"type": "text_reply", "speaker": contact.id, "message": sent})
+                await self._deliver(contact, reply, started)
+                if not glancing:
+                    whereabouts.touch()
+                session = self.session_for(contact.id)
+                loop.create_task(self._afterthought(session, session.history.messages[-6:], "text"))
             else:
                 await self.broadcast({"type": "text_idle", "speaker": contact.id})
+            self._release_later(contact)
         finally:
             self._texters.pop(contact.id, None)
             if self._pending_texts.get(contact.id):
                 # More arrived while they were replying: another round.
-                self._texters[contact.id] = asyncio.create_task(self._answer_texts(contact))
+                self._start_answering(contact)
+
+    async def _wait_to_read(self, contact):
+        """
+        Until they'd look at their phone. Re-judged whenever what they're doing
+        changes — a meeting ending, or him ringing them — so a text sent to
+        someone asleep is read when they wake, not on a timer set at 3am.
+        """
+        whereabouts = presence.of(contact)
+        deadline, last = None, None
+        while True:
+            state = whereabouts.now()
+            if state["status"] != last:
+                last = state["status"]
+                delay = presence.read_delay(contact, state)
+                if delay is not None:
+                    candidate = time.time() + delay
+                    deadline = candidate if deadline is None else min(deadline, candidate)
+            if deadline is not None and time.time() >= deadline:
+                return
+            await asyncio.sleep(RECHECK_SECONDS if deadline is None
+                                else min(RECHECK_SECONDS, max(0.05, deadline - time.time())))
+
+    async def _deliver(self, contact, reply, started):
+        """
+        A reply sent as they'd send it: one composed message, or three in a
+        row, each typed at their own speed (less the time spent thinking).
+        """
+        loop = asyncio.get_running_loop()
+        per_second = max(1.0, (contact.texting_pace or {}).get("wpm", 50) * 5 / 60)
+        log = TextLog(contact.id)
+        parts = initiative.bubbles(contact, reply)
+        for i, part in enumerate(parts):
+            if i:
+                await self.broadcast({"type": "text_typing", "speaker": contact.id})
+            typing = min(len(part) / per_second, 20)
+            if i == 0:
+                typing -= loop.time() - started
+            if typing > 0:
+                await asyncio.sleep(typing)
+            sent = log.add("them", part)
+            await self.broadcast({"type": "text_reply", "speaker": contact.id, "message": sent})
+            if i < len(parts) - 1:
+                await asyncio.sleep(random.uniform(0.4, 1.4))
+
+    async def _afterthought(self, session, exchanges, by):
+        """What the exchange set in motion — see wayne.engine.initiative."""
+        try:
+            found = await asyncio.to_thread(initiative.afterthought, session, exchanges, by)
+            if found:
+                log.info("%s afterthought: %s", session.contact.id, found)
+            await self._presence_changed(session.contact)
+        except Exception as exc:
+            log.warning("%s afterthought failed: %s", session.contact.id, str(exc)[:160])
+
+    def _release_later(self, contact):
+        """Free the model a while after a text, as after a call — unless a call is up."""
+        if self.current_id is None:
+            if self._release:
+                self._release.cancel()
+            self._release = asyncio.create_task(self._release_after(contact))
 
     async def _write_text(self, contact, body):
         """The contact writes a text reply. Held to the same lock as call turns."""
@@ -547,6 +661,195 @@ class Console:
             return
         if self.current_id is None:
             await asyncio.to_thread(_release_model, contact.model)
+
+    # --- the console's clock ---------------------------------------------
+
+    async def pulse(self):
+        """
+        Every half minute: whose dot has changed, which promises have fallen
+        due, and whether anyone has a reason to get in touch. This is what
+        makes the directory a set of people getting on with their evenings
+        rather than seven phones waiting for him.
+        """
+        await asyncio.sleep(5)
+        self._resume_unread()
+        while True:
+            try:
+                await self._tick()
+            except Exception as exc:
+                log.warning("pulse: %s", str(exc)[:200])
+            await asyncio.sleep(PULSE_SECONDS)
+
+    def _resume_unread(self):
+        """Texts still unread from before a restart are waiting to be read."""
+        for contact in self.directory:
+            waiting = TextLog(contact.id).unread()
+            if waiting and not self._pending_texts.get(contact.id):
+                self._pending_texts[contact.id] = waiting
+                self._start_answering(contact)
+
+    async def _tick(self):
+        now = time.time()
+        for contact in self.directory:
+            await self._presence_changed(contact)
+        if not self.clients:
+            return      # nobody at the console to hear about it
+        for contact in self.directory:
+            for intent in presence.of(contact).due(now):
+                await self._carry_out(contact, intent)
+        await self._maybe_reach_out(now)
+
+    async def _presence_changed(self, contact):
+        shown = presence.of(contact).public()
+        key = (shown["status"], shown["doing"])
+        if self._shown_presence.get(contact.id) != key:
+            self._shown_presence[contact.id] = key
+            await self.broadcast({"type": "presence", "speaker": contact.id, "presence": shown})
+
+    async def _carry_out(self, contact, intent):
+        """A promise falls due: they text, or they ring."""
+        whereabouts = presence.of(contact)
+        if contact.id in self._members():
+            whereabouts.done(intent["id"])   # on the line with him; they'll just say it
+            return
+        if whereabouts.now()["status"] == presence.OFFLINE:
+            whereabouts.postpone(intent["id"], 600)
+            return
+        if intent["action"] == "call":
+            if not (self.current_id or self._incoming):
+                whereabouts.done(intent["id"])
+                return await self._ring(contact, intent["about"])
+            if intent.get("tries", 0) < 2:
+                whereabouts.postpone(intent["id"], 300)   # he's on another call
+                return
+        whereabouts.done(intent["id"])
+        await self._send_unprompted(contact, intent["about"], "promise")
+
+    def _quiet(self, now):
+        try:
+            start, end = (int(h) for h in config.QUIET_HOURS.split("-"))
+        except ValueError:
+            return False
+        hour = time.localtime(now).tm_hour
+        return start <= hour < end if start <= end else (hour >= start or hour < end)
+
+    def _initiative_log(self):
+        try:
+            return json.loads(read_text(paths.DATA_DIR / "_initiative.json") or "[]")
+        except ValueError:
+            return []
+
+    async def _maybe_reach_out(self, now):
+        """
+        The unprompted text: chasing a question he left hanging, or something
+        on their mind. Budgeted — a few a day across everyone, never two
+        within the hour, none while he sleeps, none from someone already
+        waiting on him — so it reads as people, not notifications.
+        """
+        if config.INITIATIVE_PER_DAY <= 0 or self._quiet(now):
+            return
+        sent = [t for t in self._initiative_log() if now - t < 86400]
+        if len(sent) >= config.INITIATIVE_PER_DAY or (sent and now - max(sent) < INITIATIVE_GAP):
+            return
+        chases, impulses = [], []
+        for contact in self.directory:
+            if contact.id in self._members() or contact.id in self._texters:
+                continue
+            whereabouts = presence.of(contact)
+            if whereabouts.now()["status"] not in (presence.ONLINE, presence.IDLE):
+                continue
+            leaning = contact.initiative or {}
+            last = TextLog(contact.id).last()
+            if last and last["from"] == "me":
+                continue        # he's waiting on them, not the other way round
+            if last and last["from"] == "them":
+                # Their question, unanswered: chase it — once, if they're the type.
+                chase = whereabouts.get("chase") or {}
+                if last["text"].rstrip().endswith("?") and chase.get("id") != last["id"]:
+                    lo, hi = leaning.get("chase_after", [30, 180])
+                    chase = {"id": last["id"], "at": last["at"] + random.uniform(lo, hi) * 60
+                             if random.random() < leaning.get("double_text", 0.3) else None}
+                    whereabouts.put("chase", chase)
+                if chase.get("id") == last["id"] and chase.get("at") and now >= chase["at"]:
+                    chases.append(contact)
+                    continue
+                if now - last["at"] < 12 * 3600:
+                    continue    # they spoke last, and recently; it's his turn
+            # Something on their mind: a few times a day for the chatty ones.
+            if random.random() < leaning.get("per_day", 0.4) * PULSE_SECONDS / (16 * 3600):
+                impulses.append(contact)
+        if chases:
+            contact = random.choice(chases)
+            presence.of(contact).put("chase", {"id": (presence.of(contact).get("chase") or {}).get("id")})
+            await self._send_unprompted(contact, "", "chase", counted=True)
+        elif impulses:
+            contact = random.choice(impulses)
+            about = initiative.impulse(self.session_for(contact.id))
+            if about:
+                await self._send_unprompted(contact, about, "impulse", counted=True)
+
+    async def _send_unprompted(self, contact, about, why, counted=False):
+        """They text first: written, then typed, then sent."""
+        session = self.session_for(contact.id)
+        loop = asyncio.get_running_loop()
+        async with self.turn_lock:
+            text = await loop.run_in_executor(None, session.reach_out, about, why)
+        if not text:
+            return
+        log.info("%s texted first (%s): %s", contact.id, why, text[:80])
+        if counted:
+            entries = [t for t in self._initiative_log() if time.time() - t < 86400]
+            atomic_write(paths.DATA_DIR / "_initiative.json", json.dumps(entries + [time.time()]))
+        presence.of(contact).touch()
+        await self._presence_changed(contact)
+        await self.broadcast({"type": "text_typing", "speaker": contact.id})
+        await self._deliver(contact, text, loop.time())
+        self._release_later(contact)
+
+    # --- calls to him -------------------------------------------------------
+
+    async def _ring(self, contact, about):
+        """They call him. The page rings; he answers, declines, or misses it."""
+        self._incoming = {"id": contact.id, "about": about}
+        log.info("%s ringing: %s", contact.id, about[:80])
+        await self.broadcast({"type": "call_incoming", "speaker": contact.id})
+        self._ring_timer = asyncio.create_task(self._ring_out(contact.id))
+
+    async def _ring_out(self, contact_id):
+        await asyncio.sleep(RING_FOR)
+        if self._incoming and self._incoming["id"] == contact_id:
+            self._ring_timer = None
+            await self._unanswered("missed")
+
+    async def answer(self, contact_id):
+        incoming = self._incoming
+        if not incoming or incoming["id"] != contact_id:
+            return
+        self._incoming = None
+        if self._ring_timer:
+            self._ring_timer.cancel()
+            self._ring_timer = None
+        await self.connect(contact_id, incoming=incoming["about"])
+
+    async def decline(self, contact_id):
+        if self._incoming and self._incoming["id"] == contact_id:
+            if self._ring_timer:
+                self._ring_timer.cancel()
+                self._ring_timer = None
+            await self._unanswered("declined")
+
+    async def _unanswered(self, how):
+        """A declined or missed call goes in the thread — and they may text instead."""
+        incoming, self._incoming = self._incoming, None
+        contact = self.directory.get(incoming["id"]) if incoming else None
+        if contact is None:
+            return
+        entry = TextLog(contact.id).add("them", "", kind=f"{how}_call")
+        await self.broadcast({"type": "call_unanswered", "speaker": contact.id,
+                              "how": how, "message": entry})
+        if random.random() < (contact.initiative or {}).get("react", 0.6):
+            await asyncio.sleep(random.uniform(6, 30) if how == "declined" else random.uniform(20, 80))
+            await self._send_unprompted(contact, incoming["about"], how)
 
     async def nudge(self, kind="check_in"):
         """
@@ -684,6 +987,7 @@ async def lifespan(_app):
         asyncio.create_task(asyncio.to_thread(world.prime)),
         asyncio.create_task(asyncio.to_thread(
             system_voice.prime, console.voice, [c.full_name for c in console.directory])),
+        asyncio.create_task(console.pulse()),
     ]
     yield
     for task in warm:
@@ -707,6 +1011,7 @@ def _contact_payload(contact):
         "available": contact.availability.is_available(),
         "portrait": contact.portrait,
         "group": contact.group,
+        "presence": presence.of(contact).public(),
     }
 
 
@@ -903,6 +1208,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(console.nudge("sign_off"))
             elif kind == "text":
                 asyncio.create_task(console.text(payload.get("id", ""), payload.get("text", "")))
+            elif kind == "answer":
+                asyncio.create_task(console.answer(payload.get("id", "")))
+            elif kind == "decline":
+                asyncio.create_task(console.decline(payload.get("id", "")))
             elif kind == "add":
                 asyncio.create_task(console.add(payload.get("id", "")))
             elif kind == "drop":

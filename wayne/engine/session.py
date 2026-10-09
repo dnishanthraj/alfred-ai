@@ -32,7 +32,7 @@ import ollama
 
 from .. import config, delivery, events
 from ..memory import History, Story, Vault
-from . import grapevine, guards, prompting, world
+from . import grapevine, guards, presence, prompting, world
 from .search import format_search_results, google_search, is_factual_lookup
 
 # Searches run on a worker so the holding line can be written meanwhile.
@@ -57,6 +57,11 @@ _PRE_SEARCH_PHRASES = [
 # a person would say.
 def _link_marker(contact):
     return f"{contact.name}?"
+
+
+# The user side of a text they sent first. Never shown; it keeps the history
+# alternating, and tells the model on a later turn that nobody had asked.
+REACH_MARKER = "(Nothing from him — you texted first.)"
 
 # Used only when two generations running have handed the operator his own words
 # back. Deliberately in character rather than neutral filler.
@@ -196,6 +201,16 @@ _SEARCH_MARKER_COMPLETE = re.compile(r"\[\s*SEARCH\s*:\s*([^\]\n]+?)\s*(?:\]|\n)
 # Once generation has finished the buffer cannot grow, so a marker missing its
 # closing bracket — or its opening one — can be read safely.
 _SEARCH_MARKER = re.compile(r"\[?\s*SEARCH\s*:\s*([^\]\n]+?)\s*\]?\s*$", re.I | re.M)
+
+# Written at the end of a reply when they're the one closing the call.
+_HANG_UP = re.compile(r"\[\s*(hang(s|ing)? up|end(s)? (the )?call)\s*\]", re.I)
+
+# Offered once a call has had some substance — never on the greeting, which
+# would end calls before they started.
+CLOSING_DIRECTIVE = (
+    "If the call has run its course — what was needed is said, and one of you has "
+    "somewhere to be — you may close it yourself: say goodbye your way and end with "
+    "[hang up]. Never mid-topic, and never just because he paused.")
 # Returned by the streaming pass instead of a reply, to say "he wants to look
 # something up first". Nothing has been spoken at that point.
 _SEARCH_REQUESTED = object()
@@ -313,6 +328,7 @@ class ContactSession:
         can_search = self.contact.can_search
         self._pending_query = None
         self._cue_spent = False
+        self._hanging_up = False
 
         def finalize(sentence):
             """Guard one sentence. Returns (emit, sentence) or (False, None)."""
@@ -358,6 +374,10 @@ class ContactSession:
 
         for piece in self._stream(payload):
             buffer += piece
+            if _HANG_UP.search(buffer):
+                # They're closing the call: their goodbye is meant, not trailing.
+                self._hanging_up = leaving = True
+                buffer = _HANG_UP.sub("", buffer)
 
             # Watched for the whole reply, not just its opening. He may write
             # the marker straight away, or say "I'll see what I can find" and
@@ -443,6 +463,16 @@ class ContactSession:
                           or guards.parrots(probe, prompt)):
                 return (yield from self._regenerate(payload, prompt, recent))
 
+        if _HANG_UP.search(tail):
+            self._hanging_up = leaving = True
+            tail = _HANG_UP.sub("", tail).strip()
+        if self._hanging_up:
+            for pending in held:
+                if len(spoken) < max_sentences:
+                    spoken.append(pending)
+                    yield events.sentence(index, pending)
+                    index += 1
+            held = []
         if tail and not (not leaving and self._is_signoff(tail)):
             emit, text = finalize(tail)
             if emit and len(spoken) < max_sentences:
@@ -499,6 +529,9 @@ class ContactSession:
             text = self._chat_once(retry_payload, temperature=0.95)
         except Exception:
             text = ""
+        if _HANG_UP.search(text):
+            self._hanging_up = True
+            text = _HANG_UP.sub("", text).strip()
         if not text or guards.parrots(text, prompt) or guards.too_similar(text, recent):
             text = self._deflection()
         text = guards.apply(text, prompt, self.contact.max_reply_sentences,
@@ -518,7 +551,7 @@ class ContactSession:
         """
         self._last_call = how
 
-    def boot(self):
+    def boot(self, incoming=None):
         """
         Generate the opening line. Stored as a proper user/assistant pair: a
         history starting with an orphaned assistant message leaves the model
@@ -535,6 +568,14 @@ class ContactSession:
         if self._last_call == "switched":
             instruction += ("\n(Last time, he cut your call short to ring someone else. "
                             "You may remark on it, once and lightly — or not.)")
+        whereabouts = presence.of(self.contact).note()
+        if incoming:
+            # They rang him. Whoever calls has a reason, and opens with it.
+            instruction += (f"\n(This time YOU rang HIM, and he's just picked up. You called "
+                            f"about: {incoming}. Open the way you do when you're the one "
+                            "calling — a word of hello at most, then why.)")
+        elif whereabouts:
+            instruction += f"\n({whereabouts} He's calling you.)"
         self._last_call = None
         payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
 
@@ -867,6 +908,56 @@ class ContactSession:
                 self.history.record_aside(text)
         yield events.reply_end(text)
 
+    def reach_out(self, about, why="impulse"):
+        """
+        A text they send first. `about` is what's on their mind — picked by
+        the caller (see wayne.engine.initiative), because a model told only
+        "text him" asks how he is, every time. Remembered like any text.
+        """
+        gap = self.history.time_since_last()
+        context = [f"Time: {prompting.time_context()}."]
+        if gap:
+            context.append(f"You last spoke {gap}.")
+        whereabouts = presence.of(self.contact).note()
+        if whereabouts:
+            context.append(whereabouts)
+        hearsay = grapevine.block(self.contact.id)
+        if hearsay:
+            context.append(hearsay)
+        style = f" ({self.contact.texting})" if self.contact.texting else ""
+        if why == "chase":
+            ask = ("He hasn't answered your last text. Send one more, the way you'd chase "
+                   "an unanswered message — or nudge it from a new angle.")
+        elif why in ("declined", "missed"):
+            ask = (f"You just rang him and he {'declined the call' if why == 'declined' else 'did not pick up'}. "
+                   f"You were calling about: {about}. Text him instead, the way you would.")
+        elif why == "promise":
+            ask = (f"You said you'd get back to him about {about} — whatever you were doing for "
+                   "it is done now. Text him. "
+                   "Whatever happened on your end is yours to tell — it's your life; keep it "
+                   "plausible and in keeping with what you both said.")
+        else:
+            ask = (f"Nothing from him; you're texting him first because of {about}. Say it the "
+                   "way you'd actually text it — no 'hey, how are you' preamble unless "
+                   "that's truly you.")
+        instruction = (
+            "[REFERENCE — context only]\n" + "\n".join(context) + "\n[END REFERENCE]\n\n"
+            + ask + f" Write it as a text{style} — a line or two, no stage cues.")
+        payload = prompting.build_payload(self.contact, self.history.for_model(), instruction,
+                                          texting=True)
+        try:
+            text = self._chat_once(payload, temperature=0.9, num_predict=120)
+        except Exception:
+            return ""
+        text = guards.strip_forbidden_address(text, self.contact.forbidden_address)
+        text = delivery.clean(guards.strip_presence(text) or text).strip().strip('"')
+        # A text, not a letter: told "a line or two", a model writes a paragraph.
+        lines = [guards.cap_length(line, 3) for line in text.splitlines() if line.strip()][:4]
+        text = "\n".join(lines)
+        if text:
+            self.history.record_exchange(REACH_MARKER, text, via="text")
+        return text
+
     def _speak_aside(self, instruction, temperature, cap):
         """
         A turn the contact initiates rather than answers.
@@ -937,6 +1028,13 @@ class ContactSession:
                 return
 
         awareness = self._awareness(prompt, interrupted, confidence)
+        texting = via == "text"
+        if texting:
+            state = presence.of(self.contact).now()
+            if state["status"] == presence.BUSY and state["doing"]:
+                awareness.append(
+                    f"You're {state['doing']} — reading this between things. Reply briefly, "
+                    "or tell him you'll get back to him.")
         if via == "text_on_call":
             awareness.append(
                 "He's just texted you this while you're on the call together — it's on "
@@ -949,6 +1047,8 @@ class ContactSession:
                                               else "") + ", no stage cues.")
         if self.call:
             awareness.append(self.call.note_for(self, follow_up))
+        elif via is None and self._said_this_call() >= 2:
+            awareness.append(CLOSING_DIRECTIVE)
         vault_block = self.vault.as_block(prompt)
 
         # A plainly factual question is looked up before he is asked anything,
@@ -970,7 +1070,8 @@ class ContactSession:
         user_turn = prompting.compose_user_turn(
             prompt, vault_block, search_context, awareness, spoken=said,
             hearsay=grapevine.block(self.contact.id))
-        payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn)
+        payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn,
+                                          texting=texting)
 
         yield events.state(events.THINKING)
         yield events.reply_start()
@@ -997,7 +1098,7 @@ class ContactSession:
             user_turn = prompting.compose_user_turn(
                 prompt, vault_block, search_context, awareness, spoken=said)
             payload = prompting.build_payload(
-                self.contact, self.history.for_model(), user_turn)
+                self.contact, self.history.for_model(), user_turn, texting=texting)
             yield events.state(events.THINKING)
             yield events.reply_start()
             try:
@@ -1010,9 +1111,15 @@ class ContactSession:
         self.history.record_exchange(said, reply, via="text" if via == "text" else None)
         self.heard = []
         yield events.reply_end(reply)
-        if guards.user_is_leaving(prompt) and not self.call and via is None:
+        closing = guards.user_is_leaving(prompt) or getattr(self, "_hanging_up", False)
+        if closing and not self.call and via is None:
             yield events.call_ending()
         yield events.state(events.IDLE)
+
+    def _said_this_call(self):
+        """How many times he has spoken since this call began."""
+        return sum(1 for m in self.history.messages[self.call_start:]
+                   if m["role"] == "user" and not m.get("via"))
 
     def _heard_turn(self, prompt, follow_up, via=None):
         """
