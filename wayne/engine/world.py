@@ -41,6 +41,9 @@ class Feed:
     name = ""
     label = ""
     interval = 15 * 60
+    # Private feeds reach only the contacts the profile lets see them —
+    # his calendar is Alfred's business, not Selina's.
+    private = False
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -210,7 +213,9 @@ def describe_events(events, now):
     today = time.localtime(now).tm_yday
     parts = []
     for start, end, title, all_day in sorted(events):
-        day = "today" if time.localtime(start).tm_yday == today else "tomorrow"
+        # Begun before today and still going counts as today — a three-day
+        # conference that started yesterday is not "tomorrow".
+        day = "today" if (time.localtime(start).tm_yday == today or start <= now) else "tomorrow"
         if all_day:
             parts.append(f"{day} all day: {title}")
         elif start <= now < end:
@@ -227,6 +232,8 @@ class Calendar(Feed):
     permission; the titles stay on this machine except for whatever he says
     aloud.
     """
+
+    private = True
 
     name = "calendar"
     label = ("His calendar, today and tomorrow (from the calendar, not from him — "
@@ -288,14 +295,19 @@ def _build():
 FEEDS = _build()
 
 
-def snapshot():
-    """Every feed that has a reading, one line each. Never blocks."""
-    return [line for line in (feed.read() for feed in FEEDS) if line]
+def _visible(contact):
+    return [feed for feed in FEEDS
+            if not feed.private or contact is None or getattr(contact, "sees_calendar", False)]
 
 
-def covered(prompt, names=()):
+def snapshot(contact=None):
+    """Every feed this contact can see with a reading, one line each. Never blocks."""
+    return [line for line in (feed.read() for feed in _visible(contact)) if line]
+
+
+def covered(prompt, names=(), contact=None):
     """True when an ambient feed already answers this, so no search is needed."""
-    return any(feed.covers(prompt, names) for feed in FEEDS)
+    return any(feed.covers(prompt, names) for feed in _visible(contact))
 
 
 def prime():

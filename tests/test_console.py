@@ -35,6 +35,7 @@ def _console():
     console.voice_busy = False
     console.call = None
     console.sessions = {}
+    console._ringing_out, console._refused_at, console._incoming = None, {}, None
     console.directory = SimpleNamespace(get=lambda _id: None, __iter__=lambda self: iter(()))
     sent = []
 

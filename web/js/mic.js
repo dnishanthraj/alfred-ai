@@ -136,11 +136,19 @@
 
   /* --- lifecycle --------------------------------------------------------- */
 
+  // Each open() gets a token; close() spends it. A tap shorter than the
+  // permission prompt closed nothing (the stream didn't exist yet), then the
+  // stream arrived and the mic stayed live; a double tap opened two.
+  var openToken = 0;
+  var opening = null;
+
   function open() {
     if (state.running) return Promise.resolve();
+    if (opening) return opening;
     var ctx = global.ConsoleAudio.context();
+    var token = ++openToken;
 
-    return navigator.mediaDevices.getUserMedia({
+    opening = navigator.mediaDevices.getUserMedia({
       audio: {
         channelCount: 1,
         // Echo cancellation is what makes ambient mode possible at all: it
@@ -155,9 +163,18 @@
         autoGainControl: false
       }
     }).then(function (stream) {
+      if (token !== openToken) {         // closed while we were asking
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        return;
+      }
       state.stream = stream;
       var blob = new Blob([WORKLET], { type: 'application/javascript' });
       return ctx.audioWorklet.addModule(URL.createObjectURL(blob)).then(function () {
+        if (token !== openToken) {
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          state.stream = null;
+          return;
+        }
         state.source = ctx.createMediaStreamSource(stream);
         state.node = new AudioWorkletNode(ctx, 'capture');
         state.node.port.onmessage = function (e) { onFrame(e.data); };
@@ -173,10 +190,15 @@
       state.running = false;
       if (handlers.onError) handlers.onError(err);
       throw err;
+    }).finally(function () {
+      if (token === openToken) opening = null;
     });
+    return opening;
   }
 
   function close() {
+    openToken++;
+    opening = null;
     if (state.node) { try { state.node.port.onmessage = null; state.node.disconnect(); } catch (e) {} }
     if (state.source) { try { state.source.disconnect(); } catch (e) {} }
     if (state.sink) { try { state.sink.disconnect(); } catch (e) {} }

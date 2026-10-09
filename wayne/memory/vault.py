@@ -136,11 +136,17 @@ class Vault:
         needle_l = needle.lower().strip()
         wanted = _terms(needle)
 
+        if not wanted:
+            # "Forget about it." names nothing. As a substring, "it" matched
+            # "with", "kitchen" and "city", and most of the notes went.
+            return []
+
         def matches(entry):
             # The exact phrase, or every meaningful word of it: "forget the son"
             # should find "Selina and I have a son, Randy".
             fact = self._fact_only(entry)
-            return needle_l in fact.lower() or (bool(wanted) and wanted <= _terms(fact))
+            phrase = re.search(rf"\b{re.escape(needle_l)}\b", fact.lower())
+            return bool(phrase) or wanted <= _terms(fact)
 
         keep = [e for e in entries if not matches(e)]
         removed = [self._fact_only(e) for e in entries if matches(e)]

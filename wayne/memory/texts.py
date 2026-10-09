@@ -29,7 +29,7 @@ class TextLog:
         except ValueError:
             return []
 
-    def add(self, sender, text, at=None, kind=None):
+    def add(self, sender, text, at=None, kind=None, origin=None):
         """
         Append a message ('me' or 'them'). Returns it. `kind` marks something
         that isn't a message — "missed_call", "declined_call" — shown in the
@@ -39,6 +39,8 @@ class TextLog:
                    "at": at or time.time()}
         if kind:
             message["kind"] = kind
+        if origin:
+            message["origin"] = origin      # sent unprompted: "chase", "callback", ...
         with _lock:
             messages = self._load() + [message]
             atomic_write(self.path, json.dumps(messages[-MAX_MESSAGES:]))

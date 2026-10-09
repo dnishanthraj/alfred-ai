@@ -115,7 +115,20 @@
   "texting": "fast and exact — proper punctuation, because typos are beneath Oracle; short, sometimes a single devastating word; coordinates and file names when it's work; 'lol' only when it's actually funny; no emoji bar a rare 🙄. You won't be bossed, and you text like it",
   "texting_style": {
     "burst": 0.3,
-    "emoji": 0.3
+    "emoji": 0.3,
+    "length": {
+      "word": 0.2,
+      "line": 0.5,
+      "few": 0.25,
+      "long": 0.05
+    },
+    "typos": 0.0,
+    "corrects": 0.0,
+    "second_thought": 0.1,
+    "tics": [
+      "lol",
+      "🙄"
+    ]
   },
   "texting_primer": [
     {
@@ -141,7 +154,8 @@
       "to": 3,
       "doing": "at the clock tower, running comms",
       "status": "busy",
-      "chance": 0.7
+      "chance": 0.7,
+      "terminal": true
     },
     {
       "from": 3,
@@ -176,7 +190,8 @@
     ],
     "glance": 0.6,
     "wpm": 90,
-    "phone": 0.55
+    "phone": 0.55,
+    "drift": 0.15
   },
   "initiative": {
     "per_day": 0.6,
@@ -185,6 +200,16 @@
       45,
       200
     ],
-    "react": 0.5
-  }
+    "react": 0.5,
+    "answers": {
+      "online": 0.95,
+      "idle": 0.9,
+      "busy": 0.55,
+      "offline": 0.25
+    },
+    "busy_text": 0.5,
+    "callback": 0.8,
+    "callback_call": 0.5
+  },
+  "search_aloud": false
 }

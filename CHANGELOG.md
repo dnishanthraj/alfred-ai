@@ -5,6 +5,31 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ## [Unreleased]
 
+### Fixed
+
+A full review of the code turned up, among others:
+
+- **The voice link degrading** under load: the console's own voice lines skipped
+  the concurrency cap and took slots from the contacts' speech, and audio for a
+  reply you'd talked over kept synthesising, so the next reply was refused.
+  Greetings are now also voiced *while* the line rings, rather than after.
+- **Memory loss on a changed key:** an unreadable encrypted file was read as
+  empty and overwritten; it's now set aside intact, and a malformed key is
+  reported at boot.
+- **Calls after the first thirty exchanges** lost track of where they began, which
+  silently disabled hearsay, promises made on calls, and contacts closing calls.
+- **"Forget about it"** deleted most remembered facts; it's an idiom again.
+- "Long night." and "I'm tired of waiting" no longer hang up the call; "Tim's a
+  good kid." keeps its last word; greetings and goodbyes on group calls are no
+  longer emptied to "Mm."; a second search in one turn no longer corrupts
+  history; texts sent during a call are never dropped; a kept promise doesn't
+  fire twice; a chase happens once; hiding the directory no longer hides the
+  whole console; Space in a text box no longer opens the mic; sentences shown
+  without voice no longer run together; and a reconnect can't leave two sockets
+  playing every clip twice.
+- `WAYNE_DATA_DIR` set in `.env` is honoured (it was decided before `.env` was
+  read), and conversation text no longer goes into `data/console.log`.
+
 ### Changed
 
 - **You are Bruce Wayne.** The console is a roleplay of Gotham, and who the user
@@ -55,6 +80,24 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
   of nowhere — something you talked about, something from their day, something
   they heard — or chasing a question you left hanging, within a daily budget and
   never in your quiet hours.
+- **They don't always pick up.** Whether they answer depends on what they're
+  doing and who they are: someone free nearly always does, someone in a meeting
+  usually declines, someone asleep sleeps through it — and Jason lets it ring
+  more than most. Ringing straight back reads as urgent and is likelier to be
+  answered. Afterwards it's theirs: a quick "can't talk", a call or text back
+  once they're free (with a reason, or without), or nothing at all.
+- **Status in their own words, or not at all.** Each contact writes their own
+  status line, in their texting voice ("checking the perimeter 🫡", "Tea is
+  steeping.") — written only while the model is already loaded. Jason and Selina
+  don't share what they're doing, so their status is unknown.
+- **Texting like people:** reply length drawn from each person's own spread
+  (Jason mostly a word or two, sometimes a paragraph); realistic typos for the
+  fast, casual texters, with Tim's "*correction" after; an "oh and —" follow-up
+  now and then; verbal tics kept occasional rather than constant; and live
+  back-and-forth while you're both texting, until they put the phone down.
+- **Situational search and calendar.** Only Alfred sees your calendar. Alfred,
+  Lucius and Barbara can look things up — and only when they'd be at a screen;
+  Barbara never announces it. Everyone else answers from what they know.
 - **They end calls too:** once a call has done its job, a contact can say goodbye
   and hang up, rather than waiting on you.
 - **Texting in character.** Each contact has worked examples of their texts and

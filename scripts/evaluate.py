@@ -34,8 +34,9 @@ from wayne import delivery  # noqa: E402
 from wayne.contacts import directory  # noqa: E402
 from wayne.engine import (  # noqa: E402
     ContactSession,
+    grapevine,
     guards,
-    presence,  # noqa: E402
+    presence,
 )
 from wayne.memory import History, Story, Vault  # noqa: E402
 
@@ -95,6 +96,11 @@ def load_scenarios(contact_id):
 
 def _quiet_memory():
     History.save = lambda self: None
+    History.clear = lambda self: None
+    Vault.clear = lambda self: None
+    grapevine.clear = lambda contact_id: None
+    # Real hearsay would make runs depend on what happened yesterday.
+    grapevine.block = lambda contact_id: ""
     Vault.memorize = lambda self, text: None
     Vault.forget = lambda self, needle: [needle]
     Vault.as_block = lambda self, prompt="": ""

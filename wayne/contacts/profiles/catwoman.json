@@ -10,7 +10,7 @@
   "voice_env": "CATWOMAN_VOICE_ID",
   "think": false,
   "max_reply_sentences": 7,
-  "can_search": true,
+  "can_search": false,
   "forbidden_address": [
     "mate",
     "buddy",
@@ -145,7 +145,23 @@
     "lower": 0.95,
     "period": false,
     "burst": 0.3,
-    "emoji": 0.6
+    "emoji": 0.6,
+    "length": {
+      "word": 0.3,
+      "line": 0.5,
+      "few": 0.17,
+      "long": 0.03
+    },
+    "typos": 0.03,
+    "corrects": 0.2,
+    "second_thought": 0.12,
+    "tics": [
+      "handsome",
+      "bats",
+      "😼",
+      "💎",
+      "😏"
+    ]
   },
   "texting_primer": [
     {
@@ -201,7 +217,8 @@
     "on_read_for": [
       300,
       3000
-    ]
+    ],
+    "drift": 0.35
   },
   "initiative": {
     "per_day": 0.7,
@@ -210,6 +227,16 @@
       60,
       300
     ],
-    "react": 0.4
-  }
+    "react": 0.4,
+    "answers": {
+      "online": 0.85,
+      "idle": 0.7,
+      "busy": 0.3,
+      "offline": 0.2
+    },
+    "busy_text": 0.3,
+    "callback": 0.6,
+    "callback_call": 0.4
+  },
+  "shares_status": false
 }

@@ -207,8 +207,12 @@
 
     var span = document.createElement('span');
     span.className = 'said';
-    if (el.utterance.textContent) span.textContent = ' ';
+    // A space before every sentence but the first. Judged by the spans, not
+    // the text: when several sentences are revealed at once their words are
+    // still on timers, the text is empty, and they ran together.
+    var after = el.utterance.querySelector('.said');
     el.utterance.appendChild(span);
+    if (after) span.textContent = ' ';
 
     var words = text.split(/\s+/).filter(Boolean);
     if (!words.length) return;
@@ -305,7 +309,11 @@
     if (ConsoleAudio.isPlaying) return;            // still talking; wait for onIdle
     state.hangUpWhenQuiet = false;
     // A beat after the last word, the way anyone pauses before ringing off.
-    setTimeout(function () { if (state.connectedId) hangUp(); }, 700);
+    var line = state.connectedId;
+    clearTimeout(state.closeTimer);
+    state.closeTimer = setTimeout(function () {
+      if (state.connectedId && state.connectedId === line) hangUp();
+    }, 700);
   }
 
   function noteActivity(opts) {
@@ -361,6 +369,7 @@
      they're doing, since this console knows its people. */
   function presenceLabel(contact) {
     var p = contact.presence || {};
+    if (p.status === 'unknown') return p.line || 'Status unknown';
     var doing = p.doing ? ' · ' + p.doing : '';
     if (p.status === 'online') return 'Online';
     if (p.status === 'busy') return 'Busy' + doing;
@@ -450,14 +459,16 @@
       role.textContent = ringing ? 'Connecting'
                        : live ? (group ? 'On the call' : 'Connected')
                        : (contact.available ? contact.role : 'Unavailable');
-      // What they're doing, in place of the role when there's something to say:
-      // the portrait already says who they are.
-      var doing = (contact.presence || {}).doing;
-      if (doing && !ringing && !live) {
+      // Their own status line in place of the role when they've set one —
+      // the portrait already says who they are. Written by them, so it reads
+      // like them: "patrol 🦇 hmu", "In meetings until four."
+      var p = contact.presence || {};
+      var shown = p.line || (p.doing ? p.doing.charAt(0).toUpperCase() + p.doing.slice(1) : '');
+      if (shown && !ringing && !live) {
         role.textContent = '';
         var what = document.createElement('span');
         what.className = 'book__doing';
-        what.textContent = doing.charAt(0).toUpperCase() + doing.slice(1);
+        what.textContent = shown;
         role.appendChild(what);
       }
       text.appendChild(name);
@@ -469,7 +480,7 @@
 
       // Message, and one call action whose job depends on the call.
       var action;
-      if (ringing) action = 'end';
+      if (ringing) action = group ? 'drop' : 'end';
       else if (!inCall) action = 'call';
       else if (onCall(id)) action = group ? 'drop' : 'end';
       else action = 'add';
@@ -512,7 +523,10 @@
     return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   }
 
-  var CALL_LINE = { missed_call: 'Missed call', declined_call: 'Declined call' };
+  var CALL_LINE = {
+    missed_call: 'Missed call', declined_call: 'You declined',
+    refused_call: 'Call declined', unanswered_call: 'No answer'
+  };
 
   function bubbleNode(message, contact) {
     var li = document.createElement('li');
@@ -580,6 +594,7 @@
         lastDay = day;
       }
       var node = bubbleNode(m, contact);
+      if (m.id && th.seen && !th.seen[m.id]) { node.dataset.new = '1'; th.seen[m.id] = true; }
       var next = th.messages[i + 1];
       if (sameRun(m, next) || (!next && m.from === 'them' && state.typing[th.id])) node.dataset.run = '1';
       box.appendChild(node);
@@ -612,7 +627,7 @@
     el['messages-name'].textContent = contact.full_name;
     el['messages-role'].textContent = presenceLabel(contact);
     el['messages-role'].dataset.presence = (contact.presence || {}).status || '';
-    state.thread = { id: id, messages: [], more: false, loading: true };
+    state.thread = { id: id, messages: [], more: false, loading: true, seen: {} };
     renderThread();
     el.messages.hidden = false;
     renderDirectory();
@@ -621,12 +636,14 @@
       .then(function (d) {
         if (!state.thread || state.thread.id !== id) return;
         state.thread.messages = d.messages || [];
+        state.thread.messages.forEach(function (m) { state.thread.seen[m.id] = true; });
         state.thread.more = (d.messages || []).length >= 40;
         state.thread.loading = false;
-        if (d.typing) state.typing[id] = state.typing[id] || false;
+        if (d.typing) state.typing[id] = true; else delete state.typing[id];
         renderThread();
         scrollThreadToEnd();
-      });
+      })
+      .catch(function () { if (state.thread && state.thread.id === id) state.thread.loading = false; });
     el['messages-input'].focus();
   }
 
@@ -642,12 +659,14 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (state.thread !== th) return;
+        (d.messages || []).forEach(function (m) { th.seen[m.id] = true; });
         th.messages = (d.messages || []).concat(th.messages);
         th.more = (d.messages || []).length >= 40;
         th.loading = false;
         renderThread();
         box.scrollTop = box.scrollHeight - fromBottom;
-      });
+      })
+      .catch(function () { th.loading = false; });
   }
 
   function closeMessages() {
@@ -657,7 +676,7 @@
     renderDirectory();
   }
 
-  var STATUS_COLOUR = { online: 'var(--good)', idle: '#c9a23a', busy: 'var(--alert)', offline: 'var(--text-faint)' };
+  var STATUS_COLOUR = { online: 'var(--good)', idle: '#c9a23a', busy: 'var(--alert)', offline: 'var(--text-faint)', unknown: 'transparent' };
 
   /* Hover a portrait: who, and what they're doing — beside it, in the rail or out. */
   function showHovercard(id, anchor) {
@@ -667,9 +686,12 @@
     card.style.setProperty('--contact-accent', contact.accent);
     card.style.setProperty('--status', STATUS_COLOUR[(contact.presence || {}).status] || '');
     $('hovercard-name').textContent = contact.full_name;
-    var line = onCall(id) ? 'On the call' : presenceLabel(contact);
+    var p = contact.presence || {};
+    var line = onCall(id) ? 'On the call' : (p.status === 'unknown' ? 'Status unknown' : presenceLabel(contact));
     if (state.unread[id]) line += ' · ' + state.unread[id] + ' unread';
     $('hovercard-status').textContent = line;
+    $('hovercard-line').textContent = p.line ? '“' + p.line + '”' : '';
+    $('hovercard-line').hidden = !p.line;
     var r = anchor.getBoundingClientRect();
     card.style.left = (r.right + 12) + 'px';
     card.style.top = (r.top + r.height / 2 - 22) + 'px';
@@ -683,8 +705,10 @@
     var body = el['messages-input'].value.trim();
     var id = state.messagesWith;
     if (!body || !id) return;
+    // Kept in the box if the link is down: a text that silently vanished was
+    // worse than one that visibly didn't go.
+    if (!send({ type: 'text', id: id, text: body })) return;
     el['messages-input'].value = '';
-    send({ type: 'text', id: id, text: body });
     ConsoleTones.sent();
   }
 
@@ -753,6 +777,9 @@
   function onIncoming(event) {
     var contact = state.contacts[event.speaker];
     if (!contact) return;
+    // Locked, or already on a line: it rings out unanswered, as a phone would
+    // on a call — not over the lock screen, where answering skipped the passcode.
+    if (document.documentElement.dataset.phase !== 'live' || state.connectedId) return;
     state.incomingId = event.speaker;
     el.incoming.style.setProperty('--contact-accent', contact.accent);
     portraitStyle(el['incoming-avatar'], contact, 'center 22%');
@@ -806,6 +833,11 @@
 
   function onUnanswered(event) {
     if (state.incomingId === event.speaker) closeIncoming();
+    // Answered just as it rang out: the line never opened — don't sit on it.
+    if (state.connectedId === event.speaker && document.documentElement.dataset.link !== 'on') {
+      hangUp({ refused: 'unavailable', refusedId: event.speaker });
+    }
+    if (!event.message) return;
     if (threadOpenFor(event.speaker)) {
       state.thread.messages.push(event.message);
       renderThread();
@@ -815,6 +847,22 @@
       ConsoleTones.missed();
       notify(event.speaker, 'Missed call');
     }
+  }
+
+  /* They didn't take his call: declined after a ring or two, or no answer.
+     The Batcomputer says which, and the line closes — or, if they were being
+     added to a call in progress, the call simply carries on without them. */
+  function onRefused(event) {
+    var id = event.speaker;
+    var line = event.how === 'declined' ? 'declined' : 'unavailable';
+    if (state.connectedId === id && state.party.length <= 1) {
+      hangUp({ refused: line, refusedId: id });
+      return;
+    }
+    if (state.ringingId === id) state.ringingId = null;
+    ConsoleTones.stopRinging();
+    ConsoleSystem.say(line, id);
+    renderDirectory();
   }
 
   /* The system's own notification, for when the console isn't in front. */
@@ -1078,10 +1126,17 @@
   }
 
   function hangUp(opts) {
+    opts = opts || {};
+    // What hadn't been spoken yet stays unspoken — not flashed up as text
+    // while the line fades.
+    state.pending = {};
+    cancelFlush();
+    clearTimeout(state.closeTimer);
     ConsoleAudio.stop();
     ConsoleTones.stopRinging();
     ConsoleTones.disconnected();
-    ConsoleSystem.say('end');
+    // A call that was never answered closes with why, not "line closed".
+    ConsoleSystem.say(opts.refused || 'end', opts.refusedId);
     ConsoleMic.close();
     setMode('ptt');
     clearTimeout(state.idleTimer);
@@ -1090,7 +1145,7 @@
     state.hangUpWhenQuiet = false;
     // A switch tells the server by connecting to someone else, so the call it
     // ends can be remembered as cut short rather than simply over.
-    if (!(opts && opts.switching)) send({ type: 'disconnect' });
+    if (!opts.switching && !opts.refused) send({ type: 'disconnect' });
     state.connectedId = null;
     state.ringingId = null;
     state.party = [];
@@ -1101,14 +1156,23 @@
 
     // Flash the alert colour, then let everything fade before clearing, so the
     // line visibly closes instead of blinking out.
+    document.documentElement.style.removeProperty('--contact-accent');
     setLink('ending');
-    setTimeout(function () {
+    clearTimeout(state.fadeTimer);
+    state.fadeTimer = setTimeout(function () {
+      if (state.connectedId) return;     // a new call began within the fade
       clearUtterance();
       showHeard('');
       state.fresh = true;
-      document.documentElement.style.removeProperty('--contact-accent');
       setLink('off');
     }, 480);
+  }
+
+  /* A short tap that produced no take leaves "Listening" up otherwise. */
+  function settleListening() {
+    setTimeout(function () {
+      if (document.documentElement.dataset.state === 'listening' && !state.spaceDown) setState('idle');
+    }, 350);
   }
 
   /* --- socket ------------------------------------------------------------- */
@@ -1116,7 +1180,9 @@
   function send(payload) {
     if (state.socket && state.socket.readyState === WebSocket.OPEN) {
       state.socket.send(JSON.stringify(payload));
+      return true;
     }
+    return false;
   }
 
   function handle(event) {
@@ -1125,7 +1191,8 @@
     // audio plays, and a contact you just cut off keeps talking.
     // Texts arrive whether or not anyone is on a call.
     var conversational = ['notice', 'text_sent', 'text_read', 'text_typing', 'text_idle',
-                          'text_reply', 'presence', 'call_incoming', 'call_unanswered']
+                          'text_reply', 'presence', 'call_incoming', 'call_unanswered',
+                          'call_refused']
                           .indexOf(event.type) === -1;
     if (!state.connectedId && conversational) return;
 
@@ -1214,6 +1281,10 @@
         onUnanswered(event);
         break;
 
+      case 'call_refused':
+        onRefused(event);
+        break;
+
       case 'party':
         onParty(event);
         break;
@@ -1226,6 +1297,17 @@
       case 'turn_complete':
         state.generationDone = true;
         answered();
+        // Someone being patched in whose greeting never came (talked over,
+        // or nothing to say): they're on the call — stop ringing for them.
+        if (state.ringingId && state.ringingId !== state.connectedId && onCall(state.ringingId)) {
+          state.ringingId = null;
+          ConsoleTones.stopRinging();
+          renderDirectory();
+        }
+        // No voice arrived (degraded link): the ring mustn't sit on "thinking".
+        if (!ConsoleAudio.isPlaying && document.documentElement.dataset.state === 'thinking') {
+          setState('idle');
+        }
         scheduleFlush(60);
         if (state.closing) {
           // Hang up once he has actually finished speaking — not on a timer.
@@ -1252,8 +1334,23 @@
   }
 
   function connectSocket() {
+    // One socket, ever. Unlocking during a reconnect opened a second; every
+    // event then arrived twice — clips played twice, unread counts doubled.
+    clearTimeout(state.reconnectTimer);
+    if (state.socket && state.socket.readyState <= WebSocket.OPEN) return;
+    if (state.socket) state.socket.onclose = state.socket.onmessage = null;
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var reconnecting = !!state.socket;
     state.socket = new WebSocket(proto + '//' + location.host + '/ws');
+    state.socket.onopen = function () {
+      // Back after a drop: whatever call or ring was up is gone server-side
+      // or will be ended — reset rather than sit on a line that isn't there.
+      if (!reconnecting) return;
+      if (state.incomingId) closeIncoming();
+      if (state.connectedId) hangUp();
+      state.typing = {};
+      if (state.thread) renderThread();
+    };
 
     // Note: no auto-connect here. The socket being up is not the same as
     // someone being on the line.
@@ -1262,7 +1359,8 @@
     };
     state.socket.onclose = function () {
       setState('idle');
-      setTimeout(connectSocket, 1500);
+      clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = setTimeout(connectSocket, 1500);
     };
     state.socket.onerror = function () { try { state.socket.close(); } catch (e) {} };
   }
@@ -1326,7 +1424,7 @@
     });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (name) {
       el.ptt.addEventListener(name, function () {
-        if (state.mode !== 'ambient') ConsoleMic.pushStop();
+        if (state.mode !== 'ambient') { ConsoleMic.pushStop(); settleListening(); }
       });
     });
 
@@ -1346,6 +1444,7 @@
     });
 
     el.lock.addEventListener('click', function () {
+      if (state.incomingId) closeIncoming();
       if (state.connectedId) hangUp();
       ConsoleSystem.say('lock');
       ConsoleBoot.lock();
@@ -1356,9 +1455,10 @@
       if (document.documentElement.dataset.phase !== 'live') return;
       if (e.key === 'Escape') { interruptHim(); return; }
       if (!PTT_CODES[e.code] || state.spaceDown) return;
-      // Space types; Right Command does not, so only Space is blocked while
-      // the composer has focus.
-      if (e.code === 'Space' && document.activeElement === el.input) return;
+      // Never while typing — the composer, a text, the personnel file — or
+      // Space in a message opened the mic and cut the contact off.
+      var t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (state.mode !== 'ptt' || !state.connectedId) return;
       e.preventDefault();
       state.spaceDown = true;
@@ -1370,6 +1470,7 @@
       if (!PTT_CODES[e.code] || !state.spaceDown) return;
       state.spaceDown = false;
       ConsoleMic.pushStop();
+      settleListening();
     });
 
     // A held modifier can swallow its own keyup — switch apps mid-hold and the
@@ -1442,18 +1543,31 @@
     el['dossier-call'].textContent = state.party.length ? (already ? 'On the call' : 'Add to call') : 'Call';
     el['dossier-call'].disabled = already || !contact.available
       || (state.party.length >= MAX_PARTY && !already);
-    document.documentElement.style.setProperty('--contact-accent', contact.accent);
+    // On the file itself, not the whole console: set on the root it recoloured
+    // the live call and the next ring.
+    el.dossier.style.setProperty('--contact-accent', contact.accent);
 
     // A supplied portrait wins; otherwise the generated silhouette stands in.
     // Stacked backgrounds need no load handlers: a layer whose URL 404s paints
     // nothing, and the silhouette is last. Cropped by the profile's framing.
     portraitStyle(el['dossier-portrait'], contact, 'center 22%');
 
-    el['dossier-text'].value = 'Loading…';
+    // Not editable until it's loaded — saving "Loading…" as a bio, or the
+    // last file's text into this one, was one click away.
+    el['dossier-text'].value = '';
+    el['dossier-text'].placeholder = 'Loading…';
+    el['dossier-text'].disabled = true;
+    el['dossier-save'].disabled = true;
     fetch('/api/contacts/' + contactId + '/bio')
       .then(function (r) { return r.json(); })
-      .then(function (d) { el['dossier-text'].value = d.bio || ''; })
-      .catch(function () { el['dossier-text'].value = ''; });
+      .then(function (d) {
+        if (el.dossier.dataset.contact !== contactId) return;
+        el['dossier-text'].value = d.bio || '';
+        el['dossier-text'].disabled = false;
+        el['dossier-save'].disabled = false;
+        el['dossier-text'].placeholder = '';
+      })
+      .catch(function () { el['dossier-text'].placeholder = 'Could not load the file.'; });
 
     el.dossier.hidden = false;
   }
@@ -1465,8 +1579,8 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bio: el['dossier-text'].value })
-    }).then(function () {
-      el['dossier-saved'].textContent = 'Saved';
+    }).then(function (r) {
+      el['dossier-saved'].textContent = r.ok ? 'Saved' : 'Not saved';
       el['dossier-saved'].dataset.show = '1';
       setTimeout(function () { el['dossier-saved'].dataset.show = '0'; }, 1800);
     });
@@ -1480,6 +1594,12 @@
         state.contacts[contact.id] = contact;
         state.order.push(contact.id);
       });
+      // Unread kept for someone no longer in the directory would hold the
+      // inbox badge up forever.
+      Object.keys(state.unread).forEach(function (id) {
+        if (!state.contacts[id]) delete state.unread[id];
+      });
+      updateInbox();
       renderDirectory();
       return info;
     });

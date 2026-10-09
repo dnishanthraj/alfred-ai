@@ -13,8 +13,10 @@ and other people's processes — not against someone who already has your `.env`
 Doing better means a passphrase typed at each start, which for a console you
 talk to hands-free is a worse trade.
 """
+import logging
 import os
 import tempfile
+import time
 
 from .. import config
 
@@ -121,9 +123,26 @@ def atomic_write(path, text):
 
 
 def read_text(path):
-    """Read a memory file, decrypting if necessary. '' when absent."""
+    """
+    Read a memory file, decrypting if necessary. '' when absent.
+
+    Ciphertext that won't open — the key changed, or was mistyped — is moved
+    aside rather than read as empty. Read as empty, the next save overwrote it
+    with one new line and the memory was gone for good; moved aside, putting
+    the right key back and renaming the file restores it.
+    """
     try:
         with open(path, "rb") as f:
-            return decrypt(f.read())
+            raw = f.read()
     except FileNotFoundError:
         return ""
+    text = decrypt(raw)
+    if not text and raw and _looks_encrypted(raw):
+        aside = f"{path}.undecryptable-{int(time.time())}"
+        try:
+            os.replace(path, aside)
+            logging.getLogger("wayne").warning(
+                "memory file could not be decrypted (wrong WAYNE_MEMORY_KEY?); kept as %s", aside)
+        except OSError:
+            pass
+    return text

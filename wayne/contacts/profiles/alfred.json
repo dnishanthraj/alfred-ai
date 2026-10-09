@@ -163,7 +163,16 @@
   "texting": "full sentences, correct capitals and punctuation, as if writing a short note. Never emoji, never abbreviations; you regard 'lol' as a symptom. Understatement does what emoji do for everyone else",
   "texting_style": {
     "burst": 0,
-    "emoji": 0.0
+    "emoji": 0.0,
+    "length": {
+      "word": 0.05,
+      "line": 0.45,
+      "few": 0.45,
+      "long": 0.05
+    },
+    "typos": 0.0,
+    "corrects": 0.0,
+    "second_thought": 0.05
   },
   "texting_primer": [
     {
@@ -196,7 +205,8 @@
       "to": 19,
       "doing": "in the kitchen with dinner on",
       "status": "busy",
-      "chance": 0.5
+      "chance": 0.5,
+      "terminal": true
     }
   ],
   "texting_pace": {
@@ -214,7 +224,8 @@
     ],
     "glance": 0.5,
     "wpm": 35,
-    "phone": 0.25
+    "phone": 0.25,
+    "drift": 0.2
   },
   "initiative": {
     "per_day": 0.6,
@@ -223,6 +234,16 @@
       90,
       300
     ],
-    "react": 0.5
-  }
+    "react": 0.5,
+    "answers": {
+      "online": 1.0,
+      "idle": 0.98,
+      "busy": 0.85,
+      "offline": 0.9
+    },
+    "busy_text": 0.2,
+    "callback": 1.0,
+    "callback_call": 0.8
+  },
+  "sees_calendar": true
 }

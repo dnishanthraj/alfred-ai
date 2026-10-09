@@ -137,7 +137,19 @@
   "texting": "complete sentences and correct punctuation, measured and warm, with a dry last line; never abbreviations; once in a long while a thumbs-up emoji your daughter taught you, used with slightly wrong solemnity. Never more than three lines",
   "texting_style": {
     "burst": 0,
-    "emoji": 0.15
+    "emoji": 0.15,
+    "length": {
+      "word": 0.03,
+      "line": 0.5,
+      "few": 0.45,
+      "long": 0.02
+    },
+    "typos": 0.0,
+    "corrects": 0.0,
+    "second_thought": 0.05,
+    "tics": [
+      "👍"
+    ]
   },
   "texting_primer": [
     {
@@ -191,7 +203,8 @@
         2,
         3,
         4
-      ]
+      ],
+      "terminal": true
     }
   ],
   "texting_pace": {
@@ -209,7 +222,8 @@
     ],
     "glance": 0.3,
     "wpm": 40,
-    "phone": 0.25
+    "phone": 0.25,
+    "drift": 0.3
   },
   "initiative": {
     "per_day": 0.4,
@@ -218,6 +232,15 @@
       120,
       480
     ],
-    "react": 0.5
+    "react": 0.5,
+    "answers": {
+      "online": 0.97,
+      "idle": 0.9,
+      "busy": 0.35,
+      "offline": 0.15
+    },
+    "busy_text": 0.7,
+    "callback": 0.95,
+    "callback_call": 0.8
   }
 }

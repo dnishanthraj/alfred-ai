@@ -56,6 +56,7 @@ class Call:
                 who = self.operator if message["role"] == "user" else first.contact.full_name
                 self.transcript.append(f"{who}: {message['content']}")
         self.members.append(session)
+        session.mark_call_start()
         # The last few lines before they joined, marked as such: enough to
         # pick up the thread, not a recording of the evening.
         session.heard = [f"(before you joined) {line}" for line in self.transcript[-6:]]
@@ -66,6 +67,7 @@ class Call:
         if session not in self.members:
             return
         self.members.remove(session)
+        session.keep_heard()
         session.call, session.heard = None, []
         if self.last_speaker is session:
             self.last_speaker = None
@@ -78,6 +80,7 @@ class Call:
         for member in self.members:
             member.call = self if group else None
             if not group:
+                member.keep_heard()
                 member.heard = []
 
     @property
@@ -208,7 +211,7 @@ class Call:
             "line, and not an apology for being late.")
         others = " and ".join(m.contact.full_name for m in self.others(newcomer))
         line = yield from self._speak_aside(newcomer, instruction,
-                                            f"You're on with {others} now.")
+                                            f"You're on with {others} now.", greeting=True)
         if line:
             self.transcript.append(f"{newcomer.contact.full_name}: {line}")
             for other in self.others(newcomer):
@@ -219,15 +222,16 @@ class Call:
         instruction = (
             "[REFERENCE — context only]\n" + self.note_for(member) + "\n[END REFERENCE]\n\n"
             "He's letting you drop off the call. Say a quick goodbye — one line.")
-        line = yield from self._speak_aside(member, instruction, "You can drop off now.")
+        line = yield from self._speak_aside(member, instruction, "You can drop off now.",
+                                            farewell=True)
         if line:
             self.transcript.append(f"{member.contact.full_name}: {line}")
             for other in self.others(member):
                 other.heard.append(f"{member.contact.full_name}: {line}")
 
-    def _speak_aside(self, member, instruction, prompted_by=None):
+    def _speak_aside(self, member, instruction, prompted_by=None, greeting=False, farewell=False):
         text = ""
-        for event in member.say(instruction, prompted_by):
+        for event in member.say(instruction, prompted_by, greeting=greeting, farewell=farewell):
             event = {**event, "speaker": member.contact.id}
             if event["type"] == "reply_end":
                 text = event["text"]

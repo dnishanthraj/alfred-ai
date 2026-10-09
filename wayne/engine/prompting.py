@@ -277,7 +277,7 @@ def standing_directives(contact):
     return "\n\n".join(parts)
 
 
-def reference_block(vault_block, prompt, search_context="", awareness=()):
+def reference_block(vault_block, prompt, search_context="", awareness=(), contact=None):
     # Short on purpose. A paragraph of caveats about the hour made the hour
     # the most prominent thing in the block, and he remarked on it constantly —
     # "a heavy question for ten o'clock on a Wednesday".
@@ -287,7 +287,7 @@ def reference_block(vault_block, prompt, search_context="", awareness=()):
         f"infer nothing from it about what he has been doing."
     ]
 
-    parts.extend(world.snapshot())
+    parts.extend(world.snapshot(contact))
 
     if vault_block:
         parts.append(
@@ -332,7 +332,7 @@ def reference_block(vault_block, prompt, search_context="", awareness=()):
 
 
 def compose_user_turn(prompt, vault_block, search_context="", awareness=(), spoken=None,
-                      hearsay=""):
+                      hearsay="", contact=None):
     """
     Wrap the prompt with fenced context. The actual message comes last.
 
@@ -340,7 +340,7 @@ def compose_user_turn(prompt, vault_block, search_context="", awareness=(), spok
     operator said — on a call, the lines heard from everyone, labelled. The
     register hint is still taken from the operator's own words.
     """
-    context = reference_block(vault_block, prompt, search_context, awareness)
+    context = reference_block(vault_block, prompt, search_context, awareness, contact)
     if hearsay:
         context += "\n\n" + hearsay
     return (
@@ -486,7 +486,7 @@ def boot_prompt(contact, returning, since_last="", previous_greeting=""):
     # which also removes the only evidence that he greeted at all — and a model
     # that cannot see its last greeting cheerfully writes the same one again.
     # It comes back here instead, as something to avoid rather than to copy.
-    ambient = "".join(f"{line}\n" for line in world.snapshot())
+    ambient = "".join(f"{line}\n" for line in world.snapshot(contact))
 
     avoid = (f"\nYou opened the last call with: \"{previous_greeting}\". "
              f"Do not reuse that phrasing or that time of day."

@@ -37,15 +37,26 @@ def afterthought(session, exchanges, by="text"):
     the background — it costs a second of the model and nobody is waiting.
     """
     contact = session.contact
-    lines = [f"{operator.name() if m['role'] == 'user' else contact.name}: {m['content']}"
-             for m in exchanges[-8:] if m.get("content")]
-    if not lines:
+    exchanges = [m for m in exchanges[-8:] if m.get("content") and not m.get("marker")]
+
+    def line(m):
+        if m["role"] == "user" and m["content"].startswith("(Nothing from him"):
+            return f"({contact.name} texted first)"
+        return f"{operator.name() if m['role'] == 'user' else contact.name}: {m['content']}"
+    # Context, then the exchange that's new. Asked about all of it, the pass
+    # re-found a promise already kept and scheduled it again.
+    earlier = [line(m) for m in exchanges[:-2]]
+    latest = [line(m) for m in exchanges[-2:]]
+    if not latest:
         return None
+    lines = ((["Earlier, for context only:"] + earlier + ["", "The newest exchange:"])
+             if earlier else []) + latest
     now = time.strftime("%A %H:%M")
     instruction = (
         f"It's {now}. Here is the latest of a conversation {'by text' if by == 'text' else 'on a call'} "
         f"between {operator.full_name()} and {contact.full_name}:\n\n" + "\n".join(lines) + "\n\n"
-        f"Answer two questions about {contact.name}, from what was actually said — never guess.\n"
+        f"Answer two questions about {contact.name}, from the newest exchange only — never guess, "
+        f"and never report something from the earlier lines that has already happened.\n"
         f"1. Is {contact.name} now going off to do something, or in the middle of something, that "
         f"keeps them away from their phone — an errand {operator.name()} gave them, a meeting, "
         f"patrol, sleep? Or did they say they're now free, done, or back?\n"
@@ -87,6 +98,8 @@ def apply(session, found):
     if isinstance(reach, dict) and isinstance(reach.get("about"), str) and reach["about"].strip():
         minutes = _number(reach.get("in_minutes"), None)
         activity = state.get("activity")
+        if activity and activity.get("until", 0) <= time.time():
+            activity = None         # long over
         if minutes is None:
             # "When it's done": when the thing they're doing is over.
             minutes = ((activity["until"] - time.time()) / 60 + random.uniform(2, 12)) if activity \
@@ -102,6 +115,57 @@ def _number(value, default):
         return default
 
 
+# --- status lines ---------------------------------------------------------------
+
+def status_line(contact, state):
+    """
+    The status line they'd set on their phone right now, in their own voice —
+    a few words or one emoji. Written by them because a status is something
+    a person writes: Dick's is not Lucius's.
+    """
+    if not contact.shares_status:
+        situation = ("You never say where you are or what you're doing — the line gives "
+                     "nothing away, it's just you.")
+    elif state.get("doing"):
+        situation = f"Right now you're {state['doing']}."
+    else:
+        situation = "Nothing in particular going on."
+    instruction = (
+        f"Write the status line you'd set on your phone right now, the one people see under "
+        f"your name. {situation} The way you text ({contact.texting}). A few words at most, "
+        "or a single emoji. Reply with only the line itself.")
+    try:
+        reply = ollama.chat(model=contact.model, think=False,
+                            options={**contact.options, "temperature": 0.9, "num_predict": 24},
+                            messages=[{"role": "system", "content": contact.system},
+                                      {"role": "user", "content": instruction}])["message"]["content"]
+    except Exception:
+        return ""
+    line = reply.strip().splitlines()[0].strip().strip('"').strip() if reply.strip() else ""
+    return line if 0 < len(line) <= 60 else ""
+
+
+# --- tics ------------------------------------------------------------------------
+
+def untic(contact, text, recent):
+    """
+    A habit is a habit because it's occasional. Shown 'lol' in the examples, a
+    model put it in every message, and Dick read like a tic with a face. A tic
+    used in any of their last few texts is taken out of this one.
+    """
+    for tic in (contact.texting_style or {}).get("tics", []):
+        pattern = re.compile(rf"(?<!\w){re.escape(tic)}(?!\w)", re.I)
+        if not pattern.search(text) or not any(pattern.search(r) for r in recent):
+            continue
+        trimmed = pattern.sub("", text)
+        trimmed = re.sub(r"\s+([,.!?])", r"\1", trimmed)
+        trimmed = re.sub(r"^[\s,.;:!]+|[\s,;:]+$", "", trimmed)
+        trimmed = re.sub(r"\s{2,}", " ", trimmed).strip()
+        if len(trimmed) >= 2:
+            text = trimmed
+    return text
+
+
 # --- impulses ----------------------------------------------------------------
 
 def impulse(session):
@@ -113,14 +177,14 @@ def impulse(session):
     options = []
     heard = grapevine.heard(contact.id)
     if heard:
-        latest = heard[-1]
+        latest = heard[0]          # newest first
         options += [("hearsay", f"what {latest['from']} told you: {latest['text']}")] * 2
     if len(session.history.recent_user(turns=12)) >= 2:
         options += [("thread", "something from your last conversation with him that's stayed with "
                                "you — a follow-up, a thought you had after, a question")] * 2
     if contact.own_life:
         options.append(("own", f"something from your own day: {random.choice(contact.own_life)}"))
-    items = [item.strip() for line in world.snapshot()
+    items = [item.strip() for line in world.snapshot(contact)
              for item in line.split(": ", 1)[-1].split(" | ") if item.strip()]
     if items:
         options.append(("world", f"something you just saw: {random.choice(items)}"))
@@ -131,7 +195,71 @@ def impulse(session):
 
 # --- the finish on a text --------------------------------------------------------
 
-_SENTENCES = re.compile(r"(?<=[.!?…])\s+")
+# How long this reply runs, drawn per text from the person's own spread — so
+# Jason is mostly a word or two and now and then a paragraph, and Alfred is
+# composed every time. Said to the model as a tendency, not a rule.
+_LENGTHS = {
+    "word": "a word or two — dry, minimal",
+    "line": "one short line",
+    "few": "two or three short lines",
+    "long": "longer than usual — you've got something to say",
+}
+
+
+def length_hint(contact, rng=random):
+    weights = (contact.texting_style or {}).get("length")
+    if not weights:
+        return ""
+    kinds = [k for k in _LENGTHS if weights.get(k)]
+    pick = rng.choices(kinds, weights=[weights[k] for k in kinds])[0]
+    return f"Length this time: {_LENGTHS[pick]}, unless it truly needs otherwise."
+
+
+# Keys that sit next to each other, for the slips a thumb actually makes.
+_NEAR = dict(zip("qwertyuiopasdfghjklzxcvbnm", [
+    "wa", "qes", "wrd", "etf", "ryg", "tuh", "yij", "uok", "ipl", "ol", "qsz", "awdx", "sefc",
+    "drgv", "fthb", "gyjn", "hukm", "jilm", "kop", "asx", "zsdc", "xdfv", "cfgb", "vghn",
+    "bhjm", "njk"], strict=True))
+
+
+def typo(word, rng=random):
+    """One realistic slip: a neighbouring key, a dropped, doubled or swapped letter."""
+    if len(word) < 4:
+        return word
+    i = rng.randrange(1, len(word) - 1)
+    kind = rng.choice(("near", "drop", "double", "swap"))
+    if kind == "near" and word[i].lower() in _NEAR:
+        return word[:i] + rng.choice(_NEAR[word[i].lower()]) + word[i + 1:]
+    if kind == "drop":
+        return word[:i] + word[i + 1:]
+    if kind == "double":
+        return word[:i] + word[i] + word[i:]
+    return word[:i - 1] + word[i] + word[i - 1] + word[i + 1:]
+
+
+def slip(contact, text, rng=random):
+    """
+    Maybe a typo in a message, and maybe the correction after it ('*docks').
+    Returns the message as sent, and the correction or None.
+    """
+    style = contact.texting_style or {}
+    if rng.random() >= style.get("typos", 0):
+        return text, None
+    words = [m for m in re.finditer(r"\b[a-z]{4,}\b", text)]
+    if not words:
+        return text, None
+    target = rng.choice(words)
+    wrong = typo(target.group(0), rng)
+    if wrong == target.group(0):
+        return text, None
+    sent = text[:target.start()] + wrong + text[target.end():]
+    return sent, ("*" + target.group(0) if rng.random() < style.get("corrects", 0) else None)
+
+# Sentence ends — but not after a title ("Mr. Freeze" is one name, not two
+# texts) or a lone initial.
+_SENTENCES = re.compile(r"(?<!\bMr\.)(?<!\bMs\.)(?<!\bDr\.)(?<!\bSt\.)(?<!\bMrs\.)(?<!\b[A-Z]\.)"
+                        r"(?<=[.!?…])\s+")
+_URL = re.compile(r"\S+://\S+|\bwww\.\S+")
 _EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200D]+")
 
 
@@ -144,8 +272,12 @@ def styled(contact, text, rng=random):
         text = re.sub(r"\s{2,}", " ", _EMOJI.sub("", text)).strip() or text
     if rng.random() < style.get("lower", 0):
         # Lowercase texters write 'i' too; acronyms they'd keep (GCPD) survive.
+        # Links keep their case — they're case-sensitive.
+        links = _URL.findall(text)
         text = re.sub(r"\b(?![A-Z]{2,}\b)[A-Za-z][\w'’]*",
                       lambda m: m.group(0).lower(), text)
+        for link in links:
+            text = re.sub(re.escape(link.lower()), lambda _m, link=link: link, text, count=1)
     if style.get("period") is False:
         # Only the last one: a full stop mid-message still separates two thoughts.
         text = re.sub(r"(?<![.])\.$", "", text)
@@ -160,13 +292,15 @@ def bubbles(contact, text, rng=random):
     burst = (contact.texting_style or {}).get("burst", 0)
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not burst:
-        return [styled(contact, " ".join(lines), rng)] if lines else []
+        return _with_slips(contact, [styled(contact, " ".join(lines), rng)], rng) if lines else []
     if len(lines) > 1:
         # The model put them on separate lines: separate messages, as written.
-        return [styled(contact, line, rng) for line in lines[:5]]
+        # Never more than five — but what's past the fifth joins it, not the bin.
+        lines = lines[:4] + [" ".join(lines[4:])] if len(lines) > 5 else lines
+        return _with_slips(contact, [styled(contact, line, rng) for line in lines], rng)
     parts = [p.strip() for p in _SENTENCES.split(text) if p and p.strip()]
     if len(parts) < 2 or rng.random() >= burst:
-        return [styled(contact, text, rng)]
+        return _with_slips(contact, [styled(contact, text, rng)], rng)
     out, current = [], parts[0]
     for i, part in enumerate(parts[1:]):
         # The first break always, once it's decided they'd send several.
@@ -176,4 +310,14 @@ def bubbles(contact, text, rng=random):
         else:
             current += " " + part
     out.append(current)
-    return [styled(contact, p, rng) for p in out[:4] if p]
+    out = out[:3] + [" ".join(out[3:])] if len(out) > 4 else out
+    return _with_slips(contact, [styled(contact, p, rng) for p in out if p], rng)
+
+
+def _with_slips(contact, messages, rng):
+    """At most one typo a reply — and its correction, sent straight after."""
+    for i, message in enumerate(messages):
+        sent, correction = slip(contact, message, rng)
+        if sent != message:
+            return messages[:i] + [sent] + ([correction] if correction else []) + messages[i + 1:]
+    return messages

@@ -148,4 +148,12 @@ def missing_requirements():
         problems.append(
             "Memory vault is unencrypted on disk. Run `python run.py --new-key` to secure it."
         )
+    else:
+        try:
+            from cryptography.fernet import Fernet
+            Fernet(MEMORY_KEY.encode())
+        except Exception:
+            problems.append(
+                "WAYNE_MEMORY_KEY is malformed — memory is being written unencrypted. "
+                "Encrypted files it cannot open are set aside, not lost.")
     return problems

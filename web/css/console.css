@@ -285,7 +285,9 @@ html[data-state="searching"] .bar__brand svg { animation: spin 3s linear infinit
   display: grid;
   grid-template-columns: var(--rail-w, 270px) 1fr;
 }
-html[data-rail="hidden"] .shell { grid-template-columns: 0 1fr; }
+/* One column when the directory is hidden: with a 0px column still declared,
+   the stage dropped into it and the whole console vanished. */
+html[data-rail="hidden"] .shell { grid-template-columns: 1fr; }
 html[data-rail="hidden"] .rail { display: none; }
 
 .rail {
@@ -1091,7 +1093,7 @@ html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
 
 /* --- incoming call ------------------------------------------------------------- */
 .incoming {
-  position: fixed; inset: 0; z-index: 60;
+  position: fixed; inset: 0; z-index: 45;   /* under the lock screen (50), never over it */
   display: grid; place-items: center;
   background: rgba(5, 7, 11, 0.62); backdrop-filter: blur(6px);
   animation: toast-in 0.3s var(--ease) both;
@@ -1169,3 +1171,21 @@ html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
   content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
   margin-right: 7px; vertical-align: 1px; background: var(--status, var(--text-faint));
 }
+
+/* The directory scrolls when the window is short, rather than sliding its last
+   rows under the lock button. */
+.rail .panel:not(.panel--foot) { overflow-y: auto; min-height: 0; }
+
+/* A status nobody shares: an empty ring, not a colour that would claim to know. */
+.book__item[data-presence="unknown"]:not([data-live="1"]) .book__dot {
+  background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--text-faint);
+}
+.hovercard__line { font-size: 12px; color: var(--text-dim); font-style: italic; }
+
+/* Toasts step left of the message panel while it's open, off its Close button. */
+html:has(.messages:not([hidden])) .toasts { right: calc(var(--msg-w, 400px) + 16px); }
+
+/* The thread is redrawn on every receipt and typing change; only a bubble that
+   is genuinely new should slide in. */
+.bubble { animation: none; }
+.bubble[data-new="1"] { animation: bubble-in 0.22s var(--ease) both; }

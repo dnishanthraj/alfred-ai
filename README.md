@@ -84,7 +84,7 @@ their own memory on disk.
 1. **Clone and install dependencies**
 
    ```bash
-   git clone https://github.com/<your-username>/alfred-ai.git wayne-console
+   git clone https://github.com/<your-username>/wayne-console.git
    cd wayne-console
    python3.11 -m venv venv       # 3.11 or 3.12 — see the note below
    source venv/bin/activate
@@ -261,7 +261,14 @@ everything about how they behave on their phone (see `wayne/engine/presence.py`)
   typing, then the reply — sent as one composed message or three in a row, in
   their own style: Dick's lowercase bursts, Barbara's exact punctuation, Jason's
   "k", Lucius's rare and solemn thumbs-up.
-- **Calls** to someone busy ring longer, and they answer from where they are.
+- **Calls** to someone busy ring longer, and they answer from where they are —
+  or don't: busy people decline, sleeping ones ring out, and they get back to
+  you when they're free, or not. Ringing straight back reads as urgent.
+- **Status lines** they write themselves, in their own voice. Jason and Selina
+  don't share theirs (`shares_status: false`), so their status reads unknown.
+- **Looking things up** follows the situation: only contacts with `can_search`
+  (Alfred, Lucius, Barbara) can, and only at a screen; only Alfred
+  (`sees_calendar`) sees your calendar.
 
 Three things set it, in order: what the conversation established, being mid-
 conversation with you, and their routine. Send Dick to the docks and he's busy
@@ -419,7 +426,10 @@ Adding one is a file, not a code change. The fields that matter:
 - **`routine`** — their day: asleep, at work, on patrol — each block with the
   status it gives them and the chance it happens on a given day.
 - **`initiative`** — how often they text unprompted, whether they chase an
-  unanswered question, whether they text after a declined call.
+  unanswered question, how likely they are to answer a call by status, whether
+  they text after declining and call or text back later.
+- **`sees_calendar`**, **`search_aloud`**, **`shares_status`** — who sees your
+  calendar, who says so when looking something up, who shows what they're doing.
 
 The relationship in the operator's own words — the bio in the console's personnel
 file — rides in the prompt too, so editing it there changes how they treat him.

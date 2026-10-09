@@ -114,6 +114,12 @@ class Contact:
     # "chase_after": [min, max] minutes, "react": chance of texting after a
     # declined or missed call}.
     initiative: dict = field(default_factory=dict)
+    # Whether his calendar reaches them (Alfred), and whether they say so when
+    # they look something up — Barbara just knows.
+    sees_calendar: bool = False
+    search_aloud: bool = True
+    # Whether he can see what they're doing. Jason and Selina don't share.
+    shares_status: bool = True
 
     @property
     def has_voice(self):
@@ -225,6 +231,9 @@ def _load_profile(path):
         texting_primer=tuple(raw.get("texting_primer", [])),
         routine=tuple(raw.get("routine", [])),
         initiative=raw.get("initiative", {}),
+        sees_calendar=bool(raw.get("sees_calendar", False)),
+        search_aloud=bool(raw.get("search_aloud", True)),
+        shares_status=bool(raw.get("shares_status", True)),
     )
 
 

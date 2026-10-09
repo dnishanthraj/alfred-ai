@@ -170,11 +170,22 @@ class History:
             start += 1
         return start
 
+    def _is_marker(self, message, marker):
+        """
+        The placeholder a call's greeting answers. Flagged when written; older
+        histories without the flag fall back to matching the text — which also
+        matched him actually saying "Alfred?", and pruned that exchange.
+        """
+        if "marker" in message:
+            return bool(message["marker"])
+        flagged = any("marker" in m for m in self.messages)
+        return not flagged and message["role"] == "user" and message["content"] == marker
+
     def last_greeting(self, marker):
         """The greeting from the most recent connection, or '' if there is none."""
         for index in range(len(self.messages) - 2, -1, -1):
             if (self.messages[index]["role"] == "user"
-                    and self.messages[index]["content"] == marker
+                    and self._is_marker(self.messages[index], marker)
                     and self.messages[index + 1]["role"] == "assistant"):
                 return self.messages[index + 1]["content"]
         return ""
@@ -194,7 +205,7 @@ class History:
         while index < len(self.messages):
             message = self.messages[index]
             is_pair = (message["role"] == "user"
-                       and message["content"] == marker
+                       and self._is_marker(message, marker)
                        and index + 1 < len(self.messages)
                        and self.messages[index + 1]["role"] == "assistant")
             if is_pair:

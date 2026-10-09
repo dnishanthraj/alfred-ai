@@ -26,13 +26,14 @@ only way that actually works mid-stream:
 import concurrent.futures
 import random
 import re
+import time
 from collections import deque
 
 import ollama
 
 from .. import config, delivery, events
 from ..memory import History, Story, Vault
-from . import grapevine, guards, presence, prompting, world
+from . import grapevine, guards, initiative, presence, prompting, world
 from .search import format_search_results, google_search, is_factual_lookup
 
 # Searches run on a worker so the holding line can be written meanwhile.
@@ -200,10 +201,12 @@ _SEARCH_MARKER_COMPLETE = re.compile(r"\[\s*SEARCH\s*:\s*([^\]\n]+?)\s*(?:\]|\n)
 
 # Once generation has finished the buffer cannot grow, so a marker missing its
 # closing bracket — or its opening one — can be read safely.
-_SEARCH_MARKER = re.compile(r"\[?\s*SEARCH\s*:\s*([^\]\n]+?)\s*\]?\s*$", re.I | re.M)
+# Case-sensitive, and opening a bracket or a line: "Research: still nothing"
+# was read as a marker and spoken as "Re".
+_SEARCH_MARKER = re.compile(r"(?:\[\s*|^\s*)SEARCH\s*:\s*([^\]\n]+?)\s*\]?\s*$", re.M)
 
 # Written at the end of a reply when they're the one closing the call.
-_HANG_UP = re.compile(r"\[\s*(hang(s|ing)? up|end(s)? (the )?call)\s*\]", re.I)
+_HANG_UP = re.compile(r"\[\s*(hang(s|ing)?\s+up|end(s|ing)?\s+(the\s+)?call|click)\b[^\]]*\]", re.I)
 
 # Offered once a call has had some substance — never on the greeting, which
 # would end calls before they started.
@@ -246,7 +249,10 @@ class ContactSession:
         self._recent_asides = deque(maxlen=6)
         self._looked = False   # a search has run this turn
         self._last_call = None  # how the previous call ended (see call_ended)
-        self.call_start = len(self.history.messages)
+        self.call_started_at = time.time()
+        # Texts that landed during a call but were overtaken before they could
+        # be answered: they ride along with the next turn.
+        self.unseen_texts = []
         # On a call with others (see wayne.engine.party): the call, and what
         # this contact has heard said since they last spoke.
         self.call = None
@@ -325,7 +331,7 @@ class ContactSession:
         dropped_presence = 0  # sentences discarded for putting him in the room
         index = 0
         checked_opening = False
-        can_search = self.contact.can_search
+        can_search = self._can_look() and not getattr(self, "_no_search", False)
         self._pending_query = None
         self._cue_spent = False
         self._hanging_up = False
@@ -372,7 +378,8 @@ class ContactSession:
                     return False, None
             return True, text
 
-        for piece in self._stream(payload):
+        stream = self._stream(payload)
+        for piece in stream:
             buffer += piece
             if _HANG_UP.search(buffer):
                 # They're closing the call: their goodbye is meant, not trailing.
@@ -406,6 +413,7 @@ class ContactSession:
                     checked_opening = True
                     if (guards.too_similar(sentence, recent)
                             or guards.parrots(sentence, prompt)):
+                        stream.close()      # or the retry queues behind the rest of it
                         return (yield from self._regenerate(payload, prompt, recent))
 
                 emit, text = finalize(sentence)
@@ -466,7 +474,9 @@ class ContactSession:
         if _HANG_UP.search(tail):
             self._hanging_up = leaving = True
             tail = _HANG_UP.sub("", tail).strip()
-        if self._hanging_up:
+        tail_is_content = bool(tail) and not self._is_signoff(tail)
+        if self._hanging_up or tail_is_content:
+            # Real content after them means they weren't a farewell after all.
             for pending in held:
                 if len(spoken) < max_sentences:
                     spoken.append(pending)
@@ -532,10 +542,15 @@ class ContactSession:
         if _HANG_UP.search(text):
             self._hanging_up = True
             text = _HANG_UP.sub("", text).strip()
+        text = self._plain(text)
         if not text or guards.parrots(text, prompt) or guards.too_similar(text, recent):
             text = self._deflection()
         text = guards.apply(text, prompt, self.contact.max_reply_sentences,
-                            self.already_greeted, self.contact.forbidden_address)
+                            self.already_greeted, self.contact.forbidden_address,
+                            farewell=getattr(self, "_hanging_up", False))
+        if self.call:
+            text = " ".join(x for x in (self.call.own_words(self, y)
+                                        for y in guards.split_sentences(text)) if x)
         for i, sentence in enumerate(guards.split_sentences(text)):
             if sentence.strip():
                 yield events.sentence(i, sentence.strip())
@@ -606,11 +621,12 @@ class ContactSession:
 
         # Only the most recent connection belongs in the context.
         self.history.drop_prior_greetings(marker)
-        # Where this call begins in the history, for the grapevine at hang-up.
-        self.call_start = len(self.history.messages)
+        self.mark_call_start()
+        self._silences, self._last_silence_move = 0, None
 
         # The 'user' side is a neutral placeholder, never shown on screen.
         self.history.append("user", marker)
+        self.history.messages[-1]["marker"] = True
         self.history.append("assistant", greeting)
         self.history.save()
         self.already_greeted = True
@@ -657,7 +673,7 @@ class ContactSession:
         if kind == "world":
             # One item, picked here. Given the whole feed he raised the top
             # headline every time.
-            items = [item.strip() for line in world.snapshot()
+            items = [item.strip() for line in world.snapshot(self.contact)
                      for item in line.split(": ", 1)[-1].split(" | ") if item.strip()]
             context.append("From your terminal: " + random.choice(items))
         elif kind == "own":
@@ -682,7 +698,7 @@ class ContactSession:
         moves = ["own", "own"]
         if len(self.history.recent_user(turns=12)) >= 2:
             moves.append("thread")
-        if world.snapshot():
+        if world.snapshot(self.contact):
             moves.append("world")
         # Never the same move twice running, across calls of the same session.
         choices = [m for m in moves if m != self._last_silence_move] or moves
@@ -858,7 +874,7 @@ class ContactSession:
             "he has clearly stepped away. Make it plain you will be here when he "
             "comes back."
         )
-        yield from self._speak_aside(instruction, temperature=0.9, cap=2)
+        yield from self._speak_aside(instruction, temperature=0.9, cap=2, farewell=True)
 
     def resume(self):
         """
@@ -879,7 +895,13 @@ class ContactSession:
         )
         yield from self._speak_aside(instruction, temperature=0.85, cap=3)
 
-    def say(self, instruction, prompted_by=None):
+    def _plain(self, text):
+        """Markers that only mean something to the engine, never said or sent."""
+        text = _SEARCH_MARKER_COMPLETE.sub("", text or "")
+        text = _SEARCH_MARKER.sub("", text)
+        return _HANG_UP.sub("", text).strip()
+
+    def say(self, instruction, prompted_by=None, greeting=False, farewell=False):
         """
         One line the contact says because of something on the call — joining
         it, leaving it — rather than in answer to anything. Remembered, like
@@ -891,7 +913,11 @@ class ContactSession:
             text = self._chat_once(payload, temperature=0.85, num_predict=80)
         except Exception:
             text = ""
-        text = guards.apply(text, "", 2, True, self.contact.forbidden_address) if text else ""
+        text = self._plain(text)
+        # Joining a call is a greeting and leaving one a goodbye: the guards
+        # that strip those from ordinary turns emptied both to "Mm.".
+        text = guards.apply(text, "", 2, not greeting, self.contact.forbidden_address,
+                            farewell=farewell) if text else ""
         if self.call:
             text = " ".join(s for s in (self.call.own_words(self, x)
                                         for x in guards.split_sentences(text)) if s)
@@ -931,6 +957,16 @@ class ContactSession:
         elif why in ("declined", "missed"):
             ask = (f"You just rang him and he {'declined the call' if why == 'declined' else 'did not pick up'}. "
                    f"You were calling about: {about}. Text him instead, the way you would.")
+        elif why == "second_thought":
+            ask = ("You've just texted him. A moment later one more thing occurs to you — send it "
+                   "as a short follow-up text. If nothing would, reply with exactly SKIP.")
+        elif why == "busy_now":
+            ask = (f"He's ringing you right now and you're not picking up — {about}. Text him "
+                   "a line, the way you would when you can't talk. Say why only if you'd bother.")
+        elif why == "callback":
+            ask = (f"He rang you earlier and you didn't pick up — {about}. You're free now. "
+                   "Get back to him by text. Say why you couldn't answer if you want to, or don't; "
+                   "if it was nothing in particular, it was nothing in particular.")
         elif why == "promise":
             ask = (f"You said you'd get back to him about {about} — whatever you were doing for "
                    "it is done now. Text him. "
@@ -950,15 +986,17 @@ class ContactSession:
         except Exception:
             return ""
         text = guards.strip_forbidden_address(text, self.contact.forbidden_address)
-        text = delivery.clean(guards.strip_presence(text) or text).strip().strip('"')
+        text = delivery.clean(guards.strip_presence(self._plain(text)) or self._plain(text)).strip().strip('"')
         # A text, not a letter: told "a line or two", a model writes a paragraph.
         lines = [guards.cap_length(line, 3) for line in text.splitlines() if line.strip()][:4]
         text = "\n".join(lines)
+        if why == "second_thought" and re.match(r"\W*skip\b", text, re.I):
+            return ""
         if text:
             self.history.record_exchange(REACH_MARKER, text, via="text")
         return text
 
-    def _speak_aside(self, instruction, temperature, cap):
+    def _speak_aside(self, instruction, temperature, cap, farewell=False):
         """
         A turn the contact initiates rather than answers.
 
@@ -980,8 +1018,8 @@ class ContactSession:
         except Exception:
             yield events.state(events.IDLE)
             return
-        text = guards.apply(text, "", cap, self.already_greeted,
-                            self.contact.forbidden_address)
+        text = guards.apply(self._plain(text), "", cap, self.already_greeted,
+                            self.contact.forbidden_address, farewell=farewell)
         self._recent_asides.append(text)
         for i, sentence in enumerate(guards.split_sentences(text)):
             if sentence.strip():
@@ -999,11 +1037,17 @@ class ContactSession:
         the reply, which was never generated, is not.
         """
         self._spoken = []
+        self._said = (prompt or "").strip()
+        self._via = via
         try:
             yield from self._ask(prompt, interrupted, confidence, follow_up, via)
         except GeneratorExit:
+            # What was heard, as it was put to them (with whatever else was
+            # heard on the call) — and only if the turn wasn't already
+            # recorded, or closing the generator after the fact recorded it twice.
             if self._spoken:
-                self.history.record_exchange((prompt or "").strip(), " ".join(self._spoken))
+                self.history.record_exchange(self._said, " ".join(self._spoken),
+                                             via="text" if self._via == "text" else None)
             raise
 
     def _ask(self, prompt, interrupted, confidence, follow_up=False, via=None):
@@ -1019,6 +1063,11 @@ class ContactSession:
         said = self._heard_turn(prompt, follow_up, via) if self.call else prompt
         if via == "text_on_call" and not self.call:
             said = f"(texted you during the call) {prompt}"
+        if self.unseen_texts and via != "text":
+            said = "\n".join(f"(texted you during the call) {t}" for t in self.unseen_texts) \
+                + "\n" + said
+            self.unseen_texts = []
+        self._said = said
         if not self.call:
             yield events.message("user", prompt)
 
@@ -1042,9 +1091,13 @@ class ContactSession:
         elif via == "text":
             # A text is answered as a text: short, written, in their own style.
             awareness.append(
-                "He's texting you, not calling. Reply as a text message — a line or two, "
+                "He's texting you, not calling. Reply as a text message, "
                 "written the way you text" + (f" ({self.contact.texting})" if self.contact.texting
-                                              else "") + ", no stage cues.")
+                                              else "") + ", no stage cues. "
+                "Several short texts go on separate lines.")
+            length = initiative.length_hint(self.contact)
+            if length:
+                awareness.append(length)
         if self.call:
             awareness.append(self.call.note_for(self, follow_up))
         elif via is None and self._said_this_call() >= 2:
@@ -1057,19 +1110,24 @@ class ContactSession:
         search_context = ""
         # Unless an ambient feed already has it: that is the same answer
         # without a second and a half of searching and a page of snippets.
-        covered = world.covered(prompt, (self.contact.name, self.contact.full_name))
+        covered = world.covered(prompt, (self.contact.name, self.contact.full_name), self.contact)
         # Weather with nowhere attached and nowhere known: ask, don't search.
         placeless = (_WEATHERISH.search(prompt) and not config.LOCATION
                      and not re.search(r"\b(in|at|for) [A-Z]", prompt))
-        if (self.contact.can_search and is_factual_lookup(prompt) and not covered
+        if self.contact.can_search and not self._can_look() and is_factual_lookup(prompt):
+            state = presence.of(self.contact).now()
+            awareness.append(
+                f"You're away from any screen right now ({state['doing'] or 'out'}) — you can't "
+                "look anything up. Answer from what you know, or say you'll check when you can.")
+        if (self._can_look() and is_factual_lookup(prompt) and not covered
                 and not placeless and not follow_up):
             yield events.state(events.SEARCHING)
             search_context = yield from self._run_search(
-                prompt, hold_for=None if via == "text" else prompt)
+                prompt, hold_for=None if via == "text" or not self.contact.search_aloud else prompt)
 
         user_turn = prompting.compose_user_turn(
             prompt, vault_block, search_context, awareness, spoken=said,
-            hearsay=grapevine.block(self.contact.id))
+            hearsay=grapevine.block(self.contact.id), contact=self.contact)
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn,
                                           texting=texting)
 
@@ -1093,22 +1151,32 @@ class ContactSession:
             # a line rather than leaving dead air over the search.
             spoke = getattr(self, "_spoke_before_search", False)
             search_context = yield from self._run_search(
-                query, hold_for=None if spoke else prompt)
+                query, hold_for=None if spoke or not self.contact.search_aloud else prompt)
 
             user_turn = prompting.compose_user_turn(
-                prompt, vault_block, search_context, awareness, spoken=said)
+                prompt, vault_block, search_context, awareness, spoken=said, contact=self.contact)
             payload = prompting.build_payload(
                 self.contact, self.history.for_model(), user_turn, texting=texting)
             yield events.state(events.THINKING)
             yield events.reply_start()
             try:
+                # One search a turn. Asked again — likeliest when the first
+                # found nothing — he answers from what he has instead.
+                self._no_search = True
                 reply = yield from self._emit_sentences(payload, prompt)
             except Exception as exc:
                 yield events.notice(f"Connection severed: {exc}", "error")
                 yield events.state(events.IDLE)
                 return
+            finally:
+                self._no_search = False
+            if reply == _SEARCH_REQUESTED:
+                reply = ""
 
+        if not isinstance(reply, str) or not reply:
+            reply = reply if isinstance(reply, str) and reply else "Mm."
         self.history.record_exchange(said, reply, via="text" if via == "text" else None)
+        self._spoken = []
         self.heard = []
         yield events.reply_end(reply)
         closing = guards.user_is_leaving(prompt) or getattr(self, "_hanging_up", False)
@@ -1116,10 +1184,50 @@ class ContactSession:
             yield events.call_ending()
         yield events.state(events.IDLE)
 
+    def _can_look(self):
+        """
+        Whether they could look something up right now: someone who searches
+        at all, at a screen. Alfred almost always is; Barbara at the clock
+        tower is; nobody on a rooftop, asleep, or out on an errand is.
+        """
+        if not self.contact.can_search:
+            return False
+        state = presence.of(self.contact).now()
+        return state["source"] in ("free", "engaged") or bool(state.get("terminal"))
+
+    def mark_call_start(self):
+        """
+        This call begins now. A time, not a list index: the history is trimmed
+        from the front as it grows, and an index into it went stale after
+        thirty exchanges — every call after that looked empty, so nothing
+        travelled on the grapevine and no promise made on a call was kept.
+        """
+        self.call_started_at = time.time()
+
+    def call_messages(self):
+        """What has been said since this call began, greeting placeholder excluded."""
+        return [m for m in self.history.messages
+                if m.get("at", 0) >= self.call_started_at - 0.001 and not m.get("marker")]
+
+    def call_index(self):
+        """Where this call starts in the history, as an index — for older callers."""
+        for i, m in enumerate(self.history.messages):
+            if m.get("at", 0) >= self.call_started_at - 0.001:
+                return i
+        return len(self.history.messages)
+
+    def keep_heard(self):
+        """
+        Off a group call with lines heard and not yet answered: remembered as
+        heard, or "what did you make of what Lucius said?" draws a blank.
+        """
+        if self.heard:
+            self.history.record_exchange("\n".join(self.heard), "Mm.")
+            self.heard = []
+
     def _said_this_call(self):
         """How many times he has spoken since this call began."""
-        return sum(1 for m in self.history.messages[self.call_start:]
-                   if m["role"] == "user" and not m.get("via"))
+        return sum(1 for m in self.call_messages() if m["role"] == "user" and not m.get("via"))
 
     def _heard_turn(self, prompt, follow_up, via=None):
         """
@@ -1142,7 +1250,7 @@ class ContactSession:
         emitted here and the turn is over.
         """
         vault_block = self.vault.as_block(prompt)
-        user_turn = prompting.compose_user_turn(prompt, vault_block)
+        user_turn = prompting.compose_user_turn(prompt, vault_block, contact=self.contact)
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn)
 
         yield events.state(events.THINKING)
@@ -1212,7 +1320,7 @@ class ContactSession:
             yield events.sentence(0, holding)
             yield events.reply_end(holding, interim=True)
         try:
-            results = pending.result()
+            results = pending.result(timeout=15)
         except Exception as exc:
             yield events.notice(f"Search failed: {exc}", "warn")
             return None    # looked, and came back empty-handed
@@ -1297,13 +1405,12 @@ class ContactSession:
                         "your conversations, as he asked. You start fresh.", record=False)
             return True
 
-        if lowered.startswith(_FORGET_PREFIXES):
-            needle = ""
-            for prefix in _FORGET_PREFIXES:
-                if lowered.startswith(prefix):
-                    needle = prompt[len(prefix):].strip(" .")
-                    break
-            removed = self.vault.forget(needle) if needle else []
+        needle = next((prompt[len(p):].strip(" .!?") for p in _FORGET_PREFIXES
+                       if lowered.startswith(p)), None)
+        # "Forget about it." is an idiom, not an instruction: it names nothing,
+        # and as a search for "it" it once struck most of the notes.
+        if needle is not None and needle.lower() not in ("", "it", "that", "this", "them", "all that"):
+            removed = self.vault.forget(needle)
             yield from self._acknowledge(
                 prompt, f"He asked you to forget: \"{needle}\". " + (
                     "You have struck it from your notes." if removed else

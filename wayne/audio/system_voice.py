@@ -13,6 +13,7 @@ Optional: set BATCOMPUTER_VOICE_ID. Without it the console is silent at these
 moments, as it always was.
 """
 import hashlib
+import os
 import random
 import threading
 import time
@@ -55,6 +56,11 @@ LINES = {
         "{name} is calling.",
         "Secure line request from {name}.",
     ],
+    "declined": [
+        "{name} declined the call.",
+        "Call rejected by {name}.",
+        "{name} can't take the call.",
+    ],
     "unavailable": [
         "{name} is not available.",
         "No answer from {name}'s line.",
@@ -92,10 +98,15 @@ def audio(text, voice_engine):
     path = _cache_path(text)
     if path.exists():
         return path.read_bytes()
-    clip = voice_engine.synthesize(text, config.BATCOMPUTER_VOICE_ID)
+    # Within the voices' concurrency cap: priming a hundred lines at startup
+    # outside it took a slot from the first call's greeting, which then 429'd.
+    clip = voice_engine.synthesize_capped(text, config.BATCOMPUTER_VOICE_ID)
     with _lock:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(clip)
+        # Written aside and renamed, so a half-written clip is never served.
+        tmp = path.with_suffix(".part")
+        tmp.write_bytes(clip)
+        os.replace(tmp, path)
     return clip
 
 

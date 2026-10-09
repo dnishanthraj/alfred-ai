@@ -16,8 +16,12 @@
 
   var current = null;
   var handlers = { onLine: null };
+  // Bumped by stop(): a line still being fetched when the call was answered
+  // must not start talking over the greeting once it arrives.
+  var generation = 0;
 
   function say(event, contactId) {
+    var mine = ++generation;
     var url = '/api/system/' + event + (contactId ? '?contact=' + encodeURIComponent(contactId) : '');
     return fetch(url)
       .then(function (r) {
@@ -26,9 +30,9 @@
         return r.blob().then(function (blob) { return { blob: blob, line: line }; });
       })
       .then(function (clip) {
-        if (!clip) return '';
+        if (!clip || mine !== generation) return '';
         return new Promise(function (resolve) {
-          stop();
+          if (current) { var old = current; current = null; old.pause(); }
           var audio = new Audio(URL.createObjectURL(clip.blob));
           current = audio;
           var done = function () { if (current === audio) current = null; resolve(clip.line); };
@@ -44,6 +48,7 @@
 
   /** Cut the line short — someone on the call is about to speak. */
   function stop() {
+    generation++;
     if (current) { var a = current; current = null; a.pause(); }
   }
 

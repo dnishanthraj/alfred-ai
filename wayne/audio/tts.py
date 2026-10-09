@@ -93,6 +93,11 @@ class AlfredVoiceService:
             raise SynthesisError("ElevenLabs returned empty audio — check API key or quota")
         return audio
 
+    def synthesize_capped(self, text, voice_id):
+        """synthesize(), within the same concurrency cap as the contacts' voices."""
+        with self._slots:
+            return self.synthesize(text, voice_id)
+
     def synthesize_timed(self, text, voice_id):
         """
         Timed synthesis, within the concurrency cap, retrying a "busy" refusal
@@ -104,9 +109,13 @@ class AlfredVoiceService:
                     return self._timed(text, voice_id)
                 except SynthesisError as exc:
                     if "429" in str(exc) and attempt < 2:
-                        time.sleep(0.35 * (attempt + 1))   # someone else's slot frees up
+                        time.sleep(0.6 * (attempt + 1) ** 2)   # someone else's slot frees up
                         continue
                     raise
+                except requests.exceptions.ConnectionError as exc:
+                    # Can't reach the service at all: a second request would
+                    # only double the wait before saying so.
+                    raise SynthesisError(f"ElevenLabs unreachable: {exc}") from exc
                 except Exception:
                     # Timed out or dropped. One more go without the alignment,
                     # the lighter request; the page estimates word timing.
@@ -141,15 +150,16 @@ class AlfredVoiceService:
             raise SynthesisError(f"ElevenLabs returned {response.status_code}: {response.text[:200]}")
 
         audio, chars, starts = bytearray(), [], []
-        for line in response.iter_lines():
-            if not line:
-                continue
-            chunk = json.loads(line)
-            if chunk.get("audio_base64"):
-                audio += base64.b64decode(chunk["audio_base64"])
-            alignment = chunk.get("alignment") or {}
-            chars += alignment.get("characters") or []
-            starts += alignment.get("character_start_times_seconds") or []
+        with response:      # released even when a chunk fails to parse
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                chunk = json.loads(line)
+                if chunk.get("audio_base64"):
+                    audio += base64.b64decode(chunk["audio_base64"])
+                alignment = chunk.get("alignment") or {}
+                chars += alignment.get("characters") or []
+                starts += alignment.get("character_start_times_seconds") or []
         if len(audio) < 100:
             raise SynthesisError("ElevenLabs returned empty audio — check API key or quota")
         return bytes(audio), word_starts(chars, starts)

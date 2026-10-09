@@ -21,7 +21,8 @@ def _log(tmp_path):
 def _contact(**kw):
     base = dict(id="nightwing", name="Dick", full_name="Dick Grayson", routine=(),
                 texting_pace={"phone": 0.0, "online_read": [0.05, 0.05], "wpm": 10000},
-                texting_style={}, initiative={})
+                texting_style={}, initiative={}, shares_status=True, can_search=False,
+                texting="")
     base.update(kw)
     return SimpleNamespace(**base)
 
@@ -147,6 +148,7 @@ def _console(tmp_path, monkeypatch, contact):
     console._pending_texts, console._texters, console.call, console.current_id = {}, {}, None, None
     console.sessions, console._shown_presence, console._incoming = {}, {}, None
     console._ring_timer, console._release, console.clients = None, None, {object()}
+    console._tasks, console._connecting, console._writing_lines = set(), False, False
     console.turn_lock = None
     events = []
 
@@ -221,7 +223,7 @@ def test_a_declined_call_goes_in_the_thread_and_they_may_text_instead(tmp_path, 
     console, events = _console(tmp_path, monkeypatch, contact)
     texted = []
 
-    async def unprompted(c, about, why, counted=False):
+    async def unprompted(c, about, why):
         texted.append((about, why))
     console._send_unprompted = unprompted
     monkeypatch.setattr(web.random, "uniform", lambda a, b: 0)
@@ -243,15 +245,90 @@ def test_nobody_texts_out_of_the_blue_past_the_daily_budget(tmp_path, monkeypatc
     console, events = _console(tmp_path, monkeypatch, contact)
     sent = []
 
-    async def unprompted(c, about, why, counted=False):
+    async def unprompted(c, about, why):
         sent.append(why)
     console._send_unprompted = unprompted
     monkeypatch.setattr(initiative, "impulse", lambda s: "something")
     monkeypatch.setattr(web.config, "QUIET_HOURS", "0-0")
     monkeypatch.setattr(web.config, "INITIATIVE_PER_DAY", 2)
+    console._tasks, console._count_initiative = set(), lambda: None
+
+    async def tick():
+        await console._maybe_reach_out(time.time())
+        await asyncio.sleep(0.01)      # let the spawned send run
     console._initiative_log = lambda: [time.time() - 3600 * 5, time.time() - 3600 * 3]
-    asyncio.run(console._maybe_reach_out(time.time()))
+    asyncio.run(tick())
     assert sent == []
     console._initiative_log = lambda: []
-    asyncio.run(console._maybe_reach_out(time.time()))
+    asyncio.run(tick())
     assert sent == ["impulse"]
+
+
+# --- not picking up ----------------------------------------------------------------
+
+def test_who_picks_up_depends_on_what_theyre_doing():
+    contact = _contact(initiative={"answers": {"online": 1.0, "busy": 0.0, "offline": 0.0}})
+    assert presence.answers(contact, {"status": "online"}) is None
+    assert presence.answers(contact, {"status": "offline"}) == "no_answer"
+    assert presence.answers(contact, {"status": "busy"}) in ("declined", "no_answer")
+    # Ringing straight back reads as urgent: odds of answering go up.
+    rng = random.Random(0)
+    half = _contact(initiative={"answers": {"busy": 0.5}})
+    first = sum(presence.answers(half, {"status": "busy"}, rng=rng) is None for _ in range(2000))
+    again = sum(presence.answers(half, {"status": "busy"}, True, rng) is None for _ in range(2000))
+    assert again > first + 400
+
+
+def test_a_declined_call_closes_the_line_and_leaves_a_callback(tmp_path, monkeypatch):
+    contact = _contact(initiative={"busy_text": 0.0, "callback": 1.0, "callback_call": 1.0},
+                       availability=SimpleNamespace(is_available=lambda: True))
+    console, events = _console(tmp_path, monkeypatch, contact)
+    console.turn_lock, console.turn_epoch, console._refused_at = asyncio.Lock(), 0, {}
+    console._ringing_out, console.migrated = None, []
+
+    class FakeCall:
+        def __init__(self):
+            self.members = []
+
+        def join(self, s):
+            self.members.append(s)
+
+        def leave(self, s):
+            self.members.remove(s)
+    monkeypatch.setattr(web, "Call", FakeCall)
+    monkeypatch.setattr(web, "DECLINE_AFTER", (0.01, 0.01))
+    monkeypatch.setattr(presence, "answers", lambda *a, **k: "declined")
+    presence.of(contact).set_activity("in a board meeting", "busy", 30)
+
+    async def run():
+        await console.connect("nightwing")
+        assert console._ringing_out is None and console.current_id is None
+        await console.submit("hello?")            # nobody on the line
+        await asyncio.sleep(0.05)
+
+    asyncio.run(run())
+    kinds = [e["type"] for e in events]
+    assert "call_refused" in kinds and "reply_end" not in kinds
+    (intent,) = presence.of(contact).intents()
+    assert intent["origin"] == "callback" and intent["action"] == "call"
+    assert "board meeting" in intent["about"]
+    # Due once the meeting's over, not before.
+    assert intent["due"] > time.time() + 25 * 60
+
+
+# --- texting habits --------------------------------------------------------------------
+
+def test_typos_are_realistic_and_sometimes_corrected():
+    rng = random.Random(5)
+    contact = _contact(texting_style={"typos": 1.0, "corrects": 1.0})
+    sent, correction = initiative.slip(contact, "heading to the docks now", rng)
+    assert sent != "heading to the docks now" and correction.startswith("*")
+    assert correction[1:] in "heading to the docks now"
+    careful = _contact(texting_style={"typos": 0.0})
+    assert initiative.slip(careful, "heading to the docks now") == ("heading to the docks now", None)
+
+
+def test_reply_length_is_drawn_from_their_own_spread():
+    terse = _contact(texting_style={"length": {"word": 1.0}})
+    assert "a word or two" in initiative.length_hint(terse)
+    assert initiative.length_hint(_contact()) == ""

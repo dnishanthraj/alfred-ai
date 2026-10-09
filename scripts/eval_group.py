@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from wayne.contacts import directory  # noqa: E402
-from wayne.engine import ContactSession  # noqa: E402
+from wayne.engine import ContactSession, grapevine, presence  # noqa: E402
 from wayne.engine.party import Call  # noqa: E402
 from wayne.memory import History, Story, Vault  # noqa: E402
 
@@ -44,6 +44,13 @@ SCRIPTS = [
 
 def quiet():
     History.save = lambda self: None
+    History.clear = lambda self: None
+    grapevine.clear = lambda contact_id: None
+    grapevine.block = lambda contact_id: ""
+    grapevine.note_call = lambda *a, **k: None
+    presence.Presence.note = lambda self, t=None: ""
+    presence.Presence.now = lambda self, t=None: {
+        "status": presence.IDLE, "doing": "", "until": 0, "source": "free", "last_active": 0}
     for cls in (Vault, Story):
         cls.memorize = lambda self, text: text
         cls.forget = lambda self, needle: []

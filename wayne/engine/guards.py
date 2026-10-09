@@ -32,13 +32,14 @@ SIGNOFF_PATTERNS = [
 LEAVING_CUES = [
     r"\bbye\b",
     r"\bgood ?night\b",
-    r"\bnight\b[\s!.]*$",        # "night" is a farewell only as a parting word
+    r"^\W*(good)?\s*night\W*$",  # "night" is a farewell only said on its own —
+                                  # "Long night." is a remark, not a goodbye
     r"\bgoing to (bed|sleep)\b",
     r"\bgonna sleep\b",
     r"\boff to bed\b",
-    r"\bi'?m tired\b",
+    r"\bi'?m tired\b(?!\s+of)",   # "tired of waiting" is impatience, not bed
     r"\bheading off\b",
-    r"\bsee you\b",
+    r"\bsee you\b(?![^?]*\?)",     # "see you at the gala — what should I wear?" isn't leaving
     r"\btalk later\b",
     r"\blogging off\b",
     r"\bturning in\b",
@@ -286,7 +287,8 @@ PRESENCE_PATTERNS = [
     r"\blet me (look at|see) you\b",
     # He hears a voice and nothing else. "Good to see you" is the single most
     # natural greeting in English and the one he cannot honestly make.
-    r"\b(see|seeing) (you|your face|your ugly mug)\b",
+    r"\b(good|nice|great|lovely) to (see|be seeing) you\b",
+    r"\b(see|seeing) (your face|your ugly mug)\b",
     r"\bsight of you\b",
     # He cannot see him. Anything describing how the operator *looks* is
     # invention dressed as observation, which is the most convincing kind.
@@ -359,12 +361,17 @@ def strip_forbidden_address(text, terms):
             lambda m: m.group(1) + m.group(2).upper(),
             text, flags=re.I,
         )
-        # " ... lad." with no comma, still clearly a vocative at the end
-        text = re.sub(rf"\s+{word}\b(?=\s*[.!?]|$)", "", text, flags=re.I)
+        # " ... lad." with no comma, still clearly a vocative at the end — but
+        # not after a determiner or possessive, where it's just a noun: "Tim's
+        # a good kid." lost its last word, and "He is your son." became "He is
+        # your."
+        text = re.sub(rf"(?<!\ba)(?<!\ban)(?<!\bthe)(?<!\bgood)(?<!\bmy)(?<!\byour)(?<!\bhis)"
+                      rf"(?<!\bher)(?<!\bour)(?<!\btheir)(?<!'s)\s+{word}\b(?=\s*[.!?]|$)",
+                      "", text, flags=re.I)
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
-def apply(text, prompt, max_sentences, already_greeted, forbidden_address=()):
+def apply(text, prompt, max_sentences, already_greeted, forbidden_address=(), farewell=False):
     """
     The full guard stack. Order matters: sign-offs first (tail), then the
     greeting (head), then the runaway cap.
@@ -375,7 +382,7 @@ def apply(text, prompt, max_sentences, already_greeted, forbidden_address=()):
     # the length cap, or a reply gets trimmed to make room for staging that is
     # then thrown away.
     text = strip_presence(text) or text
-    if not user_is_leaving(prompt):
+    if not farewell and not user_is_leaving(prompt):
         text = strip_signoffs(text)
     if already_greeted:
         stripped = strip_regreeting(text)

@@ -49,7 +49,7 @@ _MAX_CACHED_CLIPS = 64
 # and there is otherwise nothing to look at. data/ is gitignored.
 log = logging.getLogger("wayne")
 if not log.handlers:
-    paths.DATA_DIR.mkdir(exist_ok=True)
+    paths.DATA_DIR.mkdir(parents=True, exist_ok=True)
     _handler = logging.FileHandler(paths.DATA_DIR / "console.log")
     _handler.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
     log.addHandler(_handler)
@@ -69,6 +69,11 @@ PICKUP_EXTRA = {presence.BUSY: (1.5, 5.0), presence.OFFLINE: (4.0, 9.0)}
 
 # How long an incoming call rings before it counts as missed.
 RING_FOR = 28
+# A call they won't take: rejected after a ring or two, or left to ring out.
+DECLINE_AFTER = (3.0, 8.0)
+NO_ANSWER_AFTER = (16.0, 24.0)
+# Ringing back within this long reads as urgent (see presence.answers).
+RING_AGAIN = 240
 
 # How often the console's clock ticks: presence, promises, the odd text.
 PULSE_SECONDS = 30
@@ -123,6 +128,15 @@ class Console:
         self._ring_timer = None
         # The status each contact's dot last showed, to send only changes.
         self._shown_presence = {}
+        # A call ringing out that won't be answered, and when each contact
+        # last let him ring out — so ringing straight back reads as urgent.
+        self._ringing_out = None
+        self._refused_at = {}
+        # Set from the moment a call is placed until it's up, so nobody rings
+        # him in the gap while the line is still being opened.
+        self._connecting = False
+        self._tasks = set()
+        self._writing_lines = False
         self.migrated = migrate_legacy(config.DEFAULT_CONTACT)
 
     # --- contacts ---------------------------------------------------------
@@ -246,8 +260,43 @@ class Console:
 
         threading.Thread(target=pump, daemon=True).start()
 
+        # Events go to the page through a releaser that waits for `release_at`
+        # once; synthesis starts the moment each sentence exists. Holding the
+        # main loop for pickup instead held synthesis too — the first event is
+        # never a sentence — so every call had a voice round trip of silence
+        # after "pickup", the opposite of the point.
+        outbox, released, closed = asyncio.Queue(), set(), asyncio.Event()
+        released_changed = asyncio.Condition()
+
+        async def releaser():
+            try:
+                await hold()
+                while True:
+                    event = await outbox.get()
+                    if event is done:
+                        return
+                    if superseded():
+                        continue
+                    await self.broadcast(event)
+                    if event.get("type") == "sentence":
+                        async with released_changed:
+                            released.add(event["key"])
+                            released_changed.notify_all()
+            finally:
+                closed.set()
+                async with released_changed:
+                    released_changed.notify_all()
+
+        async def shown(key):
+            """Until the page has the sentence a clip belongs to (or never will)."""
+            async with released_changed:
+                await released_changed.wait_for(
+                    lambda: key in released or closed.is_set() or superseded())
+            return key in released and not superseded()
+
         speech = asyncio.Queue()
-        worker = asyncio.create_task(self._speech_worker(speech, hold))
+        sender = asyncio.create_task(releaser())
+        worker = asyncio.create_task(self._speech_worker(speech, shown, superseded))
         self.voice_busy = True
 
         try:
@@ -276,10 +325,11 @@ class Console:
                         asyncio.to_thread(self._timed_synthesis, spoken, speaker)
                     )
                     speech.put_nowait((event["key"], event["text"], task, speaker.id))
-                await hold()
-                await self.broadcast(event)
+                outbox.put_nowait(event)
         finally:
+            outbox.put_nowait(done)
             speech.put_nowait(None)
+            await sender
             await worker
             self.voice_busy = False
             if epoch is None or epoch == self.turn_epoch:
@@ -302,18 +352,21 @@ class Console:
     def _can_speak(self, contact):
         return self.voice.available and contact.has_voice
 
-    async def _speech_worker(self, speech, hold):
+    async def _speech_worker(self, speech, shown, superseded):
         """
         Release clips in submission order. Synthesis runs concurrently, but a
         later sentence finishing first must never jump the queue — the page
         plays what it is handed.
 
+        Once the turn is superseded, what is still being synthesised is
+        cancelled where it can be and discarded where it can't: a contact
+        talked over must not carry on three sentences later, and requests
+        nobody will hear were holding ElevenLabs slots the next reply needed —
+        which is how talking over someone degraded the voice link.
+
         When synthesis fails — quota gone, network down, key expired — the
-        console does not show a stack trace. The voice link degrades and the
-        contact carries on in text, which is both truthful about what happened
-        and in keeping with a console that is supposed to be a place, not a
-        program. The text still reaches the screen: the page renders any
-        sentence that never got audio.
+        voice link degrades and the contact carries on in text. The text still
+        reaches the screen: the page renders any sentence that never got audio.
         """
         reported = False
         while True:
@@ -321,21 +374,23 @@ class Console:
             if item is None:
                 return
             key, text, task, speaker = item
+            if superseded():
+                task.cancel()
+                continue
             try:
                 audio, words = await task
+            except asyncio.CancelledError:
+                continue
             except Exception:
-                if not reported:
+                if not reported and not superseded():
                     reported = True
                     await self.broadcast(events.notice(
-                        "Voice link degraded — switching to text.", "warn"))
+                        "Voice link degraded. Continuing in text.", "warn"))
                 continue
-            if audio:
-                await hold()
+            if audio and await shown(key):
                 self.recent_speech.append((time.monotonic(), text))
                 await self.broadcast({**events.speak(self._store_clip(audio), text, key, words),
                                       "speaker": speaker})
-
-    # --- turns ------------------------------------------------------------
 
     async def connect(self, contact_id, incoming=None):
         """
@@ -345,6 +400,8 @@ class Console:
         contact = self.directory.get(contact_id)
         if contact is None:
             return
+        if not incoming and self._incoming and self._incoming["id"] == contact_id:
+            return await self.answer(contact_id)     # they're ringing him: that's answering
         if self._release:
             self._release.cancel()
             self._release = None
@@ -355,13 +412,25 @@ class Console:
                 self._ring_timer.cancel()
                 self._ring_timer = None
             asyncio.get_running_loop().create_task(self._unanswered("missed"))
-        if self.current_id and self.current_id != contact_id:
-            # Switching lines mid-call: whoever was on it notices next time.
-            for member in (self.call.members if self.call else [self.sessions[self.current_id]]):
-                member.call_ended("switched")
-            self._end_call()
+        self._connecting = True
+        try:
+            return await self._connect(contact, contact_id, incoming)
+        finally:
+            self._connecting = False
+
+    async def _connect(self, contact, contact_id, incoming):
+        switching = False
+        if not self._abandon_ring() and self.current_id and self.current_id != contact_id:
+            switching = True
             self.interrupt()
         async with self.turn_lock:
+            if switching and self.current_id:
+                # Switching lines mid-call: whoever was on it notices next time.
+                # Inside the lock, so the turn in flight has finished first —
+                # ending the call under it pulled its `call` away mid-sentence.
+                for member in (self.call.members if self.call else [self.sessions[self.current_id]]):
+                    member.call_ended("switched")
+                self._end_call()
             self.current_id = contact_id
             session = self.session_for(contact_id)
             self.call = Call()
@@ -374,10 +443,24 @@ class Console:
                     contact.availability.away_message, "warn"))
                 return
 
+            state = presence.of(contact).now()
+            whereabouts = state["status"]
+            refused = None if incoming else presence.answers(
+                contact, state, again=time.time() - self._refused_at.get(contact_id, 0) < RING_AGAIN)
+            if refused:
+                # Not picking up. The ring happens outside the lock, so texts
+                # to anyone else carry on meanwhile.
+                self._ringing_out = contact_id
+                epoch = self.turn_epoch
+        if refused:
+            return await self._let_it_ring(contact, refused, state, epoch)
+        async with self.turn_lock:
+            if self.current_id != contact_id:
+                return
+            session = self.session_for(contact_id)
             # Nobody answers the instant it rings, so the line rings for a
             # varying moment — but the greeting is generated and synthesised
             # during it rather than after, so the ring is the whole wait.
-            whereabouts = presence.of(contact).now()["status"]
             ring = (random.uniform(0.2, 0.6) if incoming else
                     random.uniform(*PICKUP_DELAY) + random.uniform(*PICKUP_EXTRA.get(whereabouts, (0, 0))))
             pickup = asyncio.get_running_loop().time() + ring
@@ -394,7 +477,75 @@ class Console:
                 self.migrated = []
             await self.drive(session.boot(incoming), contact, self.interrupt(), release_at=pickup)
             presence.of(contact).touch()
+            # Talking now: any plan to get back to him about a missed call is moot.
+            presence.of(contact).drop("callback")
             await self._presence_changed(contact)
+
+    def _abandon_ring(self):
+        """
+        He gave up on a call that was never going to be answered. Nothing was
+        said, so nothing is remembered as a call — but they'll see they missed
+        him, and may get back to him. True if there was such a ring.
+        """
+        contact = self.directory.get(self._ringing_out) if self._ringing_out else None
+        if contact is None or self.current_id != contact.id:
+            return False
+        self._ringing_out = None
+        self._refused_at[contact.id] = time.time()    # ringing straight back is urgent
+        self.current_id = None
+        if self.call:
+            for member in list(self.call.members):
+                self.call.leave(member)
+        self.call = None
+        self.interrupt()
+        state = presence.of(contact).now()
+        asyncio.get_running_loop().create_task(self._after_refusal(contact, "no_answer", state))
+        return True
+
+    async def _let_it_ring(self, contact, how, state, epoch):
+        """
+        A call they won't take. It rings — briefly if they reject it, until it
+        gives up if they don't — then the line closes, and what they do about
+        it afterwards is theirs: a quick "can't talk", a call back once
+        they're free, a text later with or without a reason, or nothing.
+        """
+        await asyncio.sleep(random.uniform(*(DECLINE_AFTER if how == "declined" else NO_ANSWER_AFTER)))
+        if self._ringing_out == contact.id:
+            self._ringing_out = None
+        if self.turn_epoch != epoch or self.current_id != contact.id:
+            return          # he hung up, or rang someone else, first
+        self._refused_at[contact.id] = time.time()
+        self.current_id = None
+        if self.call:
+            for member in list(self.call.members):
+                self.call.leave(member)
+        self.call = None
+        log.info("%s %s the call (%s)", contact.id, how, state["status"])
+        entry = TextLog(contact.id).add("me", "", kind="refused_call" if how == "declined" else "unanswered_call")
+        await self.broadcast({"type": "call_refused", "speaker": contact.id, "how": how})
+        await self.broadcast({"type": "text_sent", "speaker": contact.id, "message": entry})
+        asyncio.get_running_loop().create_task(self._after_refusal(contact, how, state))
+
+    async def _after_refusal(self, contact, how, state):
+        leaning = contact.initiative or {}
+        doing = state["doing"] or ("asleep" if state["status"] == presence.OFFLINE else "")
+        reason = f"you were {doing}" if doing else "you just didn't pick up"
+        if (how == "declined" and state["status"] == presence.BUSY
+                and random.random() < leaning.get("busy_text", 0.4)):
+            await asyncio.sleep(random.uniform(6, 25))
+            await self._send_unprompted(contact, reason, "busy_now")
+        if random.random() >= leaning.get("callback", 0.8):
+            return          # some people just don't
+        whereabouts = presence.of(contact)
+        now, current = time.time(), whereabouts.now()
+        if current["source"] == "conversation" and current["until"]:
+            due = current["until"] + random.uniform(2, 15) * 60
+        elif current["status"] in (presence.BUSY, presence.OFFLINE):
+            due = now + random.uniform(25, 90) * 60
+        else:
+            due = now + random.uniform(4, 35) * 60
+        action = "call" if random.random() < leaning.get("callback_call", 0.5) else "text"
+        whereabouts.intend(action, reason, due, origin="callback")
 
     def _is_own_echo(self, text):
         """
@@ -413,6 +564,8 @@ class Console:
         a later call re-greets rather than resuming mid-sentence.
         """
         self.interrupt()
+        if self._abandon_ring():
+            return
         async with self.turn_lock:
             contact = self.contact
             self.current_id = None
@@ -422,21 +575,44 @@ class Console:
             self._release = asyncio.create_task(self._release_after(contact))
 
     def _end_call(self):
-        # What was said may travel (see wayne.engine.grapevine).
         members = self.call.members if self.call else (
             [self.sessions[self.current_id]] if self.current_id in self.sessions else [])
         present = {m.contact.id for m in members}
         for member in members:
-            grapevine.note_call(member, list(self.directory), member.call_start, present)
-            # Just off the phone with him; and whatever the call set in motion.
-            presence.of(member.contact).touch()
-            said = member.history.messages[member.call_start:]
-            if any(m["role"] == "user" for m in said):
-                asyncio.get_running_loop().create_task(self._afterthought(member, said, "call"))
+            self._wrap_up(member, present)
         if self.call:
             for member in list(self.call.members):
                 self.call.leave(member)
         self.call = None
+
+    def _wrap_up(self, member, present):
+        """
+        One contact off the phone: what was said may travel (see
+        wayne.engine.grapevine), they were just on the phone with him, and
+        whatever the call set in motion is noted. The same whether the call
+        ended or they were let off it early.
+        """
+        grapevine.note_call(member, list(self.directory), member.call_index(), present)
+        presence.of(member.contact).touch()
+        said = member.call_messages()
+        if any(m["role"] == "user" for m in said):
+            self._spawn(self._afterthought(member, said, "call"))
+
+    def _spawn(self, coroutine):
+        """
+        A background task that is kept and whose failure is logged — a bare
+        create_task's exception vanished, and the task could be collected
+        mid-flight.
+        """
+        task = asyncio.get_running_loop().create_task(coroutine)
+        self._tasks.add(task)
+
+        def finished(t):
+            self._tasks.discard(t)
+            if not t.cancelled() and t.exception():
+                log.warning("background task failed: %r", t.exception())
+        task.add_done_callback(finished)
+        return task
 
     def _members(self):
         return [m.contact.id for m in self.call.members] if self.call else []
@@ -451,10 +627,22 @@ class Console:
                 or len(self.call.members) >= MAX_CONTACTS
                 or not contact.availability.is_available()):
             return
+        state = presence.of(contact).now()
+        how = presence.answers(contact, state,
+                               again=time.time() - self._refused_at.get(contact_id, 0) < RING_AGAIN)
+        if how:
+            # Patched in, it rings — and they don't take it. The call goes on.
+            await self.broadcast(events.party(self._members() + [contact_id], added=contact_id))
+            await asyncio.sleep(random.uniform(*(DECLINE_AFTER if how == "declined" else NO_ANSWER_AFTER)))
+            self._refused_at[contact_id] = time.time()
+            await self.broadcast({"type": "call_refused", "speaker": contact_id, "how": how})
+            await self.broadcast(events.party(self._members()))
+            asyncio.get_running_loop().create_task(self._after_refusal(contact, how, state))
+            return
         epoch = self.interrupt()
         async with self.turn_lock:
             newcomer = self.session_for(contact_id)
-            if not self.call.join(newcomer):
+            if not self.call or not self.call.join(newcomer):
                 return
             await self.broadcast(events.party(self._members(), added=contact_id))
             # The console announces it and the line rings; the greeting is made
@@ -470,10 +658,17 @@ class Console:
             return await self.disconnect()
         epoch = self.interrupt()
         async with self.turn_lock:
+            # Re-checked: a hang-up, a switch or a second drop may have landed
+            # while this waited.
+            if not self.call or contact_id not in self._members() or len(self.call.members) < 2:
+                return
             member = self.sessions[contact_id]
             await self.drive(self.call.farewell(member), member.contact, epoch)
+            if not self.call or member not in self.call.members:
+                return
             self.call.leave(member)
-            if self.current_id == contact_id:
+            self._wrap_up(member, {contact_id} | set(self._members()))
+            if self.current_id == contact_id and self.call.members:
                 self.current_id = self.call.members[0].contact.id
             await self.broadcast(events.party(self._members(), removed=contact_id))
 
@@ -530,6 +725,10 @@ class Console:
             read_at = log.mark_read(ids)
             await self.broadcast({"type": "text_read", "speaker": contact.id,
                                   "ids": ids, "at": read_at})
+            if contact.id in self._members():
+                # He rang them before they got to it: they read it now and
+                # answer out loud, as with any text that lands mid-call.
+                return await self._text_into_call(contact.id, "\n".join(m["text"] for m in batch))
             glancing = whereabouts.now()["status"] == presence.BUSY
             if not glancing:
                 whereabouts.touch()
@@ -544,10 +743,18 @@ class Console:
             reply = await self._write_text(contact, "\n".join(m["text"] for m in batch))
             if reply:
                 await self._deliver(contact, reply, started)
+                whereabouts.drop("callback")     # back in touch; no need to ring him back
                 if not glancing:
                     whereabouts.touch()
+                    if random.random() < (contact.texting_pace or {}).get("drift", 0):
+                        # And then they put the phone down, mid-conversation,
+                        # as people do: the next text waits.
+                        whereabouts.touch(time.time() - presence.ENGAGED_FOR)
                 session = self.session_for(contact.id)
                 loop.create_task(self._afterthought(session, session.history.messages[-6:], "text"))
+                if (not glancing and random.random()
+                        < (contact.texting_style or {}).get("second_thought", 0)):
+                    loop.create_task(self._second_thought(contact))
             else:
                 await self.broadcast({"type": "text_idle", "speaker": contact.id})
             self._release_later(contact)
@@ -556,6 +763,14 @@ class Console:
             if self._pending_texts.get(contact.id):
                 # More arrived while they were replying: another round.
                 self._start_answering(contact)
+
+    async def _second_thought(self, contact):
+        """'oh and —': one more text a minute later, unless he's already replied."""
+        await asyncio.sleep(random.uniform(20, 90))
+        last = TextLog(contact.id).last()
+        if not last or last["from"] != "them" or contact.id in self._texters:
+            return
+        await self._send_unprompted(contact, "", "second_thought")
 
     async def _wait_to_read(self, contact):
         """
@@ -570,7 +785,9 @@ class Console:
             if state["status"] != last:
                 last = state["status"]
                 delay = presence.read_delay(contact, state)
-                if delay is not None:
+                if delay is None:
+                    deadline = None      # gone to sleep before getting to it
+                else:
                     candidate = time.time() + delay
                     deadline = candidate if deadline is None else min(deadline, candidate)
             if deadline is not None and time.time() >= deadline:
@@ -578,7 +795,7 @@ class Console:
             await asyncio.sleep(RECHECK_SECONDS if deadline is None
                                 else min(RECHECK_SECONDS, max(0.05, deadline - time.time())))
 
-    async def _deliver(self, contact, reply, started):
+    async def _deliver(self, contact, reply, started, origin=None):
         """
         A reply sent as they'd send it: one composed message, or three in a
         row, each typed at their own speed (less the time spent thinking).
@@ -586,7 +803,8 @@ class Console:
         loop = asyncio.get_running_loop()
         per_second = max(1.0, (contact.texting_pace or {}).get("wpm", 50) * 5 / 60)
         log = TextLog(contact.id)
-        parts = initiative.bubbles(contact, reply)
+        recent = [m["text"] for m in log.page(limit=8) if m["from"] == "them"][-3:]
+        parts = initiative.bubbles(contact, initiative.untic(contact, reply, recent))
         for i, part in enumerate(parts):
             if i:
                 await self.broadcast({"type": "text_typing", "speaker": contact.id})
@@ -595,7 +813,7 @@ class Console:
                 typing -= loop.time() - started
             if typing > 0:
                 await asyncio.sleep(typing)
-            sent = log.add("them", part)
+            sent = log.add("them", part, origin=origin)
             await self.broadcast({"type": "text_reply", "speaker": contact.id, "message": sent})
             if i < len(parts) - 1:
                 await asyncio.sleep(random.uniform(0.4, 1.4))
@@ -605,7 +823,9 @@ class Console:
         try:
             found = await asyncio.to_thread(initiative.afterthought, session, exchanges, by)
             if found:
-                log.info("%s afterthought: %s", session.contact.id, found)
+                # What, never the words: the log sits beside encrypted memory.
+                log.info("%s afterthought: doing=%s contact=%s", session.contact.id,
+                         bool(found.get("doing")), bool(found.get("contact")))
             await self._presence_changed(session.contact)
         except Exception as exc:
             log.warning("%s afterthought failed: %s", session.contact.id, str(exc)[:160])
@@ -638,10 +858,13 @@ class Console:
     async def _text_into_call(self, contact_id, body):
         """A text to someone on the line: they see it, and answer on the call."""
         epoch = self.interrupt()
+        session = self.session_for(contact_id)
         async with self.turn_lock:
-            if epoch != self.turn_epoch:
+            if epoch != self.turn_epoch or contact_id not in self._members():
+                # Something newer came first. The text was still read: it
+                # rides along with their next turn instead of vanishing.
+                session.unseen_texts.append(body)
                 return
-            session = self.session_for(contact_id)
             if self.call and self.call.is_group:
                 turn = self.call.text_turn(session, body)
             else:
@@ -684,24 +907,55 @@ class Console:
         """Texts still unread from before a restart are waiting to be read."""
         for contact in self.directory:
             waiting = TextLog(contact.id).unread()
-            if waiting and not self._pending_texts.get(contact.id):
-                self._pending_texts[contact.id] = waiting
+            pending = self._pending_texts.setdefault(contact.id, [])
+            known = {m["id"] for m in pending}
+            pending[:0] = [m for m in waiting if m["id"] not in known]
+            if pending:
                 self._start_answering(contact)
+            else:
+                self._pending_texts.pop(contact.id, None)
 
     async def _tick(self):
         now = time.time()
         for contact in self.directory:
             await self._presence_changed(contact)
+        await self._write_status_lines()
         if not self.clients:
             return      # nobody at the console to hear about it
         for contact in self.directory:
             for intent in presence.of(contact).due(now):
-                await self._carry_out(contact, intent)
+                # Spawned, not awaited: one contact typing out a long reply
+                # stalled every dot and every other promise behind it.
+                presence.of(contact).postpone(intent["id"], 120, count=False)  # claimed
+                self._spawn(self._carry_out(contact, intent))
         await self._maybe_reach_out(now)
+
+    async def _write_status_lines(self):
+        """
+        Anyone whose situation has changed writes themselves a new status line —
+        but only while the model is already loaded for something else. Loading
+        fifteen gigabytes to write "on patrol 🦇" is how a laptop gets hot.
+        """
+        if self._writing_lines or not self.clients:
+            return
+        stale = [c for c in self.directory if not presence.of(c).line()]
+        if not stale or not await asyncio.to_thread(_model_loaded, stale[0].model):
+            return
+        self._writing_lines = True
+        try:
+            for contact in stale[:3]:
+                whereabouts = presence.of(contact)
+                key = whereabouts.line_key()
+                line = await asyncio.to_thread(initiative.status_line, contact, whereabouts.now())
+                if line:
+                    whereabouts.set_line(key, line)
+                    await self._presence_changed(contact)
+        finally:
+            self._writing_lines = False
 
     async def _presence_changed(self, contact):
         shown = presence.of(contact).public()
-        key = (shown["status"], shown["doing"])
+        key = (shown["status"], shown["doing"], shown.get("line", ""))
         if self._shown_presence.get(contact.id) != key:
             self._shown_presence[contact.id] = key
             await self.broadcast({"type": "presence", "speaker": contact.id, "presence": shown})
@@ -713,17 +967,20 @@ class Console:
             whereabouts.done(intent["id"])   # on the line with him; they'll just say it
             return
         if whereabouts.now()["status"] == presence.OFFLINE:
-            whereabouts.postpone(intent["id"], 600)
+            whereabouts.postpone(intent["id"], 600, count=False)
             return
+        callback = intent["origin"] == "callback"
         if intent["action"] == "call":
-            if not (self.current_id or self._incoming):
+            if not (self.current_id or self._incoming or self._connecting):
                 whereabouts.done(intent["id"])
-                return await self._ring(contact, intent["about"])
+                about = (f"calling him back — he rang you earlier and you didn't pick up "
+                         f"({intent['about']})") if callback else intent["about"]
+                return await self._ring(contact, about)
             if intent.get("tries", 0) < 2:
                 whereabouts.postpone(intent["id"], 300)   # he's on another call
                 return
         whereabouts.done(intent["id"])
-        await self._send_unprompted(contact, intent["about"], "promise")
+        await self._send_unprompted(contact, intent["about"], "callback" if callback else "promise")
 
     def _quiet(self, now):
         try:
@@ -765,7 +1022,8 @@ class Console:
             if last and last["from"] == "them":
                 # Their question, unanswered: chase it — once, if they're the type.
                 chase = whereabouts.get("chase") or {}
-                if last["text"].rstrip().endswith("?") and chase.get("id") != last["id"]:
+                if (last["text"].rstrip().endswith("?") and chase.get("id") != last["id"]
+                        and last.get("origin") != "chase"):
                     lo, hi = leaning.get("chase_after", [30, 180])
                     chase = {"id": last["id"], "at": last["at"] + random.uniform(lo, hi) * 60
                              if random.random() < leaning.get("double_text", 0.3) else None}
@@ -781,29 +1039,35 @@ class Console:
         if chases:
             contact = random.choice(chases)
             presence.of(contact).put("chase", {"id": (presence.of(contact).get("chase") or {}).get("id")})
-            await self._send_unprompted(contact, "", "chase", counted=True)
+            self._count_initiative()
+            self._spawn(self._send_unprompted(contact, "", "chase"))
         elif impulses:
             contact = random.choice(impulses)
             about = initiative.impulse(self.session_for(contact.id))
             if about:
-                await self._send_unprompted(contact, about, "impulse", counted=True)
+                self._count_initiative()
+                self._spawn(self._send_unprompted(contact, about, "impulse"))
 
-    async def _send_unprompted(self, contact, about, why, counted=False):
+    def _count_initiative(self):
+        """Counted when decided, not when sent — or the next tick decides again."""
+        entries = [t for t in self._initiative_log() if time.time() - t < 86400]
+        atomic_write(paths.DATA_DIR / "_initiative.json", json.dumps(entries + [time.time()]))
+
+    async def _send_unprompted(self, contact, about, why):
         """They text first: written, then typed, then sent."""
         session = self.session_for(contact.id)
         loop = asyncio.get_running_loop()
         async with self.turn_lock:
+            if contact.id in self._members():
+                return      # he's rung them meanwhile; they'll say it, not text it
             text = await loop.run_in_executor(None, session.reach_out, about, why)
         if not text:
             return
-        log.info("%s texted first (%s): %s", contact.id, why, text[:80])
-        if counted:
-            entries = [t for t in self._initiative_log() if time.time() - t < 86400]
-            atomic_write(paths.DATA_DIR / "_initiative.json", json.dumps(entries + [time.time()]))
+        log.info("%s texted first (%s), %d chars", contact.id, why, len(text))
         presence.of(contact).touch()
         await self._presence_changed(contact)
         await self.broadcast({"type": "text_typing", "speaker": contact.id})
-        await self._deliver(contact, text, loop.time())
+        await self._deliver(contact, text, loop.time(), origin=why)
         self._release_later(contact)
 
     # --- calls to him -------------------------------------------------------
@@ -811,7 +1075,7 @@ class Console:
     async def _ring(self, contact, about):
         """They call him. The page rings; he answers, declines, or misses it."""
         self._incoming = {"id": contact.id, "about": about}
-        log.info("%s ringing: %s", contact.id, about[:80])
+        log.info("%s ringing him", contact.id)
         await self.broadcast({"type": "call_incoming", "speaker": contact.id})
         self._ring_timer = asyncio.create_task(self._ring_out(contact.id))
 
@@ -824,6 +1088,10 @@ class Console:
     async def answer(self, contact_id):
         incoming = self._incoming
         if not incoming or incoming["id"] != contact_id:
+            # Too late — it had already rung out. Tell the page, which is
+            # otherwise left waiting on a line that isn't there.
+            await self.broadcast({"type": "call_unanswered", "speaker": contact_id,
+                                  "how": "missed", "message": None})
             return
         self._incoming = None
         if self._ring_timer:
@@ -858,12 +1126,16 @@ class Console:
         never stored in history: a check-in that went unanswered shouldn't
         become part of what he remembers of the conversation.
         """
-        if not self.current_id:
+        if not self.current_id or self._ringing_out:
             return
+        # The epoch is taken before waiting, as submit does: bumping it after
+        # the wait cancelled whatever he'd said in the meantime, and his words
+        # were replaced by a check-in.
+        epoch = self.interrupt()
         async with self.turn_lock:
-            contact = self.contact
-            session = self.session_for(self.current_id)
-            await self.drive(getattr(session, kind)(), contact, self.interrupt())
+            if epoch != self.turn_epoch or not self.current_id:
+                return
+            await self.drive(getattr(self.session_for(self.current_id), kind)(), self.contact, epoch)
 
     async def submit(self, text, spoken=False, confidence=1.0):
         """
@@ -871,8 +1143,8 @@ class Console:
         the only kind that can be an acoustic echo — typed text never is.
         """
         text = (text or "").strip()
-        if not text or not self.current_id:
-            return
+        if not text or not self.current_id or self._ringing_out == self.current_id:
+            return      # nobody on the line — it's ringing, and they won't answer
         if spoken and self._is_own_echo(text):
             return
         if self.call:
@@ -923,6 +1195,16 @@ class Console:
 
 
 console = Console()
+
+
+def _model_loaded(model):
+    """Whether Ollama has this model in memory right now."""
+    try:
+        import ollama
+        return any(m.get("model") == model or m.get("name") == model
+                   for m in ollama.ps().get("models", []))
+    except Exception:
+        return False
 
 
 def _release_model(model):
@@ -1191,13 +1473,21 @@ async def websocket_endpoint(websocket: WebSocket):
     console.clients.add(websocket)
     try:
         while True:
-            payload = await websocket.receive_json()
+            try:
+                payload = await websocket.receive_json()
+            except (ValueError, TypeError):
+                continue        # one malformed message must not close the socket
+            if not isinstance(payload, dict):
+                continue
             kind = payload.get("type")
             if kind == "prompt":
+                try:
+                    confidence = float(payload.get("confidence") or 1.0)
+                except (TypeError, ValueError):
+                    confidence = 1.0
                 asyncio.create_task(console.submit(
-                    payload.get("text", ""),
-                    spoken=bool(payload.get("spoken")),
-                    confidence=float(payload.get("confidence", 1.0))))
+                    payload.get("text", ""), spoken=bool(payload.get("spoken")),
+                    confidence=confidence))
             elif kind == "connect":
                 asyncio.create_task(console.connect(payload.get("id", "")))
             elif kind == "disconnect":

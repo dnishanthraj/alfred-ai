@@ -13,6 +13,13 @@ class FakeMember:
         self.history = SimpleNamespace(messages=[])
         self.replies = list(replies or ["Mm."])
         self.call, self.heard, self.asked = None, [], []
+        self.kept = []
+
+    def mark_call_start(self):
+        pass
+
+    def keep_heard(self):
+        self.kept += self.heard
 
     def ask(self, prompt, interrupted=False, confidence=1.0, follow_up=False, via=None):
         self.asked.append((prompt, follow_up, list(self.heard)))

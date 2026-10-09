@@ -29,6 +29,7 @@ except ImportError:  # older releases of the same package
     from duckduckgo_search import DDGS
 
 _SEARCH_TIMEOUT = 8  # seconds before giving up
+_DEADLINE = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="search")
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
 
 
@@ -78,10 +79,10 @@ def google_search(query, num_results=3):
     backend = _search_brave if BRAVE_API_KEY else _search_duckduckgo
     try:
         # Both providers block, and occasionally hang past their own timeouts,
-        # so they run behind a hard deadline of ours.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            return executor.submit(backend, query, num_results).result(
-                timeout=_SEARCH_TIMEOUT + 2)
+        # so they run behind a hard deadline of ours. On a shared pool, not a
+        # `with` block: leaving one waits for the hung call anyway, which made
+        # the deadline decorative and held the whole turn.
+        return _DEADLINE.submit(backend, query, num_results).result(timeout=_SEARCH_TIMEOUT + 2)
     except Exception:
         return []
 
@@ -214,7 +215,8 @@ def format_search_results(results):
 
     lines = ["[Search Results]:"]
     for i, result in enumerate(results, 1):
-        lines.append(f"{i}. {result.get('title', 'No title')}")
+        # Whitespace collapsed: a newline in a title could forge lines of its own.
+        lines.append(f"{i}. {' '.join((result.get('title') or 'No title').split())}")
         snippet = " ".join((result.get("snippet") or "").split())
         if len(snippet) > _SNIPPET_CHARS:
             snippet = snippet[:_SNIPPET_CHARS].rsplit(" ", 1)[0] + "…"

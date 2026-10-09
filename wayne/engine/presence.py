@@ -86,6 +86,10 @@ class Presence:
     def __init__(self, contact):
         self.contact = contact
         self.path = paths.contact_dir(contact.id) / "presence.json"
+        # The afterthought writes from a worker thread while the console's
+        # loop reads and updates: one lock round every change and save, or a
+        # kept promise came back from a stale copy and was kept twice.
+        self._lock = threading.RLock()
         self._state = self._load()
 
     # --- storage -----------------------------------------------------------
@@ -101,7 +105,8 @@ class Presence:
         return state
 
     def save(self):
-        atomic_write(self.path, json.dumps(self._state, indent=1))
+        with self._lock:
+            atomic_write(self.path, json.dumps(self._state, indent=1))
 
     # --- the routine -------------------------------------------------------
 
@@ -144,22 +149,54 @@ class Presence:
         activity = self._state["activity"]
         if activity and activity.get("until", 0) > t:
             return {"status": activity["status"], "doing": activity["doing"],
-                    "until": activity["until"], "source": "conversation", "last_active": last}
+                    "until": activity["until"], "source": "conversation", "last_active": last,
+                    "terminal": activity.get("terminal", False)}
         if t - last < ENGAGED_FOR:
             return {"status": ONLINE, "doing": "", "until": last + ENGAGED_FOR,
                     "source": "engaged", "last_active": last}
         block = self._routine(t)
         if block:
             return {"status": block.get("status", BUSY), "doing": block.get("doing", ""),
-                    "until": 0, "source": "routine", "last_active": last}
+                    "until": 0, "source": "routine", "last_active": last,
+                    "terminal": block.get("terminal", False)}
         return {"status": self._free_time(t), "doing": "", "until": 0,
                 "source": "free", "last_active": last}
 
-    def public(self, t=None):
-        """What the page is told."""
+    def line_key(self, t=None):
+        """
+        What their status line is about: the thing they're doing, or for
+        free time — and for anyone who doesn't share — the day. A line is
+        written once per key, so it changes when their situation does.
+        """
         state = self.now(t)
+        day = time.strftime("%Y-%m-%d", time.localtime(t or time.time()))
+        if not self.contact.shares_status or not state["doing"]:
+            return f"day:{day}"
+        return f"{state['source']}:{state['doing']}"
+
+    def line(self, t=None):
+        """The status line they wrote for what they're doing now, or ''."""
+        return (self._state.get("lines") or {}).get(self.line_key(t), "")
+
+    def set_line(self, key, text):
+        with self._lock:
+            lines = dict(self._state.get("lines") or {})
+            lines[key] = text.strip()[:80]
+            # Only the recent ones: yesterday's lines are no use to anyone.
+            self._state["lines"] = dict(list(lines.items())[-12:])
+            self.save()
+
+    def public(self, t=None):
+        """
+        What the page is told. Someone who doesn't share their status — Jason,
+        Selina — shows as unknown: Bruce wouldn't know, so the console doesn't
+        either. Their status line is still theirs to set.
+        """
+        state = self.now(t)
+        if not self.contact.shares_status:
+            return {"status": "unknown", "doing": "", "last_active": None, "line": self.line(t)}
         return {"status": state["status"], "doing": state["doing"],
-                "last_active": state["last_active"] or None}
+                "last_active": state["last_active"] or None, "line": self.line(t)}
 
     def note(self, t=None):
         """
@@ -182,48 +219,64 @@ class Presence:
 
     def touch(self, t=None):
         """They've just been on their phone with him."""
-        self._state["last_active"] = t or time.time()
-        self.save()
-
-    def set_activity(self, doing, status, minutes, t=None):
-        t = t or time.time()
-        status = status if status in STATUSES else BUSY
-        minutes = max(5, min(int(minutes or 60), 14 * 60))
-        self._state["activity"] = {"doing": doing.strip()[:80], "status": status,
-                                   "since": t, "until": t + minutes * 60}
-        self.save()
-
-    def clear_activity(self):
-        if self._state["activity"]:
-            self._state["activity"] = None
+        with self._lock:
+            self._state["last_active"] = t or time.time()
             self.save()
 
-    # --- intentions ----------------------------------------------------------
+    def set_activity(self, doing, status, minutes, t=None):
+        with self._lock:
+            t = t or time.time()
+            status = status if status in STATUSES else BUSY
+            minutes = max(5, min(int(minutes or 60), 14 * 60))
+            self._state["activity"] = {"doing": doing.strip()[:80], "status": status,
+                                       "since": t, "until": t + minutes * 60}
+            self.save()
+
+    def clear_activity(self):
+        with self._lock:
+            if self._state["activity"]:
+                self._state["activity"] = None
+                self.save()
+
+        # --- intentions ----------------------------------------------------------
 
     def intend(self, action, about, due, origin="promise"):
         """Something they mean to do: text him, or call him, at `due`."""
-        intent = {"id": uuid.uuid4().hex[:10], "action": "call" if action == "call" else "text",
-                  "about": about.strip()[:240], "due": due, "origin": origin}
-        # One plan per purpose: a newer promise replaces an older one of the same kind.
-        self._state["intents"] = [i for i in self._state["intents"]
-                                  if i["origin"] != origin][-4:] + [intent]
-        self.save()
-        return intent
+        with self._lock:
+            intent = {"id": uuid.uuid4().hex[:10], "action": "call" if action == "call" else "text",
+                      "about": about.strip()[:240], "due": due, "origin": origin}
+            # One plan per purpose: a newer promise replaces an older one of the same kind.
+            self._state["intents"] = [i for i in self._state["intents"]
+                                      if i["origin"] != origin][-4:] + [intent]
+            self.save()
+            return intent
 
     def due(self, t=None):
         t = t or time.time()
         return [i for i in self._state["intents"] if i["due"] <= t]
 
-    def postpone(self, intent_id, seconds):
-        for intent in self._state["intents"]:
-            if intent["id"] == intent_id:
-                intent["due"] = time.time() + seconds
-                intent["tries"] = intent.get("tries", 0) + 1
-        self.save()
+    def postpone(self, intent_id, seconds, count=True):
+        """Later. `count` is False when nothing was tried — they were asleep."""
+        with self._lock:
+            for intent in self._state["intents"]:
+                if intent["id"] == intent_id:
+                    intent["due"] = time.time() + seconds
+                    if count:
+                        intent["tries"] = intent.get("tries", 0) + 1
+            self.save()
 
     def done(self, intent_id):
-        self._state["intents"] = [i for i in self._state["intents"] if i["id"] != intent_id]
-        self.save()
+        with self._lock:
+            self._state["intents"] = [i for i in self._state["intents"] if i["id"] != intent_id]
+            self.save()
+
+    def drop(self, origin):
+        """Forget every intention of one kind — a callback, once they've talked."""
+        with self._lock:
+            kept = [i for i in self._state["intents"] if i["origin"] != origin]
+            if len(kept) != len(self._state["intents"]):
+                self._state["intents"] = kept
+                self.save()
 
     def intents(self):
         return list(self._state["intents"])
@@ -234,13 +287,39 @@ class Presence:
         return self._state.get(key, default)
 
     def put(self, key, value):
-        self._state[key] = value
-        self.save()
+        with self._lock:
+            self._state[key] = value
+            self.save()
 
     def clear(self):
         self._state = {"activity": None, "last_active": 0, "intents": []}
         if self.path.exists():
             self.path.unlink()
+
+
+# How likely they are to answer, by what they're doing — unless the profile
+# says otherwise. Someone free nearly always picks up; someone in a meeting
+# usually doesn't; someone asleep mostly sleeps through it.
+_ANSWERS = {ONLINE: 0.97, IDLE: 0.9, BUSY: 0.45, OFFLINE: 0.25}
+
+
+def answers(contact, state, again=False, rng=random):
+    """
+    Whether they pick up: None if they do, else "declined" (they saw it and
+    rejected it) or "no_answer" (it rang out). `again` is a second call hard
+    on the heels of the first, which reads as urgent — people answer those.
+    """
+    odds = {**_ANSWERS, **(contact.initiative or {}).get("answers", {})}
+    chance = odds.get(state["status"], 0.9)
+    if again:
+        chance = 1 - (1 - chance) / 3
+    if rng.random() < chance:
+        return None
+    if state["status"] == OFFLINE:
+        return "no_answer"          # the phone was nowhere near them
+    if state["status"] == BUSY:
+        return "declined" if rng.random() < 0.8 else "no_answer"
+    return "declined" if rng.random() < 0.5 else "no_answer"
 
 
 def read_delay(contact, state, rng=random):

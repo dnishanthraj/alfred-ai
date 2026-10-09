@@ -12,6 +12,7 @@ Facts about the world carry who knows them. A secret identity reaches only the
 characters who would know it, so nobody can let slip what they never knew.
 """
 import json
+import logging
 from functools import lru_cache
 from pathlib import Path
 
@@ -24,14 +25,17 @@ OPERATORS_DIR = Path(__file__).parent / "operators"
 @lru_cache(maxsize=1)
 def profile():
     choice = (config.setting("OPERATOR", "bruce") or "bruce").strip()
-    path = Path(choice)
+    path = Path(choice).expanduser()
     if not path.suffix:
         path = OPERATORS_DIR / f"{choice}.json"
     elif not path.is_absolute():
         path = ROOT_DIR / path
     try:
         return json.loads(path.read_text())
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        # Said, not swallowed: a typo here silently made everyone Bruce.
+        logging.getLogger("wayne").warning("operator profile %s unreadable (%s); using Bruce",
+                                           path, exc)
         return json.loads((OPERATORS_DIR / "bruce.json").read_text())
 
 

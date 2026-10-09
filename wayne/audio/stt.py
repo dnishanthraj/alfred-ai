@@ -6,11 +6,11 @@ instantiate a Whisper model and print to stdout as a side effect, which made
 the package impossible to import from a server (or a test) without paying for
 a model load and polluting the output.
 """
+import contextlib
 import io
 import os
 import queue
 import re
-import sys
 import threading
 import time
 
@@ -18,6 +18,8 @@ import numpy as np
 import sounddevice as sd
 
 from ..config import WHISPER_HINT_PROMPT, WHISPER_MODEL
+
+_TRANSCRIBING = threading.Lock()
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
@@ -129,18 +131,17 @@ def transcribe_audio(audio, hint=None):
         import mlx_whisper
         audio_1d = audio.squeeze().astype(np.float32)
         # mlx-whisper writes progress noise to stderr regardless of verbose=False.
-        with open(os.devnull, 'w') as devnull:
-            old_stderr, sys.stderr = sys.stderr, devnull
-            try:
-                result = mlx_whisper.transcribe(
-                    audio_1d,
-                    path_or_hf_repo=model,
-                    language="en",
-                    verbose=False,
-                    initial_prompt=hint or WHISPER_HINT_PROMPT,
-                )
-            finally:
-                sys.stderr = old_stderr
+        # One transcription at a time: the model isn't documented thread-safe,
+        # and two takes swapping sys.stderr at once left it pointing at a
+        # closed file for the rest of the run.
+        with _TRANSCRIBING, open(os.devnull, 'w') as devnull, contextlib.redirect_stderr(devnull):
+            result = mlx_whisper.transcribe(
+                audio_1d,
+                path_or_hf_repo=model,
+                language="en",
+                verbose=False,
+                initial_prompt=hint or WHISPER_HINT_PROMPT,
+            )
         text = collapse_loops(result.get("text", "").strip())
         return (text, _confidence(result)) if _meaningful(text) else ("", 1.0)
 
