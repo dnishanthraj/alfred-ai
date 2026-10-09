@@ -936,7 +936,10 @@ class Console:
         but only while the model is already loaded for something else. Loading
         fifteen gigabytes to write "on patrol 🦇" is how a laptop gets hot.
         """
-        if self._writing_lines or not self.clients:
+        # Never in the middle of anything: a status line generated during a call
+        # queues the next spoken reply behind it at the model.
+        if (self._writing_lines or not self.clients or self.current_id or self._texters
+                or self.turn_lock.locked()):
             return
         stale = [c for c in self.directory if not presence.of(c).has_current_line()]
         if not stale or not await asyncio.to_thread(_model_loaded, stale[0].model):

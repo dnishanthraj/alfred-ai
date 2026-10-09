@@ -36,7 +36,8 @@
    "good": "Fierce, immediate protectiveness of children",
    "turns": [
     "There's a kid caught up in Black Mask's operation."
-   ]
+   ],
+   "core": true
   },
   {
    "id": "killing",
@@ -52,7 +53,8 @@
    "good": "Bruce apologises: guarded, uncomfortable, and it lands",
    "turns": [
     "I'm sorry. For all of it. For not getting there in time."
-   ]
+   ],
+   "core": true
   },
   {
    "id": "praise",

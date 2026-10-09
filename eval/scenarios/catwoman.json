@@ -7,7 +7,8 @@
    "good": "Teasing, playful, keeps the upper hand — heat welcome, but wit first and from character",
    "turns": [
     "Miss me?"
-   ]
+   ],
+   "core": true
   },
   {
    "id": "billionaires",
@@ -93,7 +94,8 @@
    "turns": [
     "Selina?",
     "I'm not in the mood for games tonight."
-   ]
+   ],
+   "core": true
   },
   {
    "id": "randy",
@@ -119,7 +121,8 @@
     "must_not": [
      "(?i)\\brandy\\b.*\\bbatwing\\b|\\bbatwing\\b.*\\brandy\\b"
     ]
-   }
+   },
+   "core": true
   },
   {
    "id": "board",

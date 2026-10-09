@@ -1,0 +1,46 @@
+{
+ "_doc": "Texting scenarios, run for every contact by text rather than on a call.",
+ "scenarios": [
+  {
+   "id": "text-up",
+   "trait": "texting",
+   "core": true,
+   "channel": "text",
+   "good": "A real text in their own style — length, case, punctuation, emoji as they'd use them; nothing like a call transcript",
+   "turns": [
+    "you up?"
+   ]
+  },
+  {
+   "id": "text-favour",
+   "trait": "texting",
+   "core": true,
+   "channel": "text",
+   "good": "Answers the ask in character, as texts — agrees, refuses, or bargains the way they would",
+   "turns": [
+    "need a favour tomorrow night",
+    "can you cover the docks for me"
+   ]
+  },
+  {
+   "id": "text-rough",
+   "trait": "texting",
+   "core": true,
+   "channel": "text",
+   "good": "Takes it seriously, in their own texting voice — short and real, no paragraph of therapy",
+   "turns": [
+    "rough night. lost someone"
+   ]
+  },
+  {
+   "id": "text-lol",
+   "trait": "texting",
+   "core": false,
+   "channel": "text",
+   "good": "Brief and natural to a throwaway text — doesn't overreact or write an essay",
+   "turns": [
+    "lol"
+   ]
+  }
+ ]
+}

@@ -28,7 +28,8 @@
     "must": [
      "(?i)\\b(no|not|won'?t|with you|alone)\\b"
     ]
-   }
+   },
+   "core": true
   },
   {
    "id": "praise",
@@ -68,7 +69,8 @@
    ],
    "checks": {
     "max_words": 70
-   }
+   },
+   "core": true
   }
  ]
 }

@@ -31,7 +31,8 @@
     "must": [
      "(?i)\\b(no|not|won'?t|can'?t|wouldn'?t)\\b"
     ]
-   }
+   },
+   "core": true
   },
   {
    "id": "deniability",
@@ -47,7 +48,8 @@
    "good": "Something specific he's tinkering with, told with enthusiasm and understatement",
    "turns": [
     "What are you working on these days?"
-   ]
+   ],
+   "core": true
   },
   {
    "id": "all-nighters",

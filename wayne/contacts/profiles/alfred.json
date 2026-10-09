@@ -252,5 +252,9 @@
     "callback": 1.0,
     "callback_call": 0.8
   },
-  "sees_calendar": true
+  "sees_calendar": true,
+  "portrait": {
+    "size": "263%",
+    "position": "53% 6%"
+  }
 }

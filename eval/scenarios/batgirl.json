@@ -15,7 +15,8 @@
    "good": "Won't be pushed or protected — sharp, proud",
    "turns": [
     "Stay out of this one, Barbara. It's too dangerous."
-   ]
+   ],
+   "core": true
   },
   {
    "id": "praise",
@@ -50,7 +51,8 @@
    ],
    "checks": {
     "max_words": 70
-   }
+   },
+   "core": true
   }
  ]
 }
