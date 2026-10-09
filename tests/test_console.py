@@ -5,7 +5,11 @@ from collections import OrderedDict, deque
 from types import SimpleNamespace
 
 from wayne import events
-from wayne.frontends.web import Console
+from wayne.frontends.web import Console, log
+
+# The console logs to data/console.log; the tests' fake calls don't belong there.
+log.handlers.clear()
+log.disabled = True
 
 
 class _Voice:
