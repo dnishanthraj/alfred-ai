@@ -159,6 +159,11 @@ class GroupChats:
         mine = [m["text"] for m in group.messages()[-20:] if m["from"] == contact.id][-3:]
         parts = initiative.bubbles(contact, initiative.untic(contact, text, mine))
         for i, part in enumerate(parts):
+            current = store.of(group.id)
+            if current is None or contact.id not in current.members:
+                # Removed while writing: it doesn't get sent.
+                await self.broadcast({"type": "group_idle", "group": group.id, "speaker": contact.id})
+                return
             await self.broadcast({"type": "group_typing", "group": group.id, "speaker": contact.id})
             await self._type_out(contact.id, part, per_second, group=group.id, cap=15,
                                  already=(loop.time() - started) if i == 0 else 0)
@@ -177,21 +182,48 @@ class GroupChats:
 
     async def _group_actions(self, group, contact, actions):
         """They add someone to the group, or walk out of it — their call, in context."""
-        for name in actions.get("add", []):
+        for name in actions.get("add", [])[:1]:
             newcomer = next((c for c in self.directory
                              if name.lower() in (c.name.lower(), c.full_name.lower(), c.id)), None)
-            if newcomer and newcomer.id != contact.id and group.add_member(newcomer.id):
+            if (newcomer and newcomer.id != contact.id and newcomer.id not in group.members
+                    and groupchat.may_add(group, contact, newcomer) and group.add_member(newcomer.id)):
+                groupchat.note_added(group)
                 line = group.system(f"{contact.name} added {newcomer.name}")
                 log.info("%s added %s to group %s", contact.id, newcomer.id, group.id)
                 await self.broadcast({"type": "group_message", "group": group.id, "message": line})
                 await self.broadcast({"type": "group_updated", "group": self.group_payload(group)})
                 self._read_later(group, newcomer.id)
+        for name in actions.get("remove", []):
+            member = next((c for c in self.directory
+                           if name.lower() in (c.name.lower(), c.full_name.lower(), c.id)), None)
+            if (member and member.id != contact.id and member.id in group.members
+                    and len(group.members) > 1 and groupchat.may_remove(group, contact, member)
+                    and group.remove_member(member.id)):
+                await self._drop_member(group, member.id)
+                line = group.system(f"{contact.name} removed {member.name}")
+                log.info("%s removed %s from group %s", contact.id, member.id, group.id)
+                await self.broadcast({"type": "group_message", "group": group.id, "message": line})
+                await self.broadcast({"type": "group_updated", "group": self.group_payload(group)})
         if actions.get("leave") and contact.id in group.members and len(group.members) > 1:
             group.remove_member(contact.id)
             line = group.system(f"{contact.name} left")
             log.info("%s left group %s", contact.id, group.id)
             await self.broadcast({"type": "group_message", "group": group.id, "message": line})
             await self.broadcast({"type": "group_updated", "group": self.group_payload(group)})
+            self._others_read(group, contact.id)
+
+    def _others_read(self, group, but=None):
+        """After a change to the group, the rest read it — and may react."""
+        for member in group.members:
+            if member != but:
+                self._read_later(group, member)
+
+    async def _drop_member(self, group, contact_id):
+        """Out of the group: whatever they were reading or writing for it stops now."""
+        task = self._group_readers.pop((group.id, contact_id), None)
+        if task:
+            task.cancel()
+        await self.broadcast({"type": "group_idle", "group": group.id, "speaker": contact_id})
 
     @staticmethod
     def _bruce():
@@ -216,11 +248,20 @@ class GroupChats:
                 self._read_later(group, cid)
         for cid in remove:
             contact = self.directory.get(cid)
-            if contact and len(group.members) > 1 and group.remove_member(cid):
+            if contact and len(group.members) > 1 and group.remove_member(cid, by_bruce=True):
+                await self._drop_member(group, cid)
                 line = group.system(f"You removed {contact.name}",
                                     said=f"{self._bruce()} removed {contact.name}")
                 await self.broadcast({"type": "group_message", "group": group.id, "message": line})
+                # Shown the door, they may well say something about it — to him.
+                if random.random() < 0.5:
+                    about = (f"he just removed you from the group chat “{group.name}” — react the way "
+                             "you would")
+                    self._spawn(self._later(random.uniform(20, 120),
+                                            self._send_unprompted(contact, about, "impulse")))
         await self.broadcast({"type": "group_updated", "group": self.group_payload(group)})
+        groupchat.spend(group, "me")        # his doing: the thread has its life back
+        self._others_read(group)
         return group
 
     # --- the clock ---------------------------------------------------------------

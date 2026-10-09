@@ -1,5 +1,6 @@
 """Group chats: one record, read in each member's own time, kept consistent everywhere."""
 import asyncio
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -126,8 +127,22 @@ def test_members_come_and_go_and_the_thread_says_so():
     assert group.add_member("catwoman") and not group.add_member("catwoman")
     assert [m["text"] for m in group.unread_for("catwoman")] == ["where is everyone"]
     group.system("Dick added Selina")
-    assert group.unread_for("robin")[-1]["text"] == "where is everyone"   # system lines aren't "unread"
+    assert group.unread_for("robin")[-1]["text"] == "Dick added Selina"   # something to react to
     assert group.remove_member("robin") and "robin" not in group.members
+
+
+def test_nobody_puts_back_someone_he_removed_but_he_can_ask_for_anyone():
+    group = store.create("Night shift", ["nightwing", "robin"])
+    group.remove_member("robin", by_bruce=True)
+    assert not groupchat.may_add(group, BOOK["nightwing"], BOOK["robin"])
+    group.add("me", "Dick, add Tim back in", at=time.time())
+    assert groupchat.may_add(group, BOOK["nightwing"], BOOK["robin"])
+    assert not groupchat.may_remove(group, BOOK["nightwing"], BOOK["catwoman"])    # not on a whim
+    group.add("me", "Dick, remove Selina", at=time.time())
+    assert groupchat.may_remove(group, BOOK["nightwing"], BOOK["catwoman"])
+    other = store.create("Quiet", ["nightwing", "robin"])
+    other.add("me", "keep it between us", at=time.time())
+    assert not groupchat.may_add(other, BOOK["nightwing"], BOOK["catwoman"])
 
 
 def test_a_member_walking_out_or_bringing_someone_in(monkeypatch):

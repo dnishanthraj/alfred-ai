@@ -137,8 +137,11 @@ def reply_odds(contact, group, unread, energy, lively=1.0):
     A question to the room: likely, for the chatty. Otherwise their own
     chattiness, scaled by how much life the thread has left.
     """
-    if any(addressed(m["text"], contact) for m in unread):
+    if any(addressed(m["text"], contact) for m in unread if m.get("kind") != "system"):
         return 1.0
+    if all(m.get("kind") == "system" for m in unread):
+        # Someone joined or was shown the door: some react, most don't.
+        return max(0.0, min(0.7, 0.35 * energy * lively))
     chatty = min(1.0, 0.25 + (contact.initiative or {}).get("per_day", 0.5) * 0.4)
     from_bruce = any(m["from"] == "me" for m in unread)
     question = any(m["text"].rstrip().endswith("?") for m in unread)
@@ -147,6 +150,56 @@ def reply_odds(contact, group, unread, energy, lively=1.0):
     # ghosting the family, reads it and says nothing far more often than not.
     odds *= 1 - (contact.texting_pace or {}).get("on_read", 0)
     return max(0.0, min(0.95, odds * energy * lively))
+
+
+_ASKS_TO_ADD = r"(?i)\b(add|bring|get|loop|invite|pull)\b[^.?!]*\b{name}\b"
+
+
+def may_add(group, adder, newcomer, now=None):
+    """
+    Whether a member's [add] stands. Yes if Bruce asked for that person in the
+    last few messages. Otherwise only if nobody he removed is being put back, and
+    members haven't added anyone in the last half hour — Dick, given the power,
+    added Tim, Cass and Jason in three minutes after being told to keep it small.
+    """
+    import re as _re
+    now = now or time.time()
+    recent = [m for m in group.messages()[-8:] if m["from"] == "me"]
+    if any(_re.search(_ASKS_TO_ADD.format(name=_re.escape(newcomer.name)), m["text"]) for m in recent):
+        return True
+    meta = group.meta()
+    if now - (meta.get("removed") or {}).get(newcomer.id, 0) < 86400:
+        return False
+    if now - meta.get("member_added_at", 0) < 1800:
+        return False
+    keep_small = any(_re.search(r"(?i)\b(just|only|between) (you|us)\b|\bkeep it (small|between)|"
+                                r"\bno(body| one) else\b|\bremove\b", m["text"]) for m in recent)
+    return not keep_small
+
+
+_ASKS_TO_REMOVE = r"(?i)\b(remove|kick|boot|drop|take)\b[^.?!]*\b({name}|them all|everyone)\b"
+
+
+def may_remove(group, remover, member, now=None):
+    """
+    Whether a member's [remove] stands: because Bruce asked — "Dick, take Tim
+    out", "remove them all" — or to undo an add of their own a moment ago.
+    Never on a whim, and never Bruce's own members out from under him.
+    """
+    import re as _re
+    now = now or time.time()
+    recent = [m for m in group.messages()[-8:] if m["from"] == "me"]
+    if any(_re.search(_ASKS_TO_REMOVE.format(name=_re.escape(member.name)), m["text"]) for m in recent):
+        return True
+    added = [m for m in group.messages()[-12:] if m.get("kind") == "system"
+             and m["text"] == f"{remover.name} added {member.name}" and now - m["at"] < 900]
+    return bool(added)
+
+
+def note_added(group, now=None):
+    meta = group.meta()
+    meta["member_added_at"] = now or time.time()
+    group._save_meta(meta)
 
 
 def energy(group):

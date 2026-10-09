@@ -1003,8 +1003,9 @@ class ContactSession:
                     " If you wouldn't actually say anything here, reply with exactly SKIP.")
             others = [c for c in book if c.id not in group.members and c.id != self.contact.id]
             ask += (" If you'd genuinely walk out of this chat now — you've had enough, it isn't your "
-                    "place, it's over for you — end with [leave]. If he asked you to add someone, or "
-                    "someone plainly belongs in this, end with [add: their first name]"
+                    "place, it's over for you — end with [leave]. If he asks you to remove someone, end with [remove: their first name]. If he "
+                    "asked you to add someone — and only then, or if someone is truly needed and he "
+                    "hasn't said to keep it small — end with [add: their first name]"
                     + (f" (could be {', '.join(c.name for c in others)})" if others else "") + ".")
         instruction = ("[REFERENCE — context only]\n" + "\n".join(context) + "\n[END REFERENCE]\n\n"
                        + ask + f" As texts{style}; never write a line for anyone else, no stage cues.")
@@ -1015,9 +1016,11 @@ class ContactSession:
         except Exception:
             return ""
         # What they do to the group, not what they say in it.
-        self._group_actions = {"leave": bool(re.search(r"\[\s*leave\s*\]", text, re.I)),
-                               "add": [m.strip() for m in re.findall(r"\[\s*add\s*:\s*([^\]]+)\]", text, re.I)]}
-        text = re.sub(r"\[\s*(leave|add\s*:[^\]]*)\]", "", text, flags=re.I)
+        self._group_actions = {
+            "leave": bool(re.search(r"\[\s*leave\s*\]", text, re.I)),
+            "add": [m.strip() for m in re.findall(r"\[\s*add\s*:\s*([^\]]+)\]", text, re.I)],
+            "remove": [m.strip() for m in re.findall(r"\[\s*remove\s*:\s*([^\]]+)\]", text, re.I)]}
+        text = re.sub(r"\[\s*(leave|(add|remove)\s*:[^\]]*)\]", "", text, flags=re.I)
         text = self._plain(text)
         if re.match(r"\W*skip\b", text, re.I) and not must:
             return ""

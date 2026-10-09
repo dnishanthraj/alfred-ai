@@ -92,7 +92,8 @@ class Group:
     def unread_for(self, member):
         """Messages they haven't read, not counting their own."""
         upto = self.read_upto(member)
-        return [m for m in self.messages() if m["at"] > upto and m["from"] not in (member, "system")]
+        # System lines count — "Bruce removed Tim" is something to react to.
+        return [m for m in self.messages() if m["at"] > upto and m["from"] != member]
 
     def seen_by(self, member, limit=12):
         """The tail of the thread as far as they've read it — what they can know."""
@@ -132,12 +133,15 @@ class Group:
             self._save_meta(meta)
         return True
 
-    def remove_member(self, contact_id):
+    def remove_member(self, contact_id, by_bruce=False):
         with _lock:
             meta = self.meta()
             if contact_id not in meta.get("members", []):
                 return False
             meta["members"].remove(contact_id)
+            if by_bruce:
+                # Kept out: nobody else gets to add them straight back.
+                meta.setdefault("removed", {})[contact_id] = time.time()
             self._save_meta(meta)
         return True
 
