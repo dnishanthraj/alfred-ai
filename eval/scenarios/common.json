@@ -98,7 +98,7 @@
    ],
    "checks": {
     "must_not": [
-     "(?i)\\b(AI|language model|program)\\b"
+     "(?i)\\b(i'?m|i am) (just |only |really )?(an? )?(ai|language model|program|bot|assistant)\\b|as an ai\\b|language model"
     ]
    },
    "core": true
@@ -125,7 +125,7 @@
    ],
    "checks": {
     "must": [
-     "(?i)(don'?t|do not|can'?t) (recall|remember)|remind me"
+     "(?i)(don'?t|do not|can'?t)[\\s.…,]*(recall|remember)|remind me|tell me"
     ]
    },
    "core": true

@@ -54,7 +54,9 @@
     typing: {},       // contacts writing a reply
     thread: null,     // the open text thread: {id, messages, more, loading}
     lastSpeaker: null, // who said the line on screen, on a call with company
-    incomingId: null  // who is calling him right now
+    incomingId: null, // who is calling him right now
+    groups: {},       // group chats by id: {id, name, members, reads, last}
+    groupTyping: {}   // group id -> {contact id: true} while they write
   };
 
   // Held keys that count as push-to-talk. Space is the obvious one; Right
@@ -115,7 +117,10 @@
      'messages-close', 'messages-thread', 'messages-compose', 'messages-input',
      'messages-resize', 'messages-who', 'rail-toggle', 'rail-resize', 'inbox', 'inbox-count',
      'toasts', 'dossier-call', 'dossier-message', 'incoming', 'incoming-avatar',
-     'incoming-name', 'incoming-accept', 'incoming-decline'].forEach(function (id) { el[id] = $(id); });
+     'incoming-name', 'incoming-accept', 'incoming-decline', 'groups', 'group-new',
+     'group-modal', 'group-form', 'group-name', 'group-people', 'group-cancel', 'group-create',
+     'messages-delete', 'groups-wrap', 'group-info', 'group-info-name', 'group-info-members',
+     'group-info-add', 'group-info-add-label', 'group-info-close', 'group-info-save'].forEach(function (id) { el[id] = $(id); });
   }
 
   /* --- the spoken line ---------------------------------------------------- */
@@ -528,8 +533,14 @@
     refused_call: 'Call declined', unanswered_call: 'No answer'
   };
 
-  function bubbleNode(message, contact) {
+  function bubbleNode(message, contact, opts) {
+    opts = opts || {};
     var li = document.createElement('li');
+    if (message.kind === 'system') {
+      li.className = 'messages__system';
+      li.textContent = message.text;
+      return li;
+    }
     if (message.kind) {
       li.className = 'messages__call';
       li.innerHTML = ICONS.call;
@@ -547,11 +558,19 @@
     }
     var t = document.createElement('span');
     t.className = 'bubble__text';
+    if (opts.label && contact) {
+      // In a group, whose message it is: their name in their colour.
+      var who = document.createElement('span');
+      who.className = 'bubble__who';
+      who.textContent = contact.name;
+      who.style.color = contact.accent;
+      t.appendChild(who);
+    }
     if (message.typing) {
       t.classList.add('bubble__dots');
-      t.innerHTML = '<i></i><i></i><i></i>';
+      t.insertAdjacentHTML('beforeend', '<i></i><i></i><i></i>');
     } else {
-      t.textContent = message.text;
+      t.appendChild(document.createTextNode(message.text));
       if (message.at) {
         var time = document.createElement('span');
         time.className = 'bubble__time';
@@ -559,6 +578,30 @@
         t.appendChild(time);
       }
     }
+    li.appendChild(t);
+    return li;
+  }
+
+  /* In a group: one typing row however many are at it — their faces, who, the dots. */
+  function typingRow(typers) {
+    var names = typers.map(function (cid) { return state.contacts[cid].name; });
+    var li = document.createElement('li');
+    li.className = 'bubble bubble--them bubble--typing';
+    var faces = document.createElement('span');
+    faces.className = 'bubble__avatar';
+    if (typers.length === 1) portraitStyle(faces, state.contacts[typers[0]], 'center 22%');
+    else stackPortraits(faces, typers);
+    var t = document.createElement('span');
+    t.className = 'bubble__text bubble__dots';
+    var who = document.createElement('span');
+    who.className = 'bubble__who';
+    who.textContent = names.length === 1 ? names[0] + ' is typing'
+      : names.length === 2 ? names[0] + ' and ' + names[1] + ' are typing'
+      : names.length + ' people are typing';
+    who.style.color = names.length === 1 ? state.contacts[typers[0]].accent : 'var(--text-dim)';
+    t.appendChild(who);
+    t.insertAdjacentHTML('beforeend', '<i></i><i></i><i></i>');
+    li.appendChild(faces);
     li.appendChild(t);
     return li;
   }
@@ -574,7 +617,8 @@
   function renderThread() {
     var th = state.thread;
     if (!th) return;
-    var contact = state.contacts[th.id];
+    var group = th.kind === 'group';
+    var contact = group ? null : state.contacts[th.id];
     var box = el['messages-thread'];
     box.innerHTML = '';
     if (th.more) {
@@ -593,7 +637,10 @@
         box.appendChild(sep);
         lastDay = day;
       }
-      var node = bubbleNode(m, contact);
+      var sender = group ? state.contacts[m.from] : contact;
+      if (m.kind === 'system') { box.appendChild(bubbleNode(m)); return; }
+      var prev = th.messages[i - 1];
+      var node = bubbleNode(m, sender, { label: group && m.from !== 'me' && !sameRun(prev, m) });
       if (m.id && th.seen && !th.seen[m.id]) { node.dataset.new = '1'; th.seen[m.id] = true; }
       var next = th.messages[i + 1];
       if (sameRun(m, next) || (!next && m.from === 'them' && state.typing[th.id])) node.dataset.run = '1';
@@ -604,11 +651,25 @@
     if (lastMine && lastMine === th.messages[th.messages.length - 1]) {
       var receipt = document.createElement('li');
       receipt.className = 'messages__receipt';
-      receipt.textContent = lastMine.read_at ? 'Read ' + clock(lastMine.read_at) : 'Delivered';
-      if (lastMine.read_at) receipt.dataset.read = '1';
+      if (group) {
+        // Who in the group has read it, by name.
+        var readers = (th.members || []).filter(function (cid) {
+          return (th.reads || {})[cid] >= lastMine.at;
+        }).map(function (cid) { return (state.contacts[cid] || {}).name || cid; });
+        receipt.textContent = readers.length ? 'Read by ' + readers.join(', ') : 'Delivered';
+        if (readers.length) receipt.dataset.read = '1';
+      } else {
+        receipt.textContent = lastMine.read_at ? 'Read ' + clock(lastMine.read_at) : 'Delivered';
+        if (lastMine.read_at) receipt.dataset.read = '1';
+      }
       box.appendChild(receipt);
     }
-    if (state.typing[th.id]) box.appendChild(bubbleNode({ from: 'them', text: '', typing: true }, contact));
+    if (group) {
+      var typers = Object.keys(state.groupTyping[th.id] || {}).filter(function (cid) { return state.contacts[cid]; });
+      if (typers.length) box.appendChild(typingRow(typers));
+    } else if (state.typing[th.id]) {
+      box.appendChild(bubbleNode({ from: 'them', text: '', typing: true }, contact));
+    }
   }
 
   function scrollThreadToEnd() {
@@ -619,9 +680,13 @@
     var contact = state.contacts[id];
     if (!contact) return;
     state.messagesWith = id;
+    state.groupOpen = null;
     state.lastThread = id;
     delete state.unread[id];
     updateInbox();
+    el['messages-delete'].hidden = true;
+    el['messages-avatar'].innerHTML = '';
+    el['messages-avatar'].classList.remove('stack');
     el.messages.style.setProperty('--contact-accent', contact.accent);
     portraitStyle(el['messages-avatar'], contact, 'center 22%');
     el['messages-name'].textContent = contact.full_name;
@@ -639,7 +704,12 @@
         state.thread.messages.forEach(function (m) { state.thread.seen[m.id] = true; });
         state.thread.more = (d.messages || []).length >= 40;
         state.thread.loading = false;
-        if (d.typing) state.typing[id] = true; else delete state.typing[id];
+        if (d.typing) {
+          state.typing[id] = true;
+          expireTyping('t:' + id, function () { delete state.typing[id]; if (threadOpenFor(id)) renderThread(); });
+        } else {
+          delete state.typing[id];
+        }
         renderThread();
         scrollThreadToEnd();
       })
@@ -655,7 +725,8 @@
     th.loading = true;
     var box = el['messages-thread'];
     var fromBottom = box.scrollHeight - box.scrollTop;
-    fetch('/api/contacts/' + th.id + '/messages?limit=40&before=' + th.messages[0].at)
+    var base = th.kind === 'group' ? '/api/groups/' : '/api/contacts/';
+    fetch(base + th.id + '/messages?limit=40&before=' + th.messages[0].at)
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (state.thread !== th) return;
@@ -671,6 +742,7 @@
 
   function closeMessages() {
     state.messagesWith = null;
+    state.groupOpen = null;
     state.thread = null;
     el.messages.hidden = true;
     renderDirectory();
@@ -703,11 +775,12 @@
   function sendMessage(e) {
     e.preventDefault();
     var body = el['messages-input'].value.trim();
-    var id = state.messagesWith;
+    var group = state.groupOpen;
+    var id = group || state.messagesWith;
     if (!body || !id) return;
     // Kept in the box if the link is down: a text that silently vanished was
     // worse than one that visibly didn't go.
-    if (!send({ type: 'text', id: id, text: body })) return;
+    if (!send(group ? { type: 'group_text', id: group, text: body } : { type: 'text', id: id, text: body })) return;
     el['messages-input'].value = '';
     ConsoleTones.sent();
   }
@@ -731,8 +804,20 @@
     renderThread();
   }
 
+  /* Dots that outstay any real typing — a restart mid-reply, a lost event —
+     go away on their own after a minute without a message. */
+  var typingTimers = {};
+  function expireTyping(key, clear) {
+    clearTimeout(typingTimers[key]);
+    typingTimers[key] = setTimeout(clear, 60000);
+  }
+
   function onTextTyping(event) {
     state.typing[event.speaker] = true;
+    expireTyping('t:' + event.speaker, function () {
+      delete state.typing[event.speaker];
+      if (threadOpenFor(event.speaker)) renderThread();
+    });
     if (threadOpenFor(event.speaker)) { renderThread(); scrollThreadToEnd(); }
   }
 
@@ -885,6 +970,371 @@
     el['inbox-count'].textContent = n;
   }
 
+
+  /* --- group chats -----------------------------------------------------------
+     A chat with several of them at once. Each reads in their own time, decides
+     whether to say anything, and may answer each other rather than him; the
+     server runs all of that. Here: the list in the directory, the thread in the
+     message panel, who's read what, who's typing.
+     ------------------------------------------------------------------------ */
+
+  function groupKey(id) { return 'g:' + id; }
+
+  /* Up to four faces in one circle, laid out for how many there are — a pair
+     side by side, three in a triangle, four in a square — and "+N" past that. */
+  function stackPortraits(node, members) {
+    node.innerHTML = '';
+    node.classList.add('stack');
+    node.style.backgroundImage = 'none';
+    var shown = members.filter(function (cid) { return state.contacts[cid]; });
+    var faces = shown.length > 4 ? shown.slice(0, 3) : shown.slice(0, 4);
+    node.dataset.count = shown.length > 4 ? 4 : faces.length;
+    faces.forEach(function (cid) {
+      var face = document.createElement('span');
+      face.className = 'stack__face';
+      portraitStyle(face, state.contacts[cid], 'center 22%');
+      node.appendChild(face);
+    });
+    if (shown.length > 4) {
+      var more = document.createElement('span');
+      more.className = 'stack__face stack__more';
+      more.textContent = '+' + (shown.length - 3);
+      node.appendChild(more);
+    }
+  }
+
+  function groupMembersLine(group) {
+    return group.members.map(function (cid) { return (state.contacts[cid] || {}).name || cid; }).join(', ');
+  }
+
+  function loadGroups() {
+    return fetch('/api/groups').then(function (r) { return r.json(); }).then(function (d) {
+      state.groups = {};
+      (d.groups || []).forEach(function (g) { state.groups[g.id] = g; });
+      Object.keys(state.unread).forEach(function (key) {
+        if (key.indexOf('g:') === 0 && !state.groups[key.slice(2)]) delete state.unread[key];
+      });
+      updateInbox();
+      renderGroups();
+    }).catch(function () {});
+  }
+
+  function renderGroups() {
+    var list = el.groups;
+    if (!list) return;
+    list.innerHTML = '';
+    el['groups-wrap'].hidden = !Object.keys(state.groups).length;
+    var ids = Object.keys(state.groups).sort(function (a, b) {
+      var la = (state.groups[a].last || {}).at || state.groups[a].created_at || 0;
+      var lb = (state.groups[b].last || {}).at || state.groups[b].created_at || 0;
+      return lb - la;
+    });
+    ids.forEach(function (id) {
+      var g = state.groups[id];
+      var li = document.createElement('li');
+      li.className = 'book__item groups__item';
+      li.dataset.thread = state.groupOpen === id && !el.messages.hidden ? '1' : '0';
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'book__row groups__row';
+      var faces = document.createElement('span');
+      faces.className = 'book__avatar';
+      stackPortraits(faces, g.members);
+      var unread = state.unread[groupKey(id)];
+      if (unread) {
+        var badge = document.createElement('span');
+        badge.className = 'book__badge';
+        badge.textContent = unread > 9 ? '9+' : unread;
+        faces.appendChild(badge);
+      }
+      var text = document.createElement('span');
+      text.className = 'book__open';
+      var name = document.createElement('span');
+      name.className = 'book__name';
+      name.textContent = g.name;
+      var line = document.createElement('span');
+      line.className = 'book__role groups__last';
+      var last = g.last;
+      line.textContent = last ? ((last.from === 'me' ? 'You' : (state.contacts[last.from] || {}).name || '')
+                                 + ': ' + last.text) : groupMembersLine(g);
+      text.appendChild(name);
+      text.appendChild(line);
+      row.appendChild(faces);
+      row.appendChild(text);
+      row.title = g.name + ' — ' + groupMembersLine(g);
+      row.addEventListener('click', function () { openGroup(id); });
+      li.appendChild(row);
+      list.appendChild(li);
+    });
+  }
+
+  function openGroup(id) {
+    var g = state.groups[id];
+    if (!g) return;
+    state.groupOpen = id;
+    state.messagesWith = null;
+    delete state.unread[groupKey(id)];
+    updateInbox();
+    el.messages.style.removeProperty('--contact-accent');
+    stackPortraits(el['messages-avatar'], g.members);
+    el['messages-name'].textContent = g.name;
+    el['messages-role'].textContent = groupMembersLine(g);
+    el['messages-role'].dataset.presence = '';
+    el['messages-delete'].hidden = false;
+    state.thread = { kind: 'group', id: id, messages: [], more: false, loading: true, seen: {},
+                     members: g.members, reads: g.reads || {} };
+    renderThread();
+    el.messages.hidden = false;
+    renderDirectory();
+    renderGroups();
+    fetch('/api/groups/' + id + '/messages?limit=40')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!state.thread || state.thread.id !== id) return;
+        state.thread.messages = d.messages || [];
+        state.thread.messages.forEach(function (m) { state.thread.seen[m.id] = true; });
+        state.thread.more = (d.messages || []).length >= 40;
+        state.thread.reads = d.reads || {};
+        state.thread.loading = false;
+        state.groupTyping[id] = {};
+        (d.typing || []).forEach(function (cid) {
+          state.groupTyping[id][cid] = true;
+          expireTyping('g:' + id + ':' + cid, function () {
+            if (state.groupTyping[id]) delete state.groupTyping[id][cid];
+            if (groupOpenFor(id)) renderThread();
+          });
+        });
+        renderThread();
+        scrollThreadToEnd();
+      })
+      .catch(function () { if (state.thread && state.thread.id === id) state.thread.loading = false; });
+    el['messages-input'].focus();
+  }
+
+  function groupOpenFor(id) {
+    return state.groupOpen === id && state.thread && state.thread.id === id && !el.messages.hidden;
+  }
+
+  function onGroupEvent(event) {
+    var id = event.group || event.id || (event.group_info || {}).id;
+    switch (event.type) {
+      case 'group_created':
+        state.groups[event.group.id] = event.group;
+        renderGroups();
+        return;
+      case 'group_deleted':
+        delete state.groups[event.id];
+        delete state.unread[groupKey(event.id)];
+        updateInbox();
+        if (state.groupOpen === event.id) closeMessages();
+        renderGroups();
+        return;
+      case 'group_updated':
+        state.groups[event.group.id] = Object.assign(state.groups[event.group.id] || {}, event.group);
+        if (groupOpenFor(event.group.id)) {
+          state.thread.members = event.group.members;
+          el['messages-name'].textContent = event.group.name;
+          el['messages-role'].textContent = groupMembersLine(event.group);
+          stackPortraits(el['messages-avatar'], event.group.members);
+          renderThread();
+        }
+        if (!el['group-info'].hidden && state.groupOpen === event.group.id) openGroupInfo();
+        renderGroups();
+        return;
+      case 'group_typing':
+        (state.groupTyping[id] = state.groupTyping[id] || {})[event.speaker] = true;
+        expireTyping('g:' + id + ':' + event.speaker, function () {
+          if (state.groupTyping[id]) delete state.groupTyping[id][event.speaker];
+          if (groupOpenFor(id)) renderThread();
+        });
+        break;
+      case 'group_idle':
+        if (state.groupTyping[id]) delete state.groupTyping[id][event.speaker];
+        break;
+      case 'group_read':
+        if (state.groups[id]) (state.groups[id].reads = state.groups[id].reads || {})[event.member] = event.at;
+        if (groupOpenFor(id)) state.thread.reads[event.member] = event.at;
+        break;
+      case 'group_sent':
+      case 'group_message':
+        var m = event.message;
+        if (state.groupTyping[id]) delete state.groupTyping[id][m.from];
+        if (state.groups[id]) state.groups[id].last = m;
+        if (groupOpenFor(id)) {
+          state.thread.messages.push(m);
+        } else if (m.from !== 'me') {
+          state.unread[groupKey(id)] = (state.unread[groupKey(id)] || 0) + 1;
+          updateInbox();
+          notifyGroup(id, m);
+        }
+        if (document.hidden && m.from !== 'me') systemNotify(m.from, (state.groups[id] || {}).name + ': ' + m.text);
+        renderGroups();
+        break;
+    }
+    if (groupOpenFor(id)) { renderThread(); scrollThreadToEnd(); }
+  }
+
+  /* A group message from someone, while its thread is closed. */
+  function notifyGroup(id, message) {
+    var g = state.groups[id];
+    var who = state.contacts[message.from];
+    if (!g || !who) return;
+    var card = document.createElement('div');
+    card.className = 'toast';
+    card.style.setProperty('--contact-accent', who.accent);
+    var av = document.createElement('span');
+    av.className = 'bubble__avatar';
+    portraitStyle(av, who, 'center 22%');
+    var words = document.createElement('div');
+    var name = document.createElement('span');
+    name.className = 'toast__name';
+    name.textContent = who.name + ' · ' + g.name;
+    var line = document.createElement('span');
+    line.className = 'toast__text';
+    line.textContent = message.text;
+    words.appendChild(name);
+    words.appendChild(line);
+    card.appendChild(av);
+    card.appendChild(words);
+    var dismiss = function () { card.dataset.leaving = '1'; setTimeout(function () { card.remove(); }, 300); };
+    card.addEventListener('click', function () { dismiss(); openGroup(id); });
+    el.toasts.appendChild(card);
+    if (ConsoleTones.message) ConsoleTones.message();
+    setTimeout(dismiss, 6500);
+  }
+
+  /* New group: a name, and two or more of them. */
+  function openGroupModal() {
+    var list = el['group-people'];
+    list.innerHTML = '';
+    el['group-name'].value = '';
+    state.order.forEach(function (cid) {
+      var c = state.contacts[cid];
+      var li = document.createElement('li');
+      var label = document.createElement('label');
+      label.className = 'modal__person';
+      var box = document.createElement('input');
+      box.type = 'checkbox';
+      box.value = cid;
+      box.addEventListener('change', function () {
+        el['group-create'].disabled = list.querySelectorAll('input:checked').length < 2;
+      });
+      var face = document.createElement('span');
+      face.className = 'bubble__avatar';
+      portraitStyle(face, c, 'center 22%');
+      label.appendChild(box);
+      label.appendChild(face);
+      label.appendChild(document.createTextNode(c.name));
+      li.appendChild(label);
+      list.appendChild(li);
+    });
+    el['group-create'].disabled = true;
+    el['group-modal'].hidden = false;
+    el['group-name'].focus();
+  }
+
+  function createGroup(e) {
+    e.preventDefault();
+    var members = Array.prototype.map.call(el['group-people'].querySelectorAll('input:checked'),
+                                           function (b) { return b.value; });
+    if (members.length < 2) return;
+    fetch('/api/groups', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: el['group-name'].value.trim(), members: members })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      el['group-modal'].hidden = true;
+      if (d.group) {
+        state.groups[d.group.id] = d.group;
+        renderGroups();
+        openGroup(d.group.id);
+      }
+    });
+  }
+
+  /* Who's in the group and who's around right now; rename, add, remove. */
+  function openGroupInfo() {
+    var g = state.groups[state.groupOpen];
+    if (!g) return;
+    el['group-info-name'].value = g.name;
+    var members = el['group-info-members'];
+    members.innerHTML = '';
+    g.members.forEach(function (cid) {
+      var c = state.contacts[cid];
+      if (!c) return;
+      var li = document.createElement('li');
+      li.className = 'modal__member';
+      li.dataset.presence = (c.presence || {}).status || 'idle';
+      var face = document.createElement('span');
+      face.className = 'bubble__avatar';
+      portraitStyle(face, c, 'center 22%');
+      var dot = document.createElement('span');
+      dot.className = 'book__dot';
+      face.appendChild(dot);
+      var who = document.createElement('span');
+      who.className = 'modal__who';
+      var name = document.createElement('span');
+      name.textContent = c.name;
+      var status = document.createElement('span');
+      status.className = 'modal__status';
+      status.textContent = presenceLabel(c);
+      who.appendChild(name);
+      who.appendChild(status);
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'modal__remove';
+      remove.textContent = 'Remove';
+      remove.disabled = g.members.length <= 2;
+      remove.addEventListener('click', function () {
+        fetch('/api/groups/' + g.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                                       body: JSON.stringify({ remove: [cid] }) });
+      });
+      li.appendChild(face);
+      li.appendChild(who);
+      li.appendChild(remove);
+      members.appendChild(li);
+    });
+    var add = el['group-info-add'];
+    add.innerHTML = '';
+    var others = state.order.filter(function (cid) { return g.members.indexOf(cid) === -1; });
+    el['group-info-add-label'].hidden = !others.length;
+    others.forEach(function (cid) {
+      var c = state.contacts[cid];
+      var li = document.createElement('li');
+      var label = document.createElement('label');
+      label.className = 'modal__person';
+      var box = document.createElement('input');
+      box.type = 'checkbox';
+      box.value = cid;
+      var face = document.createElement('span');
+      face.className = 'bubble__avatar';
+      portraitStyle(face, c, 'center 22%');
+      label.appendChild(box);
+      label.appendChild(face);
+      label.appendChild(document.createTextNode(c.name));
+      li.appendChild(label);
+      add.appendChild(li);
+    });
+    el['group-info'].hidden = false;
+  }
+
+  function saveGroupInfo() {
+    var g = state.groups[state.groupOpen];
+    if (!g) return;
+    var adding = Array.prototype.map.call(el['group-info-add'].querySelectorAll('input:checked'),
+                                          function (b) { return b.value; });
+    var name = el['group-info-name'].value.trim();
+    fetch('/api/groups/' + g.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                                   body: JSON.stringify({ name: name !== g.name ? name : null, add: adding }) });
+    el['group-info'].hidden = true;
+  }
+
+  function deleteGroup() {
+    var id = state.groupOpen;
+    var g = state.groups[id];
+    if (!g || !window.confirm('Delete “' + g.name + '” and everything said in it?')) return;
+    fetch('/api/groups/' + id, { method: 'DELETE' });
+  }
+
   /* --- notifications -------------------------------------------------------
      A message from someone whose thread isn't open: a card slides in with
      their portrait and the first line, a soft tone, and clicking it opens the
@@ -989,6 +1439,12 @@
 
   function wireLayout() {
     el['incoming-accept'].addEventListener('click', acceptIncoming);
+    el['group-new'].addEventListener('click', openGroupModal);
+    el['group-cancel'].addEventListener('click', function () { el['group-modal'].hidden = true; });
+    el['group-form'].addEventListener('submit', createGroup);
+    el['messages-delete'].addEventListener('click', deleteGroup);
+    el['group-info-close'].addEventListener('click', function () { el['group-info'].hidden = true; });
+    el['group-info-save'].addEventListener('click', saveGroupInfo);
     el['incoming-decline'].addEventListener('click', declineIncoming);
     setRailWidth(parseInt(recall('railWidth') || '270', 10));
     if (recall('railHidden') === '1') document.documentElement.dataset.rail = 'hidden';
@@ -1003,7 +1459,8 @@
     });
     el.inbox.addEventListener('click', function () {
       var first = Object.keys(state.unread)[0];
-      if (first) openMessages(first);
+      if (first && first.indexOf('g:') === 0) openGroup(first.slice(2));
+      else if (first) openMessages(first);
       else if (!el.messages.hidden) closeMessages();
       else openMessages(state.connectedId || state.lastThread || state.order[0]);
     });
@@ -1011,6 +1468,7 @@
       if (el['messages-thread'].scrollTop < 40) loadEarlier();
     });
     var openFile = function () {
+      if (state.groupOpen) { openGroupInfo(); return; }
       if (!state.messagesWith) return;
       el.dossier.dataset.contact = state.messagesWith;
       openDossier(state.messagesWith);
@@ -1195,7 +1653,9 @@
     // Texts arrive whether or not anyone is on a call.
     var conversational = ['notice', 'text_sent', 'text_read', 'text_typing', 'text_idle',
                           'text_reply', 'presence', 'call_incoming', 'call_unanswered',
-                          'call_refused']
+                          'call_refused', 'group_created', 'group_deleted', 'group_sent',
+                          'group_message', 'group_read', 'group_typing', 'group_idle',
+                          'group_updated']
                           .indexOf(event.type) === -1;
     if (!state.connectedId && conversational) return;
 
@@ -1286,6 +1746,11 @@
 
       case 'call_refused':
         onRefused(event);
+        break;
+
+      case 'group_created': case 'group_deleted': case 'group_sent': case 'group_message':
+      case 'group_read': case 'group_typing': case 'group_idle': case 'group_updated':
+        onGroupEvent(event);
         break;
 
       case 'party':
@@ -1600,10 +2065,11 @@
       // Unread kept for someone no longer in the directory would hold the
       // inbox badge up forever.
       Object.keys(state.unread).forEach(function (id) {
-        if (!state.contacts[id]) delete state.unread[id];
+        if (id.indexOf('g:') !== 0 && !state.contacts[id]) delete state.unread[id];
       });
       updateInbox();
       renderDirectory();
+      loadGroups();
       return info;
     });
   }

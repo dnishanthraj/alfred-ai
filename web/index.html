@@ -73,7 +73,15 @@
     <aside class="rail" id="rail">
       <div class="rail__resize" id="rail-resize" title="Drag to resize"></div>
       <section class="panel panel--book">
-        <h2 class="panel__label">Directory</h2>
+        <div class="panel__head">
+          <h2 class="panel__label">Directory</h2>
+          <button class="groups__new" id="group-new" type="button" title="New group chat"
+                  aria-label="New group chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>+</span></button>
+        </div>
+        <div class="groups__wrap" id="groups-wrap" hidden>
+          <h3 class="book__group groups__label">Groups</h3>
+          <ul class="book groups" id="groups"></ul>
+        </div>
         <ul class="book" id="book"></ul>
       </section>
       <section class="panel panel--foot">
@@ -117,6 +125,8 @@
           <span class="messages__name" id="messages-name"></span>
           <span class="messages__role" id="messages-role"></span>
         </div>
+        <button class="messages__delete" id="messages-delete" type="button" hidden
+                title="Delete this group" aria-label="Delete this group"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg></button>
         <button class="messages__close" id="messages-close" type="button" aria-label="Close messages">Close</button>
       </header>
       <ol class="messages__thread" id="messages-thread"></ol>
@@ -170,6 +180,37 @@
   </main>
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <!-- A new group chat: a name and who's in it. -->
+  <div class="modal" id="group-modal" hidden role="dialog" aria-labelledby="group-modal-title">
+    <form class="modal__card" id="group-form">
+      <h2 class="modal__title" id="group-modal-title">New group chat</h2>
+      <input class="modal__input" id="group-name" type="text" maxlength="60"
+             placeholder="Name (optional)" autocomplete="off">
+      <p class="modal__label">Who's in it — at least two</p>
+      <ul class="modal__people" id="group-people"></ul>
+      <div class="modal__actions">
+        <button class="modal__btn" id="group-cancel" type="button">Cancel</button>
+        <button class="modal__btn modal__btn--go" id="group-create" type="submit" disabled>Create</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- A group's details: who's in it, who's around, and changes. -->
+  <div class="modal" id="group-info" hidden role="dialog" aria-labelledby="group-info-name">
+    <div class="modal__card">
+      <input class="modal__input modal__title-input" id="group-info-name" type="text" maxlength="60"
+             aria-label="Group name">
+      <p class="modal__label">In the group</p>
+      <ul class="modal__members" id="group-info-members"></ul>
+      <p class="modal__label" id="group-info-add-label">Add someone</p>
+      <ul class="modal__people" id="group-info-add"></ul>
+      <div class="modal__actions">
+        <button class="modal__btn" id="group-info-close" type="button">Close</button>
+        <button class="modal__btn modal__btn--go" id="group-info-save" type="button">Save</button>
+      </div>
+    </div>
+  </div>
 
   <!-- A contact's status, shown on hovering their portrait. -->
   <div class="hovercard" id="hovercard" hidden>

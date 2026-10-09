@@ -123,6 +123,9 @@ class Contact:
     search_aloud: bool = True
     # Whether he can see what they're doing. Jason and Selina don't share.
     shares_status: bool = True
+    # How they meet a silence on a call, added to whatever they'd do with it:
+    # Randy doesn't chase him; Cass doesn't mind it.
+    silence: str = ""
     # What a hidden status shows as: "unknown", or "offline" for someone who
     # has simply gone dark (Randy).
     hidden_as: str = "unknown"
@@ -241,6 +244,7 @@ def _load_profile(path):
         sees_calendar=bool(raw.get("sees_calendar", False)),
         search_aloud=bool(raw.get("search_aloud", True)),
         shares_status=bool(raw.get("shares_status", True)),
+        silence=raw.get("silence", ""),
         hidden_as=raw.get("hidden_as", "unknown"),
     )
 

@@ -338,7 +338,13 @@ def reference_block(vault_block, prompt, search_context="", awareness=(), contac
         f"infer nothing from it about what he has been doing."
     ]
 
-    parts.extend(world.snapshot(contact))
+    feeds = world.snapshot(contact)
+    if feeds:
+        parts.extend(feeds)
+        # Read out as a briefing, the news made every contact sound like a
+        # newsreader. People mention one thing, in passing, with a view on it.
+        parts.append("If the news comes up, mention one thing in passing the way a person "
+                     "would, with your own take — never a rundown.")
 
     if vault_block:
         parts.append(

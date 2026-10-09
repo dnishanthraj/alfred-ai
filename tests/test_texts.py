@@ -149,6 +149,8 @@ def _console(tmp_path, monkeypatch, contact):
     console.sessions, console._shown_presence, console._incoming = {}, {}, None
     console._ring_timer, console._release, console.clients = None, None, {object()}
     console._tasks, console._connecting, console._writing_lines = set(), False, False
+    console._text_bursts, console._call_attempts = {}, {}
+    console._typing_now = set()
     console.turn_lock = None
     events = []
 
@@ -332,3 +334,18 @@ def test_reply_length_is_drawn_from_their_own_spread():
     terse = _contact(texting_style={"length": {"word": 1.0}})
     assert "a word or two" in initiative.length_hint(terse)
     assert initiative.length_hint(_contact()) == ""
+
+
+def test_corrections_come_in_each_persons_own_form():
+    rng = random.Random(3)
+    prefix = _contact(texting_style={"typos": 1.0, "corrects": 1.0, "correct_style": "prefix"})
+    suffix = _contact(texting_style={"typos": 1.0, "corrects": 1.0, "correct_style": "suffix"})
+    assert initiative.slip(prefix, "heading to the docks now", rng)[1].startswith("*")
+    assert initiative.slip(suffix, "heading to the docks now", rng)[1].split()[0].endswith("*")
+
+
+def test_autocorrect_swaps_in_a_real_wrong_word():
+    rng = random.Random(1)
+    fat_thumbs = _contact(texting_style={"typos": 1.0, "autocorrect": 1.0, "corrects": 0.0})
+    sent, correction = initiative.slip(fat_thumbs, "meet me at the docks", rng)
+    assert sent == "meet me at the ducks" and correction is None

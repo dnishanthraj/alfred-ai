@@ -33,7 +33,7 @@ import ollama
 
 from .. import config, delivery, events
 from ..memory import History, Story, Vault
-from . import grapevine, guards, initiative, presence, prompting, world
+from . import grapevine, groupchat, guards, initiative, presence, prompting, world
 from .search import format_search_results, google_search, is_factual_lookup
 
 # Searches run on a worker so the holding line can be written meanwhile.
@@ -56,6 +56,11 @@ _PRE_SEARCH_PHRASES = [
 # conversation, and it duly emitted [SEARCH: link established] — then reported
 # back on an IT company of that name. Placeholders should look like something
 # a person would say.
+def operator_name():
+    from .. import operator
+    return operator.name()
+
+
 def _link_marker(contact):
     return f"{contact.name}?"
 
@@ -581,7 +586,7 @@ class ContactSession:
         """
         self._last_call = how
 
-    def boot(self, incoming=None):
+    def boot(self, incoming=None, rung=0):
         """
         Generate the opening line. Stored as a proper user/assistant pair: a
         history starting with an orphaned assistant message leaves the model
@@ -606,6 +611,9 @@ class ContactSession:
                             "calling — a word of hello at most, then why.)")
         elif whereabouts:
             instruction += f"\n({whereabouts} He's calling you.)"
+        if rung and not incoming:
+            instruction += (f"\n(He's rung you {rung + 1} times in the last few minutes before you "
+                            "picked up. React to that the way you would.)")
         self._last_call = None
         payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
 
@@ -685,6 +693,8 @@ class ContactSession:
                    "You cannot see him and have no idea whether he is busy, "
                    "thinking or away. Do not conclude which."]
         move = _SILENCE_MOVES[kind]
+        if self.contact.silence:
+            move += " " + self.contact.silence      # how this person meets a silence
         if kind == "world":
             # One item, picked here. Given the whole feed he raised the top
             # headline every time.
@@ -949,6 +959,87 @@ class ContactSession:
                 self.history.record_aside(text)
         yield events.reply_end(text)
 
+    def _background(self):
+        """What they've heard secondhand, and what's been said in their group chats."""
+        from ..contacts import directory
+        parts = [grapevine.block(self.contact.id), groupchat.block(self.contact.id, directory())]
+        return "\n\n".join(p for p in parts if p)
+
+    def group_post(self, group, unread, must=False, opening=None):
+        """
+        Their next message in a group chat, or "" if they'd rather not say
+        anything. `unread` is what they've just read; `opening` is something on
+        their mind when they start a conversation themselves.
+        Not written into their own history: the group's log is the record, and
+        it reaches them through _background() wherever they speak next.
+        """
+        from ..contacts import directory
+        book = directory()
+        name = groupchat.names(book)
+        members = ", ".join([operator_name()] + [name(m) for m in group.members if m != self.contact.id])
+        context = [f"Time: {prompting.time_context()}.",
+                   f"Group chat \"{group.name}\" — you, {members}."]
+        known = groupchat.relations(self.contact, group, book)
+        if known:
+            context.append("Who's here, and what they are to you — keep it in mind:\n" + "\n".join(known))
+        note = groupchat.secrets_note(group, self.contact.id)
+        if note:
+            context.append(note)
+        earlier = [m for m in group.seen_by(self.contact.id, limit=14) if m not in unread][-8:]
+        if earlier:
+            context.append("Earlier in the chat:\n" + groupchat.transcript(earlier, name))
+        if unread:
+            context.append("Just now (you've only now read these):\n" + groupchat.transcript(unread, name))
+        style = f" ({self.contact.texting})" if self.contact.texting else ""
+        if opening:
+            ask = (f"Nobody's said anything for a while. Start something in the group — {opening}. "
+                   "One or two short texts.")
+        else:
+            ask = ("Read what's actually going on — what Bruce means, and what you know of everyone "
+                   "here — then write your next message to the group, the way you text in a group: "
+                   "reply to whoever you're answering, react, or keep it to a word. You don't have "
+                   "to address Bruce.")
+            ask += (" You were asked directly: answer." if must else
+                    " If you wouldn't actually say anything here, reply with exactly SKIP.")
+            others = [c for c in book if c.id not in group.members and c.id != self.contact.id]
+            ask += (" If you'd genuinely walk out of this chat now — you've had enough, it isn't your "
+                    "place, it's over for you — end with [leave]. If he asked you to add someone, or "
+                    "someone plainly belongs in this, end with [add: their first name]"
+                    + (f" (could be {', '.join(c.name for c in others)})" if others else "") + ".")
+        instruction = ("[REFERENCE — context only]\n" + "\n".join(context) + "\n[END REFERENCE]\n\n"
+                       + ask + f" As texts{style}; never write a line for anyone else, no stage cues.")
+        payload = prompting.build_payload(self.contact, self.history.for_model(), instruction,
+                                          texting=True)
+        try:
+            text = self._chat_once(payload, temperature=0.9, num_predict=110)
+        except Exception:
+            return ""
+        # What they do to the group, not what they say in it.
+        self._group_actions = {"leave": bool(re.search(r"\[\s*leave\s*\]", text, re.I)),
+                               "add": [m.strip() for m in re.findall(r"\[\s*add\s*:\s*([^\]]+)\]", text, re.I)]}
+        text = re.sub(r"\[\s*(leave|add\s*:[^\]]*)\]", "", text, flags=re.I)
+        text = self._plain(text)
+        if re.match(r"\W*skip\b", text, re.I) and not must:
+            return ""
+        # A line written for someone else ("Tim: lol") is theirs to write, not this one's.
+        lines = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            label = re.match(r"^\W*(\w[\w .'-]{0,20}):\s*(.*)$", line)
+            if label:
+                speaker = label.group(1).strip().lower()
+                if speaker in {self.contact.name.lower(), self.contact.full_name.lower()}:
+                    line = label.group(2)
+                elif any(speaker == book.get(m).name.lower() for m in group.members
+                         if book.get(m)) or speaker == operator_name().lower():
+                    continue
+            lines.append(line)
+        text = "\n".join(guards.cap_length(line, 3) for line in lines[:4])
+        text = guards.strip_forbidden_address(delivery.clean(text), self.contact.forbidden_address)
+        return text.strip()
+
     def reach_out(self, about, why="impulse"):
         """
         A text they send first. `about` is what's on their mind — picked by
@@ -962,9 +1053,9 @@ class ContactSession:
         whereabouts = presence.of(self.contact).note()
         if whereabouts:
             context.append(whereabouts)
-        hearsay = grapevine.block(self.contact.id)
-        if hearsay:
-            context.append(hearsay)
+        background = self._background()
+        if background:
+            context.append(background)
         style = f" ({self.contact.texting})" if self.contact.texting else ""
         if why == "chase":
             ask = ("He hasn't answered your last text. Send one more, the way you'd chase "
@@ -1099,12 +1190,19 @@ class ContactSession:
             # prompting.spoken_length) — and held to it.
             length, self._turn_cap = prompting.spoken_length(self.contact, prompt)
             length = length or None
+        if texting and getattr(self, "pestered", 0) >= 3:
+            awareness.append(f"He's sent you {self.pestered} texts in a row in the last few minutes. "
+                             "React to that the way you would.")
+            self.pestered = 0
         if texting:
             state = presence.of(self.contact).now()
             if state["status"] == presence.BUSY and state["doing"]:
                 awareness.append(
                     f"You're {state['doing']} — reading this between things. Reply briefly, "
                     "or tell him you'll get back to him.")
+            elif state["doing"] and state["source"] in ("routine", "conversation"):
+                # Patrol is when they're most reachable — and least chatty.
+                awareness.append(f"You're {state['doing']}; texting between things, so keep it short.")
         if via == "text_on_call":
             awareness.append(
                 "He's just texted you this while you're on the call together — it's on "
@@ -1116,7 +1214,7 @@ class ContactSession:
                 "written the way you text" + (f" ({self.contact.texting})" if self.contact.texting
                                               else "") + ", no stage cues. "
                 "Several short texts go on separate lines.")
-            length = initiative.length_hint(self.contact) or None
+            length = initiative.length_hint(self.contact, prompt) or None
         if self.call:
             awareness.append(self.call.note_for(self, follow_up))
         elif via is None and self._said_this_call() >= 2:
@@ -1146,7 +1244,7 @@ class ContactSession:
 
         user_turn = prompting.compose_user_turn(
             prompt, vault_block, search_context, awareness, spoken=said,
-            hearsay=grapevine.block(self.contact.id), contact=self.contact, length=length)
+            hearsay=self._background(), contact=self.contact, length=length)
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn,
                                           texting=texting)
 

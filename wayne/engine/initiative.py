@@ -146,6 +146,70 @@ def status_line(contact, state):
     return line if 0 < len(line) <= 60 else ""
 
 
+# --- the day ahead ----------------------------------------------------------------
+
+_STATUSES = ("online", "idle", "busy", "offline")
+
+
+def day_plan(contact, when=None):
+    """
+    Their day, sketched by them: sleep, work, whether they're going out tonight,
+    and whatever they've got on — in their own life, decided by the model, not a
+    table. Loose blocks of time with a status each; gaps are free time. Returns
+    [] if it can't be had. Written once a day, only while the model is already
+    loaded (see Console._write_day_plans).
+    """
+    when = when or time.time()
+    day = time.strftime("%A %-d %B", time.localtime(when))
+    instruction = (
+        f"It's {day}. Sketch your day today and tonight as loose blocks of time, the way your "
+        "life actually runs — sleep, work, patrol if you'd go out tonight, and two or three "
+        "things that are yours today: errands, people, plans, a whim. Times are approximate and "
+        "needn't fill the day. Each block's status: online (phone in hand, on comms), idle "
+        "(around, phone down), busy (occupied — a glance at most), offline (asleep or "
+        "unreachable). Return JSON only: "
+        '{"plan": [{"from": "HH:MM", "to": "HH:MM", "doing": "under eight words, as you\'d say it", '
+        '"status": "online|idle|busy|offline"}]}')
+    try:
+        reply = ollama.chat(model=contact.model, think=False, format="json",
+                            options={**contact.options, "temperature": 0.9, "num_predict": 700},
+                            messages=[{"role": "system", "content": contact.system},
+                                      {"role": "user", "content": instruction}])["message"]["content"]
+    except Exception:
+        return []
+    try:
+        blocks = json.loads(reply).get("plan") or []
+    except ValueError:
+        # Cut off mid-plan: keep every block that did arrive whole.
+        blocks = []
+        for found in re.finditer(r"\{[^{}]*\}", reply):
+            try:
+                blocks.append(json.loads(found.group(0)))
+            except ValueError:
+                pass
+    plan = []
+    for b in blocks[:12]:
+        try:
+            start = _hours(b["from"])
+            end = _hours(b["to"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        status = b.get("status") if b.get("status") in _STATUSES else "busy"
+        doing = str(b.get("doing") or "").strip()[:70]
+        if doing and start != end:
+            plan.append({"from": start, "to": end, "doing": doing, "status": status, "drift": 0.4})
+    return plan
+
+
+def _hours(clock):
+    """'21:30' -> 21.5"""
+    hours, _, minutes = str(clock).strip().partition(":")
+    value = int(hours) + int(minutes or 0) / 60
+    if not 0 <= value <= 24:
+        raise ValueError(clock)
+    return value
+
+
 # --- tics ------------------------------------------------------------------------
 
 def untic(contact, text, recent):
@@ -207,12 +271,26 @@ _LENGTHS = {
 }
 
 
-def length_hint(contact, rng=random):
+_SERIOUS = re.compile(r"(?i)\b(lost|died|dead|hurt|hospital|sorry|can'?t do this|scared|alone|"
+                      r"rough|bad night|worst|funeral|help)\b")
+
+
+def length_hint(contact, prompt="", rng=random):
+    """
+    How long this text runs, from their own spread — moved by what he sent:
+    "rough night. lost someone" drew a bare "I'm sorry." from three of them
+    when the dice said a word or two. Something serious gets at least a line.
+    """
     weights = (contact.texting_style or {}).get("length")
     if not weights:
         return ""
     kinds = [k for k in _LENGTHS if weights.get(k)]
     pick = rng.choices(kinds, weights=[weights[k] for k in kinds])[0]
+    order = list(_LENGTHS)
+    if _SERIOUS.search(prompt or "") and order.index(pick) < order.index("few"):
+        pick = "few" if "few" in weights else pick
+    elif "?" in (prompt or "") and pick == "word":
+        pick = "line"
     return f"Length this time: {_LENGTHS[pick]}, unless it truly needs otherwise."
 
 
@@ -238,23 +316,46 @@ def typo(word, rng=random):
     return word[:i - 1] + word[i] + word[i - 1] + word[i + 1:]
 
 
+# Autocorrect's favourite betrayals: a real word, the wrong one.
+_AUTOCORRECT = {"docks": "ducks", "cave": "cafe", "fucking": "ducking", "fuck": "duck",
+                "shit": "shot", "were": "we're", "well": "we'll", "hell": "he'll", "sure": "sire",
+                "roof": "riff", "patrol": "petrol", "tonight": "tonights", "omw": "own"}
+
+
 def slip(contact, text, rng=random):
     """
-    Maybe a typo in a message, and maybe the correction after it ('*docks').
-    Returns the message as sent, and the correction or None.
+    Maybe a slip in a message — a fat-fingered typo, or autocorrect swapping in
+    the wrong real word — and maybe the correction after it, the way they'd
+    write one: '*docks' (Tim), 'docks*' (Dick), or not at all (Jason lets it
+    stand). Returns the message as sent, and the correction or None.
     """
     style = contact.texting_style or {}
     if rng.random() >= style.get("typos", 0):
         return text, None
-    words = [m for m in re.finditer(r"\b[a-z]{4,}\b", text)]
-    if not words:
-        return text, None
-    target = rng.choice(words)
-    wrong = typo(target.group(0), rng)
+    swappable = [m for m in re.finditer(r"\b[a-z']+\b", text) if m.group(0) in _AUTOCORRECT]
+    if swappable and rng.random() < style.get("autocorrect", 0):
+        target = rng.choice(swappable)
+        wrong, autocorrected = _AUTOCORRECT[target.group(0)], True
+    else:
+        words = [m for m in re.finditer(r"\b[a-z]{4,}\b", text)]
+        if not words:
+            return text, None
+        target = rng.choice(words)
+        wrong, autocorrected = typo(target.group(0), rng), False
     if wrong == target.group(0):
         return text, None
     sent = text[:target.start()] + wrong + text[target.end():]
-    return sent, ("*" + target.group(0) if rng.random() < style.get("corrects", 0) else None)
+    if rng.random() >= style.get("corrects", 0):
+        return sent, None
+    word = target.group(0)
+    form = style.get("correct_style", "prefix")
+    if form == "mixed":
+        form = rng.choice(("prefix", "suffix"))
+    correction = f"*{word}" if form == "prefix" else f"{word}*"
+    if autocorrected and rng.random() < 0.35:
+        correction += rng.choice((" autocorrect", " stupid autocorrect", " ugh autocorrect"))
+    return sent, correction
+
 
 # Sentence ends — but not after a title ("Mr. Freeze" is one name, not two
 # texts) or a lone initial.

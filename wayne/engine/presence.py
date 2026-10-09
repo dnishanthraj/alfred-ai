@@ -111,30 +111,83 @@ class Presence:
     # --- the routine -------------------------------------------------------
 
     def _routine(self, t):
-        """The routine block covering time t, if there is one today."""
+        """
+        The routine block covering time t, if there is one today. A loose
+        schedule, not a timetable: each block's edges drift by up to an hour or
+        so, differently every day, and some days it doesn't happen at all.
+        """
         local = time.localtime(t)
+        hour = local.tm_hour + local.tm_min / 60
+        plans = self._state.get("plans") or {}
+        for began in (t, t - 86400):            # a night may have begun yesterday
+            key = time.strftime("%Y-%m-%d", time.localtime(began))
+            for block in plans.get(key) or []:
+                start, end = block["from"], block["to"]
+                if end <= start:
+                    end += 24
+                at = hour + (24 if began < t - 1 else 0)
+                if start <= at < end:
+                    return block
         for index, block in enumerate(self.contact.routine):
-            start, end = block.get("from", 0), block.get("to", 0)
-            if start <= end:
-                inside, began = start <= local.tm_hour < end, t
-            elif local.tm_hour >= start:
-                inside, began = True, t
-            else:
-                # Hours past midnight belong to the night that began yesterday.
-                inside, began = local.tm_hour < end, t - 86400
-            if not inside:
-                continue
-            day = time.localtime(began)
-            if "days" in block and day.tm_wday not in block["days"]:
-                continue
-            if _draw(self.contact.id, index, time.strftime("%Y-%m-%d", day)) >= block.get("chance", 1.0):
-                continue     # not tonight
-            return block
+            if (self._state.get("plans") or {}).get(time.strftime("%Y-%m-%d", local)):
+                break       # they planned today themselves; the routine is only a fallback
+            for began in (t, t - 86400):        # a night may have begun yesterday
+                day = time.localtime(began)
+                key = time.strftime("%Y-%m-%d", day)
+                if "days" in block and day.tm_wday not in block["days"]:
+                    continue
+                if _draw(self.contact.id, index, key) >= block.get("chance", 1.0):
+                    continue     # not that day
+                drift = block.get("drift", 1.25)
+                start = block.get("from", 0) + (_draw(self.contact.id, index, key, "start") - 0.5) * 2 * drift
+                end = block.get("to", 0) + (_draw(self.contact.id, index, key, "end") - 0.5) * 2 * drift
+                if end <= start:
+                    end += 24                   # runs past midnight
+                at = hour + (24 if began < t - 1 else 0)
+                if start <= at < end:
+                    return block
         return None
 
+    def has_plan(self, t=None):
+        key = time.strftime("%Y-%m-%d", time.localtime(t or time.time()))
+        return bool((self._state.get("plans") or {}).get(key))
+
+    def set_plan(self, blocks, t=None):
+        """Their own plan for the day — kept for today and yesterday's late night."""
+        key = time.strftime("%Y-%m-%d", time.localtime(t or time.time()))
+        with self._lock:
+            plans = dict(self._state.get("plans") or {})
+            plans[key] = blocks
+            self._state["plans"] = dict(sorted(plans.items())[-2:])
+            self.save()
+
+    def _whim(self, t):
+        """
+        Something unplanned, now and then, in free time: walking the dog, out
+        with a friend, at the bookshop. Decided per two-hour spell, so it holds
+        while it lasts and doesn't flicker.
+        """
+        whims = self.contact.texting_pace.get("whims") or getattr(self.contact, "whims", ())
+        if not whims or self.has_plan(t):
+            return None     # a plan of their own already has the day's spontaneity in it
+        spell = int(t // 7200)
+        if _draw(self.contact.id, "whim", spell) >= self.contact.texting_pace.get("whim_rate", 0.18):
+            return None
+        whim = whims[int(_draw(self.contact.id, "which", spell) * len(whims))]
+        lasts = whim.get("minutes", 60) * 60
+        begins = spell * 7200 + _draw(self.contact.id, "when", spell) * max(0, 7200 - lasts)
+        return whim if begins <= t < begins + lasts else None
+
     def _free_time(self, t):
-        """Phone in hand or put down, in spells — the same spell reads the same."""
-        share = self.contact.texting_pace.get("phone", 0.3)
+        """
+        Phone in hand or put down, in spells — the same spell reads the same.
+        Gotham's people live at night: in the evening and small hours their
+        phones are out far more than in the day (`phone_night`).
+        """
+        pace = self.contact.texting_pace
+        hour = time.localtime(t).tm_hour
+        night = hour >= 20 or hour < 4
+        share = pace.get("phone_night", pace.get("phone", 0.3)) if night else pace.get("phone", 0.3)
         return ONLINE if _draw(self.contact.id, int(t // _SPELL)) < share else IDLE
 
     # --- now ---------------------------------------------------------------
@@ -151,10 +204,10 @@ class Presence:
             return {"status": activity["status"], "doing": activity["doing"],
                     "until": activity["until"], "source": "conversation", "last_active": last,
                     "terminal": activity.get("terminal", False)}
-        if t - last < ENGAGED_FOR:
+        if 0 <= t - last < ENGAGED_FOR:
             return {"status": ONLINE, "doing": "", "until": last + ENGAGED_FOR,
                     "source": "engaged", "last_active": last}
-        block = self._routine(t)
+        block = self._routine(t) or self._whim(t)
         if block:
             return {"status": block.get("status", BUSY), "doing": block.get("doing", ""),
                     "until": 0, "source": "routine", "last_active": last,
@@ -325,8 +378,11 @@ def answers(contact, state, again=False, rng=random):
     """
     odds = {**_ANSWERS, **(contact.initiative or {}).get("answers", {})}
     chance = odds.get(state["status"], 0.9)
-    if again:
-        chance = 1 - (1 - chance) / 3
+    # Each call hard on the heels of the last cuts the chance of ignoring it to
+    # a third: twice reads as urgent, three times is hard to sleep through.
+    tries = int(again)
+    if tries:
+        chance = 1 - (1 - chance) / (3 ** tries)
     if rng.random() < chance:
         return None
     if state["status"] == OFFLINE:

@@ -66,7 +66,16 @@ class TextLog:
     def unread(self):
         """His messages they haven't read yet — waiting, across a restart."""
         return [m for m in self._load() if m["from"] == "me" and not m.get("read_at")
-                and not m.get("kind")]
+                and not m.get("kind") and not m.get("ignored")]
+
+    def ignore(self, ids):
+        """Never opened, on purpose: left at Delivered for good."""
+        with _lock:
+            messages = self._load()
+            for m in messages:
+                if m["id"] in ids:
+                    m["ignored"] = True
+            atomic_write(self.path, json.dumps(messages))
 
     def last(self):
         """The last real message in the thread, or None."""

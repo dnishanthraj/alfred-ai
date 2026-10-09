@@ -7,6 +7,17 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Fixed
 
+- **Replies slowing to 25 seconds** whenever anything else used the model: Gemma's
+  sliding-window attention makes Ollama keep 200 MB context checkpoints per
+  parallel slot, and the model server reached 25 GB on a 24 GB Mac. One slot and
+  a q8 KV cache bring it to about 5 GB resident; first words in 0.6–1.0s.
+- **From the first cast evaluation:** serious texts ("rough night. lost
+  someone") drew a bare "I'm sorry." from three people — a serious message now
+  gets a real reply; news came out as briefings — now one thing in passing, with
+  a view; Dick, Tim and Barbara all signed off "stay safe out there" — each has a
+  goodbye of their own; Randy chased silences — he lets them sit now; Dick,
+  Barbara and Selina talked longer than their profiles — their spreads are shorter.
+
 A full review of the code turned up, among others:
 
 - **The first words of every push-to-talk take were lost** while the microphone
@@ -45,6 +56,49 @@ A full review of the code turned up, among others:
 
 ### Added
 
+- **Days of their own.** Each contact sketches their own day with the model, once a
+  day and only while it's already loaded — sleep, work, whether they're going out
+  tonight, and whatever's theirs ("Grocery run. Need fruit." "Dinner with Tanya. A
+  rare luxury.") — and their status follows it. Without a plan, a loose routine:
+  edges that drift by an hour or so each day, blocks that don't happen every
+  day, the odd unplanned errand. Gotham lives at night: the family are online and
+  quickest to answer in patrol hours, asleep in the morning, phones down more by day.
+- **Texting like people, further:** typing time follows the message and the
+  person, never at a perfectly steady rate, with the dots stopping and starting
+  on longer messages; corrections in each person's own form ("*care", "care*", or
+  none) and autocorrect slips ("ducks"); and ghosting — some read it and never
+  answer, some never open it — though anything urgent gets through to anyone.
+- **Typing dots only when someone's typing.** The reply is written first and the
+  dots shown for as long as typing it would take; shown while the model worked,
+  they sat for minutes whenever it was busy. Dots left over from a restart clear
+  themselves. Threads fill from the bottom up, as in any messenger.
+- **Pestering works, a little.** Each call hard on the heels of the last cuts the
+  chance of being ignored; a burst of texts can make someone pick their phone up,
+  even from sleep. Whoever answers knows you've been ringing or texting and says so.
+- **Group chats.** Make a group of any of them from the directory; each member
+  reads it in their own time (presence decides when), decides whether to say
+  anything, and may answer each other rather than you — Dick riffing on Tim,
+  Barbara shutting it down. Anyone named answers. Every message between them
+  uses up some of the thread's energy and yours restores it, so a chat drifts
+  quiet the way real ones do instead of looping forever; now and then someone
+  starts a fresh conversation in a quiet group, within the daily budget. The
+  group's log is the single record: what each member knows of it is what
+  they've read, and it reaches them wherever they speak next — on a call, Dick
+  can tell you what Barbara and Tim have been on about. With Selina in a chat,
+  the family are told she doesn't know about the masks. Read receipts by name,
+  one typing row ("Dick and Tim are typing"), notifications and unread counts as
+  for texts. Members can walk out of a chat or add someone — because you asked,
+  or because they belong in it — and the thread says so; a group comes alive
+  when several of them are online at once and goes quiet when they're not; and
+  now and then someone messages you privately about what was said there. Click
+  a group's name for who's in it and who's around, to rename it, or to add and
+  remove people.
+- **A rebuilt evaluation suite** (`scripts/evaluate.py --cast`): calls and texts
+  for the whole cast; a judge that knows how each character talks and that a
+  fitting short reply is right; head-to-head comparison against the last run
+  with a sign test; length against each profile and how alike the characters
+  sound on a shared call; and a voice check that transcribes each voice back.
+  See `eval/rubric.md`.
 - **Randy Wayne (Batwing) and Cassandra Cain (Orphan).** Randy is Bruce and
   Selina's son — hidden by her, then handed to Bruce, raised as Robin after Jason
   and before Tim, and now flying alone, bitter and estranged: he rarely answers,

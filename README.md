@@ -285,6 +285,18 @@ hanging. Budgeted — a handful a day across everyone, never two within the hour
 none in your quiet hours, none from someone already waiting on you — so it reads
 as people rather than notifications.
 
+### Group chats
+
+Make a group of any of them from the directory (**+** under Groups). Each member
+reads it in their own time, decides whether to say anything, and may answer each
+other rather than you; anyone you name answers. Messages between them use up the
+thread's energy and yours restore it, so a chat drifts quiet the way a real one
+does. The group's log is the single record — what each member knows of it is
+what they've read, and it reaches them wherever they speak next, so Dick on a
+call can tell you what's been said in the group. With someone in it who doesn't
+know about the masks, the rest are told so. See `wayne/memory/groups.py` and
+`wayne/engine/groupchat.py`.
+
 ### Hearing you
 
 Speech-to-text runs on `whisper-small.en`, chosen by measurement: ~0.2s on an
@@ -511,31 +523,29 @@ take twenty seconds.
 
 ## Evaluation
 
-Changes to the character, the prompt or the engine are measured, not eyeballed.
+Changes to a character, the prompt or the engine are measured, not eyeballed.
 [`eval/rubric.md`](eval/rubric.md) is the marking scheme;
-[`eval/scenarios/`](eval/scenarios) holds the situations — `common.json` for every contact, plus one file per contact, several taken
-from real conversations that went wrong.
+[`eval/scenarios/`](eval/scenarios) holds the situations — `common.json` and
+`texts.json` for everyone, plus one file per contact.
 
 ```bash
-venv/bin/python scripts/evaluate.py --save before            # baseline
-venv/bin/python scripts/evaluate.py --samples 2 --compare before
-venv/bin/python scripts/evaluate.py --only warmth             # one area
-venv/bin/python scripts/evaluate.py --rejudge before          # re-mark with a better judge
+venv/bin/python scripts/evaluate.py --cast --save before       # the whole cast, quick tier
+venv/bin/python scripts/evaluate.py --cast --compare before    # after a change: head to head
+venv/bin/python scripts/evaluate.py --contact orphan --tier full
+venv/bin/python scripts/evaluate.py --cast --voice             # also check each voice
 ```
 
-Each scenario runs through the real engine from an empty history, nothing written
-to memory, and is marked two ways: automatic checks needing no judgement
-(presence, copied example lines, curt streaks, cue overuse, each scenario's own
-rules) and a rubric — persona, human, register, substance, each 1–5, plus a
-grounded pass/fail — marked by a judge model with a fixed prompt. Latency is
-reported beside the score rather than folded into it. Results go to
-`eval/results/` (gitignored: transcripts carry your name) as JSON and as a
-Markdown report sorted worst-first, so the replies behind any number are a
-scroll away.
+Every scenario runs through the real engine from an empty history, nothing
+written to memory, on a call or by text. It's marked by automatic checks, by a
+judge model that knows how each character talks (and that a fitting short reply
+is right), and — with `--compare` — head to head against the last run, both
+orders, with a sign test saying better, worse or no clear change. `--cast` adds
+a shared call to everyone: how long each talks against their profile, and how
+alike any two sound, with the lines they both said. Results go to
+`eval/results/` (gitignored) as JSON and a Markdown report.
 
-The judge is the same local model that plays him, and a single run moves by a
-few points on its own; use `--samples 2` for anything close, and read the
-transcripts behind a change before believing it.
+Run it when nobody is using the console: on a 24 GB Mac, two processes on one
+model slow both to a crawl.
 
 ## Project structure
 
@@ -557,6 +567,7 @@ wayne-console/
 │   │   ├── party.py              # calls with more than one contact
 │   │   ├── presence.py           # what each contact is doing; their intentions
 │   │   ├── initiative.py         # afterthoughts, impulses, texting style
+│   │   ├── groupchat.py          # who knows what in a group, who answers, going quiet
 │   │   ├── grapevine.py          # what one hears, another may hear of
 │   │   ├── world.py              # weather, headlines, calendar
 │   │   ├── guards.py             # deterministic post-processing (pure functions)
@@ -565,6 +576,7 @@ wayne-console/
 │   ├── memory/
 │   │   ├── history.py            # short-term conversation, per contact
 │   │   ├── texts.py              # the long-term text thread, per contact
+│   │   ├── groups.py             # group chat logs and who has read what
 │   │   ├── vault.py              # long-term facts + relevance retrieval
 │   │   └── store.py              # atomic, encrypted writes
 │   ├── audio/
@@ -572,7 +584,8 @@ wayne-console/
 │   │   └── tts.py                # ElevenLabs synthesis + local playback
 │   └── frontends/
 │       ├── cli.py                # terminal (ANSI + afplay)
-│       └── web.py                # FastAPI + WebSocket
+│       ├── web.py                # FastAPI + WebSocket
+│       └── groupchats.py         # group chats run in time, mixed into the console
 ├── web/                          # the console: no build step, no node toolchain
 │   ├── index.html
 │   ├── css/console.css

@@ -894,7 +894,7 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
 @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } }
 
 .messages__head {
-  display: grid; grid-template-columns: 34px 1fr auto; gap: 12px; align-items: center;
+  display: grid; grid-template-columns: 34px 1fr auto auto; gap: 10px; align-items: center;
   padding: 14px 16px; border-bottom: 1px solid var(--hairline);
 }
 .messages__avatar, .bubble__avatar {
@@ -1189,3 +1189,128 @@ html:has(.messages:not([hidden])) .toasts { right: calc(var(--msg-w, 400px) + 16
    is genuinely new should slide in. */
 .bubble { animation: none; }
 .bubble[data-new="1"] { animation: bubble-in 0.22s var(--ease) both; }
+
+/* --- group chats ------------------------------------------------------------- */
+.groups__label { margin: 0; }
+.groups__new {
+  width: 22px; height: 22px; border-radius: 50%; padding: 0; cursor: pointer;
+  background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim);
+  font-size: 15px; line-height: 19px;
+}
+.groups__new:hover { color: var(--text); border-color: var(--primary-dim); }
+.groups__row { width: 100%; background: transparent; border: 0; border-left: 2px solid transparent;
+  color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.groups__item[data-thread="1"] .groups__row { background: rgba(14, 19, 28, 0.7); border-left-color: var(--primary-dim); }
+.groups__last { text-transform: none; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Several faces in one circle, laid out for how many: a pair side by side,
+   three in a triangle, four in a square. */
+.stack { position: relative; background: var(--surface-2) !important; overflow: hidden; }
+.stack__face {
+  position: absolute; border-radius: 50%; border: 1.5px solid var(--surface-2);
+  background-color: var(--surface); background-repeat: no-repeat; box-sizing: border-box;
+}
+.stack[data-count="1"] .stack__face { inset: 0; }
+.stack[data-count="2"] .stack__face { width: 58%; height: 58%; top: 21%; }
+.stack[data-count="2"] .stack__face:nth-child(1) { left: 4%; z-index: 2; }
+.stack[data-count="2"] .stack__face:nth-child(2) { right: 4%; }
+.stack[data-count="3"] .stack__face { width: 52%; height: 52%; }
+.stack[data-count="3"] .stack__face:nth-child(1) { left: 24%; top: 4%; z-index: 3; }
+.stack[data-count="3"] .stack__face:nth-child(2) { left: 4%; bottom: 6%; z-index: 2; }
+.stack[data-count="3"] .stack__face:nth-child(3) { right: 4%; bottom: 6%; }
+.stack[data-count="4"] .stack__face { width: 48%; height: 48%; }
+.stack[data-count="4"] .stack__face:nth-child(1) { left: 3%; top: 3%; }
+.stack[data-count="4"] .stack__face:nth-child(2) { right: 3%; top: 3%; }
+.stack[data-count="4"] .stack__face:nth-child(3) { left: 3%; bottom: 3%; }
+.stack[data-count="4"] .stack__face:nth-child(4) { right: 3%; bottom: 3%; }
+.stack__more { display: grid; place-items: center; font-family: var(--mono); font-size: 8px;
+  color: var(--text-dim); background: var(--raised) !important; }
+.messages__avatar.stack { border: 0; }
+
+/* Who said it, in a group: their name in their colour, above their first bubble. */
+.bubble__who { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em;
+  text-transform: uppercase; margin-bottom: 3px; }
+
+.messages__delete {
+  width: 30px; height: 30px; padding: 6px; flex: none; cursor: pointer;
+  background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim);
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.messages__delete:hover { color: var(--alert); border-color: rgba(224, 87, 79, 0.45); }
+.messages__delete svg { width: 100%; height: 100%; display: block; }
+.messages__delete[hidden] { display: none; }
+
+/* --- the new-group dialog --- */
+.modal { position: fixed; inset: 0; z-index: 55; display: grid; place-items: center;
+  background: rgba(5, 7, 11, 0.6); backdrop-filter: blur(5px); }
+.modal[hidden] { display: none; }
+.modal__card { width: min(360px, calc(100% - 32px)); padding: 22px; background: var(--raised);
+  border: 1px solid var(--hairline-2); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); }
+.modal__title { margin: 0 0 14px; font-weight: 400; font-size: 17px; color: var(--text); }
+.modal__input { width: 100%; padding: 9px 12px; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--hairline-2); font: inherit; font-size: 14px; outline: none; }
+.modal__input:focus { border-color: var(--primary-dim); }
+.modal__label { margin: 16px 0 8px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--text-faint); }
+.modal__people { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr;
+  gap: 6px; max-height: 260px; overflow-y: auto; }
+.modal__person { display: flex; align-items: center; gap: 8px; padding: 6px 8px; cursor: pointer;
+  border: 1px solid var(--hairline); color: var(--text); font-size: 13px; }
+.modal__person:has(input:checked) { border-color: var(--primary-dim); background: rgba(79, 168, 224, 0.07); }
+.modal__person input { accent-color: var(--primary); margin: 0; }
+.modal__person .bubble__avatar { width: 24px; height: 24px; border-radius: 50%; }
+.modal__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.modal__btn { padding: 8px 14px; background: transparent; border: 1px solid var(--hairline-2);
+  color: var(--text-dim); font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em;
+  text-transform: uppercase; cursor: pointer; }
+.modal__btn--go { border-color: var(--primary-dim); color: var(--primary); }
+.modal__btn:disabled { opacity: 0.4; cursor: default; }
+
+/* The folded directory keeps the groups as faces only. */
+html[data-rail="compact"] .groups__label { display: none; }
+
+/* The directory heading carries the new-group button, always in reach. */
+.panel__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.panel__head .panel__label { margin: 0; }
+.groups__new { display: inline-flex; align-items: center; gap: 2px; width: auto; height: 24px;
+  padding: 0 7px; border-radius: 12px; font-size: 12px; line-height: 1; }
+.groups__new svg { width: 14px; height: 14px; }
+.groups__wrap { margin-bottom: 8px; }
+.groups__wrap[hidden] { display: none; }
+.groups__label { margin: 0 0 4px; }
+html[data-rail="compact"] .panel__head { justify-content: center; }
+html[data-rail="compact"] .panel__head .panel__label { display: none; }
+
+/* A line about the group rather than in it. */
+.messages__system { align-self: center; font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--text-faint); margin: 4px 0; }
+
+/* Group details. */
+.modal__title-input { font-size: 16px; margin-bottom: 4px; }
+.modal__members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.modal__member { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center;
+  padding: 6px 8px; border: 1px solid var(--hairline); }
+.modal__member .bubble__avatar { position: relative; width: 30px; height: 30px; border-radius: 50%; }
+.modal__member .book__dot { width: 8px; height: 8px; }
+.modal__member[data-presence="online"] .book__dot { background: var(--good); }
+.modal__member[data-presence="idle"] .book__dot { background: #c9a23a; }
+.modal__member[data-presence="busy"] .book__dot { background: var(--alert); }
+.modal__member[data-presence="offline"] .book__dot,
+.modal__member[data-presence="unknown"] .book__dot { background: var(--text-faint); }
+.modal__who { display: flex; flex-direction: column; font-size: 13px; color: var(--text); min-width: 0; }
+.modal__status { font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.modal__remove { background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim);
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  padding: 5px 8px; cursor: pointer; }
+.modal__remove:hover { color: var(--alert); border-color: rgba(224, 87, 79, 0.45); }
+.modal__remove:disabled { opacity: 0.35; cursor: default; }
+
+/* The group typing row: the name line sits above the dots, as in a bubble. */
+.bubble--typing .bubble__dots { flex-wrap: wrap; }
+.bubble--typing .bubble__who { flex-basis: 100%; margin-bottom: 4px; }
+
+/* Threads fill from the bottom up, newest just above the box you type in — as
+   every messenger does. Pushing the first item down (rather than flex-end)
+   keeps the thread scrollable back to its start. */
+.messages__thread > :first-child { margin-top: auto; }

@@ -30,6 +30,7 @@ head-to-head swaps positions, and why the transcripts are written out.
 """
 import argparse
 import dataclasses
+import difflib
 import itertools
 import json
 import math
@@ -464,8 +465,11 @@ def check_voices(contacts):
                 rows.append({"line": line, "error": str(exc)[:120]})
                 continue
             want, got = set(_words(_plain_letters(line))), set(_words(_plain_letters(heard)))
-            rows.append({"line": line, "heard": heard,
-                         "missed": sorted(want - got), "recall": round(len(want & got) / len(want), 2)})
+            # "Selena" for Selina is the transcriber's spelling, not the voice's
+            # mistake: a near match counts.
+            missed = sorted(w for w in want if w not in got and not difflib.get_close_matches(w, got, 1, 0.75))
+            rows.append({"line": line, "heard": heard, "missed": missed,
+                         "recall": round(1 - len(missed) / len(want), 2)})
         out[contact.id] = {"rows": rows}
     return out
 

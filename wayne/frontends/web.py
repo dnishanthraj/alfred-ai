@@ -36,10 +36,12 @@ from ..audio.tts import get_voice_engine
 from ..contacts import directory
 from ..engine import ContactSession, grapevine, guards, initiative, presence, world
 from ..engine.party import MAX_CONTACTS, Call
+from ..memory import groups as group_store
 from ..memory import migrate_legacy
 from ..memory.store import atomic_write, read_text
 from ..memory.texts import TextLog
 from ..paths import WEB_DIR
+from .groupchats import GroupChats
 
 # Synthesized clips waiting to be fetched. Bounded — a long session would
 # otherwise hold every reply's audio in memory for the whole run.
@@ -74,6 +76,11 @@ DECLINE_AFTER = (3.0, 8.0)
 NO_ANSWER_AFTER = (16.0, 24.0)
 # Ringing back within this long reads as urgent (see presence.answers).
 RING_AGAIN = 240
+# Several texts inside this window is a burst — enough to make someone look.
+BURST_WINDOW = 300
+# Words that make even someone ghosting him answer.
+_URGENT = re.compile(r"(?i)\b(help|emergency|hurt|hospital|bleeding|urgent|now|please call|call me|"
+                     r"are you (ok|okay|alive|safe)|answer)\b")
 
 # How often the console's clock ticks: presence, promises, the odd text.
 PULSE_SECONDS = 30
@@ -83,7 +90,7 @@ INITIATIVE_GAP = 45 * 60
 RECHECK_SECONDS = 15
 
 
-class Console:
+class Console(GroupChats):
     """
     The console as a whole: a directory of contacts, one live session per
     contact you have spoken to, and the fan-out to connected browser tabs.
@@ -96,6 +103,7 @@ class Console:
     # treated as already shown and never appeared, and a check-in after an
     # unanswered reply could vanish the same way.
     _said = 0
+    PULSE_SECONDS = PULSE_SECONDS
 
     def __init__(self):
         self.directory = directory()
@@ -132,11 +140,16 @@ class Console:
         # last let him ring out — so ringing straight back reads as urgent.
         self._ringing_out = None
         self._refused_at = {}
+        # When he last rang or texted each contact — for "he keeps calling".
+        self._call_attempts = {}
+        self._text_bursts = {}
         # Set from the moment a call is placed until it's up, so nobody rings
         # him in the gap while the line is still being opened.
         self._connecting = False
         self._tasks = set()
         self._writing_lines = False
+        self._typing_now = set()
+        self._init_groups()
         self.migrated = migrate_legacy(config.DEFAULT_CONTACT)
 
     # --- contacts ---------------------------------------------------------
@@ -188,7 +201,26 @@ class Console:
             return
         del log[:-400]
 
+    def _note_typing(self, event):
+        """
+        Who is actually typing right now — not who merely has a reply pending.
+        A thread opened mid-wait asked "is anyone typing?" and was told yes for
+        anyone waiting to read, which for Randy can be hours of dots.
+        """
+        kind = event.get("type")
+        if kind == "text_typing":
+            self._typing_now.add(("text", event["speaker"]))
+        elif kind in ("text_reply", "text_idle"):
+            self._typing_now.discard(("text", event["speaker"]))
+        elif kind == "group_typing":
+            self._typing_now.add((event["group"], event["speaker"]))
+        elif kind == "group_idle":
+            self._typing_now.discard((event["group"], event["speaker"]))
+        elif kind == "group_message":
+            self._typing_now.discard((event["group"], event["message"]["from"]))
+
     async def broadcast(self, event):
+        self._note_typing(event)
         self._record(event)
         dead = []
         for ws in list(self.clients):
@@ -445,8 +477,8 @@ class Console:
 
             state = presence.of(contact).now()
             whereabouts = state["status"]
-            refused = None if incoming else presence.answers(
-                contact, state, again=time.time() - self._refused_at.get(contact_id, 0) < RING_AGAIN)
+            rung = 0 if incoming else self._attempt(self._call_attempts, contact_id, RING_AGAIN)
+            refused = None if incoming else presence.answers(contact, state, again=rung)
             if refused:
                 # Not picking up. The ring happens outside the lock, so texts
                 # to anyone else carry on meanwhile.
@@ -475,7 +507,8 @@ class Console:
                     f"Migrated existing {' and '.join(self.migrated)} into "
                     f"data/{config.DEFAULT_CONTACT}/.", "info"))
                 self.migrated = []
-            await self.drive(session.boot(incoming), contact, self.interrupt(), release_at=pickup)
+            await self.drive(session.boot(incoming, rung), contact, self.interrupt(), release_at=pickup)
+            self._call_attempts.pop(contact_id, None)
             presence.of(contact).touch()
             # Talking now: any plan to get back to him about a missed call is moot.
             presence.of(contact).drop("callback")
@@ -629,7 +662,7 @@ class Console:
             return
         state = presence.of(contact).now()
         how = presence.answers(contact, state,
-                               again=time.time() - self._refused_at.get(contact_id, 0) < RING_AGAIN)
+                               again=self._attempt(self._call_attempts, contact_id, RING_AGAIN))
         if how:
             # Patched in, it rings — and they don't take it. The call goes on.
             await self.broadcast(events.party(self._members() + [contact_id], added=contact_id))
@@ -698,7 +731,25 @@ class Console:
             return await self._text_into_call(contact_id, body)
 
         self._pending_texts.setdefault(contact_id, []).append(message)
+        burst = self._attempt(self._text_bursts, contact_id, BURST_WINDOW) + 1
+        self.session_for(contact_id).pestered = burst
+        whereabouts = presence.of(contact)
+        if burst >= 3 and whereabouts.now()["status"] != presence.ONLINE:
+            # A phone buzzing over and over gets looked at — more likely with
+            # every message past the second, even through sleep.
+            if random.random() < (contact.texting_pace or {}).get("wake", 0.2) * (burst - 2):
+                log.info("%s picked up their phone after %d texts", contact_id, burst)
+                whereabouts.touch()
+                await self._presence_changed(contact)
         self._start_answering(contact)
+
+    @staticmethod
+    def _attempt(attempts, contact_id, window):
+        """Record an attempt; return how many came before it inside the window."""
+        now = time.time()
+        recent = [t for t in attempts.get(contact_id, []) if now - t < window]
+        attempts[contact_id] = recent + [now]
+        return len(recent)
 
     def _start_answering(self, contact):
         if contact.id not in self._texters:
@@ -722,6 +773,20 @@ class Console:
                 return
             log = TextLog(contact.id)
             ids = [m["id"] for m in batch]
+            body = "\n".join(m["text"] for m in batch)
+            ghost = pace.get("ghost", 0)
+            if _URGENT.search(body):
+                ghost *= 0.1        # even Randy answers "are you okay"
+            if random.random() < ghost:
+                # Ghosted. Some open it and say nothing; some never open it at all.
+                if random.random() < pace.get("ghost_unread", 0.3):
+                    log.ignore(ids)
+                else:
+                    read_at = log.mark_read(ids)
+                    await self.broadcast({"type": "text_read", "speaker": contact.id,
+                                          "ids": ids, "at": read_at})
+                logging.getLogger("wayne").info("%s ghosted %d text(s)", contact.id, len(batch))
+                return
             read_at = log.mark_read(ids)
             await self.broadcast({"type": "text_read", "speaker": contact.id,
                                   "ids": ids, "at": read_at})
@@ -738,11 +803,12 @@ class Console:
                 await asyncio.sleep(random.uniform(*pace.get("on_read_for", [180, 1200])))
             else:
                 await asyncio.sleep(random.uniform(0.8, 3.0))
-            await self.broadcast({"type": "text_typing", "speaker": contact.id})
-            started = loop.time()
+            # Written first, typed after: the dots only appear once there's
+            # something to type. Shown while the model worked, they sat there
+            # for minutes whenever it was busy with something else.
             reply = await self._write_text(contact, "\n".join(m["text"] for m in batch))
             if reply:
-                await self._deliver(contact, reply, started)
+                await self._deliver(contact, reply, loop.time())
                 whereabouts.drop("callback")     # back in touch; no need to ring him back
                 if not glancing:
                     whereabouts.touch()
@@ -806,17 +872,37 @@ class Console:
         recent = [m["text"] for m in log.page(limit=8) if m["from"] == "them"][-3:]
         parts = initiative.bubbles(contact, initiative.untic(contact, reply, recent))
         for i, part in enumerate(parts):
-            if i:
-                await self.broadcast({"type": "text_typing", "speaker": contact.id})
-            typing = min(len(part) / per_second, 20)
-            if i == 0:
-                typing -= loop.time() - started
-            if typing > 0:
-                await asyncio.sleep(typing)
+            await self.broadcast({"type": "text_typing", "speaker": contact.id})
+            await self._type_out(contact.id, part, per_second,
+                                 already=(loop.time() - started) if i == 0 else 0)
             sent = log.add("them", part, origin=origin)
             await self.broadcast({"type": "text_reply", "speaker": contact.id, "message": sent})
             if i < len(parts) - 1:
                 await asyncio.sleep(random.uniform(0.4, 1.4))
+
+    async def _type_out(self, contact_id, text, per_second, already=0, group=None, cap=20):
+        """
+        Typing that looks like a person: roughly as long as the message takes at
+        their speed — never exactly, nobody types at a steady rate — and on a
+        longer one the dots stop and start as they pause mid-thought.
+        """
+        speed = per_second * random.lognormvariate(0, 0.22)
+        total = min(len(text) / max(0.5, speed), cap) - already
+        if total <= 0:
+            return
+        typing = {"type": "group_typing", "group": group, "speaker": contact_id} if group else \
+            {"type": "text_typing", "speaker": contact_id}
+        idle = {"type": "group_idle", "group": group, "speaker": contact_id} if group else \
+            {"type": "text_idle", "speaker": contact_id}
+        if len(text) > 60 and total > 4 and random.random() < 0.6:
+            first = total * random.uniform(0.3, 0.6)
+            await asyncio.sleep(first)
+            await self.broadcast(idle)
+            await asyncio.sleep(random.uniform(1.2, 4.0))
+            await self.broadcast(typing)
+            await asyncio.sleep(total - first)
+        else:
+            await asyncio.sleep(total)
 
     async def _afterthought(self, session, exchanges, by):
         """What the exchange set in motion — see wayne.engine.initiative."""
@@ -896,6 +982,7 @@ class Console:
         """
         await asyncio.sleep(5)
         self._resume_unread()
+        self._resume_group_reads()
         while True:
             try:
                 await self._tick()
@@ -920,6 +1007,7 @@ class Console:
         for contact in self.directory:
             await self._presence_changed(contact)
         await self._write_status_lines()
+        await self._write_day_plans()
         if not self.clients:
             return      # nobody at the console to hear about it
         for contact in self.directory:
@@ -929,6 +1017,7 @@ class Console:
                 presence.of(contact).postpone(intent["id"], 120, count=False)  # claimed
                 self._spawn(self._carry_out(contact, intent))
         await self._maybe_reach_out(now)
+        await self._group_tick(now)
 
     async def _write_status_lines(self):
         """
@@ -953,6 +1042,29 @@ class Console:
                 if line:
                     whereabouts.set_line(key, line)
                     await self._presence_changed(contact)
+        finally:
+            self._writing_lines = False
+
+    async def _write_day_plans(self):
+        """
+        Each contact sketches their own day, once, while the model is already
+        loaded and nothing else is happening — one contact a tick, so it never
+        holds anything up.
+        """
+        if (self._writing_lines or not self.clients or self.current_id or self._texters
+                or self.turn_lock.locked()):
+            return
+        waiting = [c for c in self.directory if not presence.of(c).has_plan()]
+        if not waiting or not await asyncio.to_thread(_model_loaded, waiting[0].model):
+            return
+        self._writing_lines = True
+        try:
+            contact = waiting[0]
+            plan = await asyncio.to_thread(initiative.day_plan, contact)
+            if plan:
+                presence.of(contact).set_plan(plan)
+                log.info("%s planned the day: %d blocks", contact.id, len(plan))
+                await self._presence_changed(contact)
         finally:
             self._writing_lines = False
 
@@ -1069,7 +1181,6 @@ class Console:
         log.info("%s texted first (%s), %d chars", contact.id, why, len(text))
         presence.of(contact).touch()
         await self._presence_changed(contact)
-        await self.broadcast({"type": "text_typing", "speaker": contact.id})
         await self._deliver(contact, text, loop.time(), origin=why)
         self._release_later(contact)
 
@@ -1413,7 +1524,49 @@ async def messages(contact_id: str, before: float = 0, limit: int = 40):
     if console.directory.get(contact_id) is None:
         return Response(status_code=404)
     page = TextLog(contact_id).page(before or None, max(1, min(limit, 200)))
-    return JSONResponse({"messages": page, "typing": contact_id in console._texters})
+    return JSONResponse({"messages": page, "typing": ("text", contact_id) in console._typing_now})
+
+
+@app.get("/api/groups")
+async def list_groups():
+    return JSONResponse({"groups": [console.group_payload(g) for g in group_store.all_groups()]})
+
+
+@app.post("/api/groups")
+async def create_group(request: Request):
+    body = await request.json()
+    group = await console.group_create(body.get("name", ""), body.get("members", []))
+    if group is None:
+        return JSONResponse({"error": "a group needs at least two contacts"}, status_code=400)
+    return JSONResponse({"group": console.group_payload(group)})
+
+
+@app.patch("/api/groups/{group_id}")
+async def update_group(group_id: str, request: Request):
+    body = await request.json()
+    group = await console.group_update(group_id, body.get("name"), body.get("add") or [],
+                                       body.get("remove") or [])
+    if group is None:
+        return Response(status_code=404)
+    return JSONResponse({"group": console.group_payload(group)})
+
+
+@app.delete("/api/groups/{group_id}")
+async def delete_group(group_id: str):
+    await console.group_delete(group_id)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/groups/{group_id}/messages")
+async def group_messages(group_id: str, before: float = 0, limit: int = 40):
+    group = group_store.of(group_id)
+    if group is None:
+        return Response(status_code=404)
+    page = group.page(before or None, max(1, min(limit, 200)))
+    meta = group.summary()
+    typing = [cid for (gid, cid) in console._typing_now if gid == group_id]
+    return JSONResponse({"messages": page, "reads": meta["reads"], "members": meta["members"],
+                         "name": meta["name"], "typing": typing})
 
 
 @app.get("/api/audio/{clip_id}")
@@ -1505,6 +1658,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(console.answer(payload.get("id", "")))
             elif kind == "decline":
                 asyncio.create_task(console.decline(payload.get("id", "")))
+            elif kind == "group_text":
+                asyncio.create_task(console.group_text(payload.get("id", ""), payload.get("text", "")))
             elif kind == "add":
                 asyncio.create_task(console.add(payload.get("id", "")))
             elif kind == "drop":
