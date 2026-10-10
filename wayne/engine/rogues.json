@@ -1,0 +1,446 @@
+{
+ "_doc": "Gotham's rogues as the console has them tonight: who they are, where they are (locked up at Arkham or Blackgate, or at large), what they do, the crimes on the scanner that point to them and where they work. The scanner names a suspect when a crime is one of theirs and they're out.",
+ "rogues": [
+  {
+   "name": "The Joker",
+   "real": "Unknown",
+   "status": "at large",
+   "held": "",
+   "mo": "Laughing gas, bombs, hostages, a punchline nobody else finds funny; out of Arkham more often than in.",
+   "kinds": [
+    "Laughing-gas attack",
+    "Explosion reported",
+    "Hostage situation",
+    "Body found"
+   ],
+   "haunts": [
+    "Amusement Mile",
+    "Crime Alley",
+    "Otisburg"
+   ],
+   "threat": 4
+  },
+  {
+   "name": "Harley Quinn",
+   "real": "Dr. Harleen Quinzel",
+   "status": "at large",
+   "held": "",
+   "mo": "A former Arkham psychiatrist with a mallet and a crew; robbery, mayhem, and a soft spot she'd deny.",
+   "kinds": [
+    "Smash-and-grab",
+    "Armed robbery",
+    "Vandalism"
+   ],
+   "haunts": [
+    "Amusement Mile",
+    "The Bowery"
+   ],
+   "threat": 3
+  },
+  {
+   "name": "The Penguin",
+   "real": "Oswald Cobblepot",
+   "status": "at large",
+   "held": "",
+   "mo": "A nightclub owner with a smuggling empire behind the bar; never holds the gun himself.",
+   "kinds": [
+    "Gang activity",
+    "Shots fired",
+    "Protection racket",
+    "Mob hit"
+   ],
+   "haunts": [
+    "Robinsville",
+    "Gotham Docks",
+    "Tricorner"
+   ],
+   "threat": 3
+  },
+  {
+   "name": "The Riddler",
+   "real": "Edward Nygma",
+   "status": "at large",
+   "held": "",
+   "mo": "Puzzles, deathtraps and a need to be the cleverest man in the room — he leaves a riddle so you know it.",
+   "kinds": [
+    "Riddle left at a crime scene",
+    "Kidnapping"
+   ],
+   "haunts": [
+    "Diamond District",
+    "Old Gotham"
+   ],
+   "threat": 3
+  },
+  {
+   "name": "Two-Face",
+   "real": "Harvey Dent",
+   "status": "locked up",
+   "held": "Arkham Asylum",
+   "mo": "The former district attorney: every choice on the flip of a scarred coin, every job in twos.",
+   "kinds": [
+    "Armed robbery",
+    "Shots fired"
+   ],
+   "haunts": [
+    "City Hall District",
+    "Diamond District"
+   ],
+   "threat": 3
+  },
+  {
+   "name": "Scarecrow",
+   "real": "Dr. Jonathan Crane",
+   "status": "at large",
+   "held": "",
+   "mo": "Fear toxin in the air or the water supply; he studies what the terror does to you.",
+   "kinds": [
+    "Toxin exposure",
+    "Mass overdose"
+   ],
+   "haunts": [
+    "The Narrows",
+    "University District"
+   ],
+   "threat": 4
+  },
+  {
+   "name": "Poison Ivy",
+   "real": "Dr. Pamela Isley",
+   "status": "at large",
+   "held": "",
+   "mo": "Plants that strangle, pheromones that command; she'd tear the city down for the trees.",
+   "kinds": [
+    "Plant overgrowth attack"
+   ],
+   "haunts": [
+    "Robinson Park",
+    "Coventry"
+   ],
+   "threat": 3
+  },
+  {
+   "name": "Mr. Freeze",
+   "real": "Dr. Victor Fries",
+   "status": "at large",
+   "held": "",
+   "mo": "A cryogenicist in a refrigeration suit, stealing what keeps his wife alive; leaves people frozen.",
+   "kinds": [
+    "Freezing incident"
+   ],
+   "haunts": [
+    "Diamond District",
+    "Otisburg"
+   ],
+   "threat": 4
+  },
+  {
+   "name": "Bane",
+   "real": "Unknown",
+   "status": "locked up",
+   "held": "Blackgate Penitentiary",
+   "mo": "A strategist with a soldier's body and Venom in his veins; breaks prisons, cities and men.",
+   "kinds": [
+    "Riot",
+    "Explosion reported"
+   ],
+   "haunts": [
+    "Blackgate Isle",
+    "The Narrows"
+   ],
+   "threat": 4
+  },
+  {
+   "name": "Killer Croc",
+   "real": "Waylon Jones",
+   "status": "at large",
+   "held": "",
+   "mo": "A man gone reptile in the sewers under the docks; what's found of his victims is found in pieces.",
+   "kinds": [
+    "Body found",
+    "Missing person",
+    "Mauling"
+   ],
+   "haunts": [
+    "Tricorner",
+    "Gotham Docks",
+    "The Narrows"
+   ],
+   "threat": 4
+  },
+  {
+   "name": "Black Mask",
+   "real": "Roman Sionis",
+   "status": "at large",
+   "held": "",
+   "mo": "The False Face Society's boss behind a steel mill and a cosmetics firm; torture as management.",
+   "kinds": [
+    "Gang activity",
+    "Shots fired",
+    "Kidnapping",
+    "Torture victim found",
+    "Protection racket"
+   ],
+   "haunts": [
+    "Ironworks",
+    "Crime Alley",
+    "The Bowery"
+   ],
+   "threat": 4
+  },
+  {
+   "name": "Mad Hatter",
+   "real": "Jervis Tetch",
+   "status": "locked up",
+   "held": "Arkham Asylum",
+   "mo": "Mind-control hats and an obsession with Alice; abducts young women who look the part.",
+   "kinds": [
+    "Kidnapping",
+    "Missing person"
+   ],
+   "haunts": [
+    "Old Gotham"
+   ],
+   "threat": 3
+  },
+  {
+   "name": "Victor Zsasz",
+   "real": "Victor Zsasz",
+   "status": "locked up",
+   "held": "Arkham Asylum",
+   "mo": "A serial killer who carves a tally into his own skin for every life he takes.",
+   "kinds": [
+    "Serial killing",
+    "Body found",
+    "Unprovoked attack"
+   ],
+   "haunts": [
+    "Crime Alley"
+   ],
+   "threat": 4
+  },
+  {
+   "name": "Firefly",
+   "real": "Garfield Lynns",
+   "status": "at large",
+   "held": "",
+   "mo": "A pyromaniac in a flight suit with a flamethrower; he likes to watch it burn.",
+   "kinds": [
+    "Arson",
+    "Explosion reported"
+   ],
+   "haunts": [
+    "New Town",
+    "Burnley"
+   ],
+   "threat": 3
+  },
+  {
+   "name": "Hush",
+   "real": "Dr. Thomas Elliot",
+   "status": "at large",
+   "held": "",
+   "mo": "A surgeon wrapped in bandages, Bruce Wayne's childhood friend and his most patient enemy.",
+   "kinds": [
+    "Body found",
+    "Kidnapping"
+   ],
+   "haunts": [
+    "Upper East Side"
+   ],
+   "threat": 4
+  },
+  {
+   "name": "Clayface",
+   "real": "Basil Karlo",
+   "status": "locked up",
+   "held": "Arkham Asylum",
+   "mo": "A failed actor made of mud who can be anyone; nobody ever saw who did it.",
+   "kinds": [
+    "Armed robbery"
+   ],
+   "haunts": [
+    "Theater District"
+   ],
+   "threat": 3
+  },
+  {
+   "name": "The Ventriloquist",
+   "real": "Arnold Wesker",
+   "status": "locked up",
+   "held": "Blackgate Penitentiary",
+   "mo": "A meek man whose dummy, Scarface, runs a gang and gives the orders.",
+   "kinds": [
+    "Gang activity",
+    "Armed robbery",
+    "Protection racket"
+   ],
+   "haunts": [
+    "The Bowery"
+   ],
+   "threat": 2
+  },
+  {
+   "name": "Professor Pyg",
+   "real": "Lazlo Valentin",
+   "status": "locked up",
+   "held": "Arkham Asylum",
+   "mo": "A surgeon in a pig mask who 'perfects' his victims into mindless Dollotrons.",
+   "kinds": [
+    "Missing person",
+    "Body found",
+    "Surgical abduction"
+   ],
+   "haunts": [
+    "The Narrows"
+   ],
+   "threat": 4
+  },
+  {
+   "name": "Calendar Man",
+   "real": "Julian Day",
+   "status": "locked up",
+   "held": "Arkham Asylum",
+   "mo": "Crimes on holidays and anniversaries; talks in dates and waits for his day.",
+   "kinds": [
+    "Serial killing"
+   ],
+   "haunts": [
+    "Old Gotham"
+   ],
+   "threat": 2
+  },
+  {
+   "name": "Deathstroke",
+   "real": "Slade Wilson",
+   "status": "at large",
+   "held": "",
+   "mo": "The world's most expensive mercenary; in Gotham only when someone's paid for a death.",
+   "kinds": [
+    "Shots fired",
+    "Assassination"
+   ],
+   "haunts": [
+    "Diamond District",
+    "Financial District"
+   ],
+   "threat": 4
+  },
+  {
+   "name": "Ra's al Ghul",
+   "real": "Ra's al Ghul",
+   "status": "unknown",
+   "held": "",
+   "mo": "The Demon's Head, centuries old, the League of Assassins at his command; cleanses cities.",
+   "kinds": [],
+   "haunts": [],
+   "threat": 4
+  },
+  {
+   "name": "Hugo Strange",
+   "real": "Dr. Hugo Strange",
+   "status": "at large",
+   "held": "",
+   "mo": "A psychiatrist who has studied Batman for years and wants to become him.",
+   "kinds": [
+    "Kidnapping"
+   ],
+   "haunts": [
+    "University District"
+   ],
+   "threat": 3
+  },
+  {
+   "name": "Man-Bat",
+   "real": "Dr. Kirk Langstrom",
+   "status": "at large",
+   "held": "",
+   "mo": "A zoologist who turned himself into a bat-creature; mostly sighted, rarely caught.",
+   "kinds": [
+    "Missing person",
+    "Mauling"
+   ],
+   "haunts": [
+    "Cherry Hills",
+    "Robinson Park"
+   ],
+   "threat": 2
+  },
+  {
+   "name": "Carmine Falcone",
+   "real": "Carmine Falcone",
+   "status": "at large",
+   "held": "",
+   "mo": "The Roman: Gotham's old-money mob boss, with judges and police on his payroll.",
+   "kinds": [
+    "Gang activity",
+    "Shots fired",
+    "Mob hit",
+    "Protection racket"
+   ],
+   "haunts": [
+    "Kane Heights",
+    "Little Italy",
+    "Old Gotham"
+   ],
+   "threat": 3
+  },
+  {
+   "name": "Sal Maroni",
+   "real": "Salvatore Maroni",
+   "status": "locked up",
+   "held": "Blackgate Penitentiary",
+   "mo": "Falcone's rival, the man who threw acid in Harvey Dent's face.",
+   "kinds": [
+    "Mob hit",
+    "Protection racket"
+   ],
+   "haunts": [
+    "Little Italy"
+   ],
+   "threat": 2
+  },
+  {
+   "name": "Rupert Thorne",
+   "real": "Rupert Thorne",
+   "status": "at large",
+   "held": "",
+   "mo": "A crime boss who owns councilmen; keeps his hands clean and his debts collected.",
+   "kinds": [
+    "Gang activity",
+    "Mob hit"
+   ],
+   "haunts": [
+    "Burnley",
+    "City Hall District"
+   ],
+   "threat": 2
+  },
+  {
+   "name": "Killer Moth",
+   "real": "Drury Walker",
+   "status": "locked up",
+   "held": "Blackgate Penitentiary",
+   "mo": "A costumed thief with a moth suit and a grudge, more nuisance than menace.",
+   "kinds": [],
+   "haunts": [],
+   "threat": 1
+  },
+  {
+   "name": "The Court of Owls",
+   "real": "Gotham's oldest families",
+   "status": "unknown",
+   "held": "",
+   "mo": "A secret society older than the city's charter, with undying Talons to kill for it. Most say it's a nursery rhyme.",
+   "kinds": [
+    "Body found",
+    "Cult gathering",
+    "Assassination"
+   ],
+   "haunts": [
+    "Old Gotham"
+   ],
+   "threat": 4
+  }
+ ]
+}

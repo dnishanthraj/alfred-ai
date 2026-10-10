@@ -1,0 +1,768 @@
+{
+"_doc": "Bars, clubs, diners, cafés and the rest, as the map builds them (scripts/build_map.py) — generated, do not edit.",
+"venues": [
+{
+"name": "Babylon",
+"kind": "club",
+"area": "Crime Alley",
+"x": 67.01,
+"y": 40.35
+},
+{
+"name": "Midnight Mass",
+"kind": "club",
+"area": "Crime Alley",
+"x": 71.75,
+"y": 39.78
+},
+{
+"name": "The Blue Mask",
+"kind": "club",
+"area": "Crime Alley",
+"x": 62.84,
+"y": 42.6
+},
+{
+"name": "Velvet Hour",
+"kind": "club",
+"area": "The Bowery",
+"x": 64.03,
+"y": 56.75
+},
+{
+"name": "The Rookery",
+"kind": "club",
+"area": "The Bowery",
+"x": 71.77,
+"y": 56.47
+},
+{
+"name": "Catacombs",
+"kind": "club",
+"area": "The Bowery",
+"x": 64.7,
+"y": 50.72
+},
+{
+"name": "Static",
+"kind": "club",
+"area": "Amusement Mile",
+"x": 62.77,
+"y": 28.41
+},
+{
+"name": "The Gutter",
+"kind": "club",
+"area": "Amusement Mile",
+"x": 60.54,
+"y": 25.39
+},
+{
+"name": "The Pit",
+"kind": "club",
+"area": "Amusement Mile",
+"x": 74.62,
+"y": 23.68
+},
+{
+"name": "Ace of Clubs",
+"kind": "club",
+"area": "Fashion District",
+"x": 59.73,
+"y": 83.7
+},
+{
+"name": "Low Tide",
+"kind": "club",
+"area": "Fashion District",
+"x": 56.7,
+"y": 98.31
+},
+{
+"name": "Grin",
+"kind": "club",
+"area": "Diamond District",
+"x": 40.76,
+"y": 87.47
+},
+{
+"name": "The Stacked Deck",
+"kind": "club",
+"area": "Diamond District",
+"x": 41.7,
+"y": 86.06
+},
+{
+"name": "The Gilded Cage",
+"kind": "club",
+"area": "Old Gotham",
+"x": 45.58,
+"y": 115.16
+},
+{
+"name": "The Aviary",
+"kind": "club",
+"area": "Old Gotham",
+"x": 54.39,
+"y": 103.31
+},
+{
+"name": "Smoke & Mirrors",
+"kind": "club",
+"area": "Chinatown",
+"x": 19.11,
+"y": 102.92
+},
+{
+"name": "The Laughing Fish",
+"kind": "club",
+"area": "Burnside",
+"x": 116.57,
+"y": 72.5
+},
+{
+"name": "Neon Saint",
+"kind": "club",
+"area": "Burnside",
+"x": 97.75,
+"y": 69.76
+},
+{
+"name": "Club Noir",
+"kind": "club",
+"area": "Central Business District",
+"x": 117.1,
+"y": -10.21
+},
+{
+"name": "Sixth Sin",
+"kind": "club",
+"area": "Central Business District",
+"x": 123.1,
+"y": -13.08
+},
+{
+"name": "Saint Mike's",
+"kind": "bar",
+"area": "Crime Alley",
+"x": 71.57,
+"y": 42.78
+},
+{
+"name": "The Corner Pocket",
+"kind": "bar",
+"area": "Crime Alley",
+"x": 69.52,
+"y": 44.19
+},
+{
+"name": "Last Call",
+"kind": "bar",
+"area": "The Bowery",
+"x": 64.16,
+"y": 51.91
+},
+{
+"name": "O'Malley's",
+"kind": "bar",
+"area": "The Bowery",
+"x": 74.66,
+"y": 57.7
+},
+{
+"name": "The Drowned Man",
+"kind": "bar",
+"area": "Tricorner",
+"x": 32.31,
+"y": 125.78
+},
+{
+"name": "Shamrock",
+"kind": "bar",
+"area": "Tricorner",
+"x": 34.56,
+"y": 117.43
+},
+{
+"name": "The Iron Stool",
+"kind": "bar",
+"area": "Old Gotham",
+"x": 47.84,
+"y": 107.72
+},
+{
+"name": "Bleak House",
+"kind": "bar",
+"area": "Old Gotham",
+"x": 56.03,
+"y": 106.08
+},
+{
+"name": "The Lantern",
+"kind": "bar",
+"area": "Burnley",
+"x": 53.05,
+"y": 42.19
+},
+{
+"name": "The Crooked Mile",
+"kind": "bar",
+"area": "Burnley",
+"x": 55.09,
+"y": 39.58
+},
+{
+"name": "The Hollow",
+"kind": "bar",
+"area": "The Narrows",
+"x": 22.19,
+"y": 36.04
+},
+{
+"name": "Gin Alley",
+"kind": "bar",
+"area": "The Narrows",
+"x": 23.21,
+"y": 31.49
+},
+{
+"name": "The Wet Rat",
+"kind": "bar",
+"area": "Robinsville",
+"x": 83.83,
+"y": 62.0
+},
+{
+"name": "The Rusty Anchor",
+"kind": "bar",
+"area": "Chinatown",
+"x": 35.26,
+"y": 99.25
+},
+{
+"name": "The Nightjar",
+"kind": "bar",
+"area": "Waterloo Docks",
+"x": 111.38,
+"y": 3.73
+},
+{
+"name": "Copper Kettle",
+"kind": "bar",
+"area": "Waterloo Docks",
+"x": 122.95,
+"y": 2.23
+},
+{
+"name": "Dock 9",
+"kind": "bar",
+"area": "Port's Park",
+"x": 142.04,
+"y": 0.6
+},
+{
+"name": "Kane's Tap",
+"kind": "bar",
+"area": "Burnside",
+"x": 100.15,
+"y": 53.85
+},
+{
+"name": "Harbor Grill",
+"kind": "diner",
+"area": "Old Gotham",
+"x": 38.04,
+"y": 114.32
+},
+{
+"name": "The Blue Plate",
+"kind": "diner",
+"area": "Crime Alley",
+"x": 71.86,
+"y": 40.13
+},
+{
+"name": "Ma Gunn's",
+"kind": "diner",
+"area": "Upper West Side",
+"x": 19.11,
+"y": 91.84
+},
+{
+"name": "Rosie's",
+"kind": "diner",
+"area": "Coventry",
+"x": 36.09,
+"y": 60.03
+},
+{
+"name": "The Midnight Diner",
+"kind": "diner",
+"area": "Chinatown",
+"x": 30.11,
+"y": 111.2
+},
+{
+"name": "Jackie's",
+"kind": "diner",
+"area": "Burnley",
+"x": 43.42,
+"y": 37.65
+},
+{
+"name": "Lucky Seven",
+"kind": "diner",
+"area": "Tricorner",
+"x": 27.28,
+"y": 118.7
+},
+{
+"name": "Pearl's",
+"kind": "diner",
+"area": "City Hall District",
+"x": 83.27,
+"y": 93.88
+},
+{
+"name": "Big Belly Burger",
+"kind": "diner",
+"area": "Burnside",
+"x": 110.71,
+"y": 50.07
+},
+{
+"name": "Sal's All-Night",
+"kind": "diner",
+"area": "Halyard Square",
+"x": 130.3,
+"y": -3.62
+},
+{
+"name": "Nite Owl",
+"kind": "diner",
+"area": "Kane Heights",
+"x": -5.65,
+"y": 43.43
+},
+{
+"name": "Dixon's",
+"kind": "diner",
+"area": "University District",
+"x": 26.6,
+"y": 77.8
+},
+{
+"name": "St. Swithin's",
+"kind": "church",
+"area": "Old Gotham",
+"x": 53.97,
+"y": 104.76
+},
+{
+"name": "St. Jude's",
+"kind": "church",
+"area": "Old Gotham",
+"x": 46.42,
+"y": 107.35
+},
+{
+"name": "Our Lady of the Harbor",
+"kind": "church",
+"area": "Tricorner",
+"x": 22.46,
+"y": 122.77
+},
+{
+"name": "Holy Trinity",
+"kind": "church",
+"area": "Coventry",
+"x": 49.91,
+"y": 56.99
+},
+{
+"name": "Grace Chapel",
+"kind": "church",
+"area": "Burnley",
+"x": 46.34,
+"y": 44.53
+},
+{
+"name": "St. Aidan's",
+"kind": "church",
+"area": "Bristol",
+"x": 8.04,
+"y": 28.77
+},
+{
+"name": "Engine 41",
+"kind": "fire",
+"area": "Old Gotham",
+"x": 44.87,
+"y": 114.01
+},
+{
+"name": "Engine 9",
+"kind": "fire",
+"area": "New Town",
+"x": 60.14,
+"y": 35.44
+},
+{
+"name": "Ladder 4",
+"kind": "fire",
+"area": "Upper West Side",
+"x": 21.04,
+"y": 86.06
+},
+{
+"name": "Ladder 17",
+"kind": "fire",
+"area": "Robinsville",
+"x": 79.11,
+"y": 43.31
+},
+{
+"name": "Engine 23",
+"kind": "fire",
+"area": "Burnside",
+"x": 99.34,
+"y": 66.15
+},
+{
+"name": "Gotham Heights High",
+"kind": "school",
+"area": "Upper West Side",
+"x": 30.48,
+"y": 82.96
+},
+{
+"name": "Robinson High",
+"kind": "school",
+"area": "Coventry",
+"x": 32.93,
+"y": 62.16
+},
+{
+"name": "Cherry Hills Prep",
+"kind": "school",
+"area": "Cherry Hills",
+"x": 36.79,
+"y": 34.54
+},
+{
+"name": "St. Mary's School",
+"kind": "school",
+"area": "Kane Heights",
+"x": -4.26,
+"y": 60.15
+},
+{
+"name": "PS 117",
+"kind": "school",
+"area": "Bristol",
+"x": 3.35,
+"y": 26.71
+},
+{
+"name": "Third Wave",
+"kind": "cafe",
+"area": "Burnside",
+"x": 101.43,
+"y": 82.98
+},
+{
+"name": "Pour House",
+"kind": "cafe",
+"area": "Burnside",
+"x": 110.91,
+"y": 70.97
+},
+{
+"name": "Drip",
+"kind": "cafe",
+"area": "Burnside",
+"x": 118.21,
+"y": 78.19
+},
+{
+"name": "The Daily Grind",
+"kind": "cafe",
+"area": "University District",
+"x": 25.04,
+"y": 77.15
+},
+{
+"name": "Cup of Joe's",
+"kind": "cafe",
+"area": "University District",
+"x": 25.67,
+"y": 70.48
+},
+{
+"name": "Common Grounds",
+"kind": "cafe",
+"area": "Old Gotham",
+"x": 52.22,
+"y": 108.1
+},
+{
+"name": "Grindhouse Coffee",
+"kind": "cafe",
+"area": "Upper West Side",
+"x": 33.64,
+"y": 86.68
+},
+{
+"name": "The Roastery",
+"kind": "cafe",
+"area": "Fashion District",
+"x": 58.78,
+"y": 94.81
+},
+{
+"name": "Perk",
+"kind": "cafe",
+"area": "Diamond District",
+"x": 48.12,
+"y": 88.32
+},
+{
+"name": "Kettle & Crow",
+"kind": "cafe",
+"area": "Coventry",
+"x": 40.94,
+"y": 54.53
+},
+{
+"name": "Moka",
+"kind": "cafe",
+"area": "Cherry Hills",
+"x": 40.49,
+"y": 29.26
+},
+{
+"name": "Black Cat Café",
+"kind": "cafe",
+"area": "Avalon Heights",
+"x": 124.97,
+"y": -22.61
+},
+{
+"name": "Café Lune",
+"kind": "cafe",
+"area": "Halyard Square",
+"x": 126.17,
+"y": -2.48
+},
+{
+"name": "Southpaw Boxing",
+"kind": "gym",
+"area": "Burnside",
+"x": 113.44,
+"y": 58.39
+},
+{
+"name": "Crossfire",
+"kind": "gym",
+"area": "New Town",
+"x": 72.15,
+"y": 37.54
+},
+{
+"name": "Peak Fitness",
+"kind": "gym",
+"area": "Upper East Side",
+"x": 51.84,
+"y": 61.54
+},
+{
+"name": "Wildcat Gym",
+"kind": "gym",
+"area": "Tricorner",
+"x": 26.64,
+"y": 122.36
+},
+{
+"name": "Knuckle House",
+"kind": "gym",
+"area": "Fashion District",
+"x": 58.5,
+"y": 83.03
+},
+{
+"name": "Iron Works Gym",
+"kind": "gym",
+"area": "Central Business District",
+"x": 122.13,
+"y": -9.7
+},
+{
+"name": "The Paramount",
+"kind": "cinema",
+"area": "Diamond District",
+"x": 45.57,
+"y": 95.94
+},
+{
+"name": "The Rex",
+"kind": "cinema",
+"area": "New Town",
+"x": 69.56,
+"y": 30.5
+},
+{
+"name": "Starlite Drive-In",
+"kind": "cinema",
+"area": "Burnside",
+"x": 102.02,
+"y": 65.59
+},
+{
+"name": "Odeon Gotham",
+"kind": "cinema",
+"area": "Fashion District",
+"x": 64.81,
+"y": 82.06
+},
+{
+"name": "Cineplex 12",
+"kind": "cinema",
+"area": "Old Gotham",
+"x": 46.84,
+"y": 112.48
+},
+{
+"name": "The Bijou",
+"kind": "cinema",
+"area": "Kane Heights",
+"x": -4.04,
+"y": 38.85
+},
+{
+"name": "Majestic",
+"kind": "cinema",
+"area": "Halyard Square",
+"x": 125.94,
+"y": -1.07
+},
+{
+"name": "Hotel Ventura",
+"kind": "hotel",
+"area": "Diamond District",
+"x": 42.03,
+"y": 98.27
+},
+{
+"name": "Hotel Noir",
+"kind": "hotel",
+"area": "Diamond District",
+"x": 50.98,
+"y": 92.81
+},
+{
+"name": "The Belvedere",
+"kind": "hotel",
+"area": "Fashion District",
+"x": 57.68,
+"y": 95.95
+},
+{
+"name": "The Regency",
+"kind": "hotel",
+"area": "Upper East Side",
+"x": 69.75,
+"y": 61.89
+},
+{
+"name": "Harbor Inn",
+"kind": "hotel",
+"area": "City Hall District",
+"x": 73.89,
+"y": 100.68
+},
+{
+"name": "The Excelsior",
+"kind": "hotel",
+"area": "Old Gotham",
+"x": 43.8,
+"y": 104.32
+},
+{
+"name": "Night & Day Motel",
+"kind": "hotel",
+"area": "Central Business District",
+"x": 119.21,
+"y": -13.1
+},
+{
+"name": "The Ashcroft",
+"kind": "hotel",
+"area": "New Town",
+"x": 61.1,
+"y": 38.86
+},
+{
+"name": "Gotham Books",
+"kind": "shop",
+"area": "Fashion District",
+"x": 65.33,
+"y": 97.77
+},
+{
+"name": "The Record Room",
+"kind": "shop",
+"area": "Fashion District",
+"x": 63.78,
+"y": 84.89
+},
+{
+"name": "Second Story Books",
+"kind": "shop",
+"area": "Fashion District",
+"x": 58.53,
+"y": 89.68
+},
+{
+"name": "Vintage Vault",
+"kind": "shop",
+"area": "Burnside",
+"x": 119.02,
+"y": 63.1
+},
+{
+"name": "Hart & Sons Tailors",
+"kind": "shop",
+"area": "Burnside",
+"x": 120.5,
+"y": 72.21
+},
+{
+"name": "Bluebird Boutique",
+"kind": "shop",
+"area": "Diamond District",
+"x": 48.29,
+"y": 86.69
+},
+{
+"name": "Madame Lacroix",
+"kind": "shop",
+"area": "Upper East Side",
+"x": 55.18,
+"y": 77.68
+},
+{
+"name": "Ellison's Jewelers",
+"kind": "shop",
+"area": "Old Gotham",
+"x": 38.88,
+"y": 111.59
+},
+{
+"name": "Rook & Pawn",
+"kind": "shop",
+"area": "Chinatown",
+"x": 36.21,
+"y": 105.65
+}
+]
+}

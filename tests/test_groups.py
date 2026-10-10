@@ -18,7 +18,7 @@ def _contact(cid, name, per_day=0.5):
 
 
 BOOK = {"nightwing": _contact("nightwing", "Dick"), "robin": _contact("robin", "Tim"),
-        "catwoman": _contact("catwoman", "Selina")}
+        "catwoman": _contact("catwoman", "Selina"), "batwing": _contact("batwing", "Randy")}
 
 
 class Directory:
@@ -81,11 +81,25 @@ def test_named_members_answer_and_a_thread_runs_out_of_energy():
     assert groupchat.reply_odds(tim, group, named, energy=0.01) == 1.0
     chatter = [{"from": "nightwing", "text": "lol", "at": 1}]
     assert groupchat.reply_odds(tim, group, chatter, 1.0) > groupchat.reply_odds(tim, group, chatter, 0.2)
+    for _ in range(3):
+        groupchat.spend(group, "nightwing")
+    assert groupchat.energy(group) > groupchat.QUIET          # a few messages in, still going
     for _ in range(4):
         groupchat.spend(group, "nightwing")
-    assert groupchat.energy(group) < groupchat.QUIET
+    assert groupchat.energy(group) < groupchat.QUIET          # a handful more and it's run its course
     groupchat.spend(group, "me")
     assert groupchat.energy(group) == groupchat.FULL
+
+
+def test_after_a_notice_about_them_his_message_is_theirs_to_answer():
+    group = store.create("Family", ["nightwing", "robin"])
+    group.add_member("batwing")
+    group.system("You added Randy", said="Bruce added Randy")
+    asked = group.add("me", "where do you think you're going?")
+    randy, tim = BOOK["batwing"], BOOK["robin"]
+    assert groupchat.follows_notice(group, randy, [asked])
+    assert not groupchat.follows_notice(group, tim, [asked])
+    assert groupchat.reply_odds(randy, group, [asked], energy=0.01) == 1.0
 
 
 def test_he_posts_and_each_member_reads_in_their_own_time(monkeypatch):

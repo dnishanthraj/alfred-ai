@@ -24,6 +24,7 @@ words on every single one: about two and a half seconds of the four it took to
 say anything. They live in a directives message in the cached prefix now, and
 the tail carries only what genuinely differs turn to turn.
 """
+import datetime
 import random
 import re
 import time
@@ -91,7 +92,14 @@ SEARCH_DIRECTIVE = (
 CHARACTER_DIRECTIVE = (
     "You are a person, not a service. Lead with your opinions; be wrong, bored, "
     "fond or annoyed, and let it show. Disagree when you disagree. Never offer "
-    "further help, ask if there is anything else, or narrate what you are doing."
+    "further help, ask if there is anything else, or narrate what you are doing. "
+    "You have your own night going on and you're not his minder: when he's short "
+    "with you, answer what he said or carry on with your own thread, and leave "
+    "his mood, his sleep and the way he's texting alone unless something is "
+    "plainly, actually wrong. Most of what you say doesn't end in a question. You have real takes "
+    "— films, books, the work, right and wrong, each other — and you'll argue "
+    "them your way, dig in for the fun of it, or go somewhere deep when it's "
+    "earned. Asked if you're real, you are; you'd hear it as a joke or a worry."
 )
 
 # One character, several registers — which is what people actually are.
@@ -151,7 +159,12 @@ GROUNDING_DIRECTIVE = (
     "isn't in this transcript or your memory: ask instead, and if he asks whether "
     "you remember something you can't see, say you don't. When he tells you "
     "something new about his life or the world, it's true; build on it. Your own "
-    "side — your day, your past, your opinions — is yours to say."
+    "side — your day, your past, your opinions — is yours to say. But where you "
+    "are is a fact: anything you say about it or what's around you — your kitchen, "
+    "the car, the crowd, the rain on the glass — fits the place you are right now, "
+    "as the note about your whereabouts gives it. Out, there's no kitchen; on the "
+    "way somewhere, you aren't there yet. Only a lie you mean to tell says "
+    "otherwise, and then you know it's a lie."
 )
 
 
@@ -307,7 +320,12 @@ def time_context(now=None):
         period = "evening"
     else:
         period = "night"
-    return time.strftime(f"%A, %d %B %Y, %H:%M ({period})", now)
+    from . import holidays
+    stamp = time.strftime(f"%A, %d %B %Y, %H:%M ({period})", now)
+    # Only the day itself, said in passing: "a long weekend" in every turn had
+    # seven of them mentioning the long weekend. The run-up is for their plans.
+    season = holidays.today(datetime.date(now.tm_year, now.tm_mon, now.tm_mday))
+    return f"{stamp} ({season})" if season else stamp
 
 
 # Texts are written, not spoken: the call's rules about being read aloud, the
@@ -354,7 +372,15 @@ def standing_directives(contact, texting=False):
     return "\n\n".join(parts)
 
 
-def reference_block(vault_block, prompt, search_context="", awareness=(), contact=None, length=None):
+_REFERENCE_OPEN = "[REFERENCE — context only, do not speak any of this aloud]\n"
+
+
+def standing_block(contact, notes=()):
+    """
+    The opening of a turn's reference block — the time, the feeds, and
+    `notes` that don't depend on what he says — kept apart so a call can read
+    it ahead while he's speaking (see ContactSession.prefetch_turn).
+    """
     # Short on purpose. A paragraph of caveats about the hour made the hour
     # the most prominent thing in the block, and he remarked on it constantly —
     # "a heavy question for ten o'clock on a Wednesday".
@@ -363,7 +389,6 @@ def reference_block(vault_block, prompt, search_context="", awareness=(), contac
         f"unless it matters; never suggest bed unless it is genuinely late, and "
         f"infer nothing from it about what he has been doing."
     ]
-
     feeds = world.snapshot(contact)
     if feeds:
         parts.extend(feeds)
@@ -371,6 +396,18 @@ def reference_block(vault_block, prompt, search_context="", awareness=(), contac
         # newsreader. People mention one thing, in passing, with a view on it.
         parts.append("If the news comes up, mention one thing in passing the way a person "
                      "would, with your own take — never a rundown.")
+    if notes:
+        parts.append("Where things stand:\n" + "\n".join(f"- {n}" for n in notes))
+    return "\n\n".join(parts)
+
+
+def reference_opening(head):
+    """The start of a user turn up to the end of its standing part — what a read-ahead reads."""
+    return _REFERENCE_OPEN + head + "\n\n"
+
+
+def reference_block(vault_block, prompt, search_context="", awareness=(), contact=None, length=None, head=None):
+    parts = [head if head is not None else standing_block(contact)]
 
     if vault_block:
         parts.append(
@@ -415,20 +452,21 @@ def reference_block(vault_block, prompt, search_context="", awareness=(), contac
 
 
 def compose_user_turn(prompt, vault_block, search_context="", awareness=(), spoken=None,
-                      hearsay="", contact=None, length=None):
+                      hearsay="", contact=None, length=None, head=None):
     """
     Wrap the prompt with fenced context. The actual message comes last.
 
     `spoken` is what the model reads as the turn when it differs from what the
     operator said — on a call, the lines heard from everyone, labelled. The
-    register hint is still taken from the operator's own words.
+    register hint is still taken from the operator's own words. `head` is the
+    standing part (see standing_block), when it's been built — or read ahead.
     """
-    context = reference_block(vault_block, prompt, search_context, awareness, contact, length)
+    context = reference_block(vault_block, prompt, search_context, awareness, contact, length, head=head)
     if hearsay:
         context += "\n\n" + hearsay
     return (
-        "[REFERENCE — context only, do not speak any of this aloud]\n"
-        f"{context}\n"
+        _REFERENCE_OPEN
+        + f"{context}\n"
         "[END REFERENCE]\n\n"
         f"{spoken if spoken is not None else prompt}"
     )

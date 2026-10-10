@@ -60,8 +60,10 @@ from wayne import operator as operator_profile  # noqa: E402
 from wayne.contacts import directory  # noqa: E402
 from wayne.engine import (  # noqa: E402
     ContactSession,
+    cases,
     culture,
     grapevine,
+    groupchat,
     guards,
     initiative,
     presence,
@@ -197,8 +199,14 @@ def _quiet_memory():
     Vault.clear = lambda self: None
     grapevine.clear = lambda contact_id: None
     grapevine.note_call = lambda *a, **k: None
-    # Real hearsay would make runs depend on what happened yesterday.
+    # Real hearsay would make runs depend on what happened yesterday — and the
+    # real group chats, on what was said in them today (cast-v6 picked up a live
+    # thread about superhero films in six contacts' scenarios).
     grapevine.block = lambda contact_id: ""
+    groupchat.block = lambda contact_id, directory, now=None, prompt=None: ""
+    # Nor whatever case is on the live board, or wherever they really are.
+    cases.brief = lambda contact_id, now=None: ""
+    cases.active = lambda contact_id: None
     Vault.memorize = lambda self, text: None
     Vault.forget = lambda self, needle: [needle]
     Vault.as_block = lambda self, prompt="": ""
@@ -216,6 +224,8 @@ def _quiet_memory():
          "last_active": 0} if _AWAY.get("doing") else
         {"status": presence.IDLE, "doing": "", "until": 0, "source": "free", "last_active": 0})
     presence.Presence.save = lambda self: None
+    presence.Presence.whereabouts = lambda self, t=None: ("", [])
+    presence.Presence.get = lambda self, key, default=None: default
 
 
 # Where the current scenario has put them, if anywhere.

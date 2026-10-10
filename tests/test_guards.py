@@ -431,3 +431,30 @@ class TestPresence:
         out = guards.apply("Sit down. You've done enough. Sleep well.",
                            prompt="hi there", max_sentences=4, already_greeted=False)
         assert out == "You've done enough."
+
+
+def test_claiming_to_be_home_is_caught_but_plans_and_memories_are_not():
+    from wayne.engine import guards
+    assert guards.claims_home("I'm standing in my kitchen eating cereal.")
+    assert guards.claims_home("Just got out of the shower.")
+    assert guards.claims_home("I'm home, relax.")
+    assert not guards.claims_home("I'll be in my kitchen when I get home.")
+    assert not guards.claims_home("I left it in the kitchen this morning.")
+    assert not guards.claims_home("The kitchen at the Manor is bigger than my apartment.")
+
+
+def test_how_he_is_is_left_alone_unless_he_gives_cause():
+    assert guards.takes_his_temperature("You sound tired.", "Hm.")
+    assert guards.takes_his_temperature("What's really going on?", "night")
+    assert guards.takes_his_temperature("B, you okay?", "k")
+    assert guards.takes_his_temperature("...You sound heavy.", "hi")
+    assert not guards.takes_his_temperature("You sound like Alfred.", "hm")          # a joke, not a check-in
+    assert not guards.takes_his_temperature("You okay?", "rough night. lost someone")  # he gave cause
+    text = guards.apply("Night. You sound tired. Try the soup.", "Night.", 6, already_greeted=True)
+    assert "tired" not in text and "soup" in text
+
+
+def test_a_remark_on_how_little_he_said_in_other_words_is_dropped_too():
+    assert guards.remarks_on_brevity("Remarkably brief tonight, sir.", "fine")
+    assert guards.remarks_on_brevity("A man of few words.", "yeah")
+    assert not guards.remarks_on_brevity("Brief meeting tomorrow at nine.", "when is it")    # a long prompt: left alone

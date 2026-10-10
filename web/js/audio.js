@@ -108,11 +108,103 @@
     if (handlers.onIdle) handlers.onIdle();
   }
 
+  /* --- the room behind the voice --------------------------------------------
+     A loop of where they are, low under the call: straight to the speakers, not
+     through the analyser, so the instrument only ever shows the voice. Each
+     bed fades in and out rather than switching, and rises a little while its
+     speaker talks — on a call with company only then, as a phone's noise gate
+     lets a room through only with a voice. */
+  var beds = {};
+  var BED_QUIET = 0.05, BED_TALKING = 0.11;
+
+  // A one-off sound over a bed — a siren passing, a punch landing — now and
+  // then, at random, through the bed's own gain so it's heard as theirs.
+  var shotBuffers = {};
+  function shotBuffer(name) {
+    if (!shotBuffers[name]) {
+      shotBuffers[name] = fetch('/api/ambience/file/' + encodeURIComponent(name))
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+        .then(function (buf) { return context().decodeAudioData(buf); });
+      shotBuffers[name].catch(function () { delete shotBuffers[name]; });
+    }
+    return shotBuffers[name];
+  }
+  function scheduleShots(id, entry, shots) {
+    (shots || []).forEach(function (shot) {
+      function next() {
+        // Exponential gaps: sometimes two close together, sometimes a long quiet.
+        var wait = -Math.log(1 - Math.random()) * shot.every * 1000;
+        entry.timers.push(setTimeout(function () {
+          if (beds[id] !== entry) return;
+          shotBuffer(shot.name).then(function (decoded) {
+            if (beds[id] !== entry) return;
+            var source = context().createBufferSource(), lift = context().createGain();
+            lift.gain.value = 1.6;          // a shade above the room it's in
+            source.buffer = decoded;
+            source.connect(lift).connect(entry.gain);
+            source.start();
+          }).catch(function () {});
+          next();
+        }, wait));
+      }
+      next();
+    });
+  }
+
+  function bed(id, url, gated, shots) {
+    var c = context(), current = beds[id];
+    if (current && current.url === url) { current.gated = gated; level(id, false); return; }
+    unbed(id);
+    var entry = beds[id] = { url: url, gated: gated, gain: c.createGain(), source: null, timers: [] };
+    scheduleShots(id, entry, shots);
+    entry.gain.gain.value = 0;
+    entry.gain.connect(c.destination);
+    fetch(url).then(function (r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+      .then(function (buf) { return c.decodeAudioData(buf); })
+      .then(function (decoded) {
+        if (beds[id] !== entry) return;           // replaced or gone while it loaded
+        var source = c.createBufferSource();
+        source.buffer = decoded;
+        source.loop = true;
+        source.connect(entry.gain);
+        source.start();
+        entry.source = source;
+        level(id, false);
+      }).catch(function () { /* no room to hear: the call goes on without it */ });
+  }
+
+  function level(id, talking) {
+    var entry = beds[id];
+    if (!entry) return;
+    var to = talking ? BED_TALKING : (entry.gated ? 0 : BED_QUIET);
+    var now = context().currentTime;
+    entry.gain.gain.cancelScheduledValues(now);
+    entry.gain.gain.setTargetAtTime(to, now, talking ? 0.25 : 0.9);
+  }
+
+  function unbed(id) {
+    var entry = beds[id];
+    if (!entry) return;
+    delete beds[id];
+    (entry.timers || []).forEach(clearTimeout);
+    var now = context().currentTime;
+    entry.gain.gain.cancelScheduledValues(now);
+    entry.gain.gain.setTargetAtTime(0, now, 0.6);
+    setTimeout(function () {
+      try { if (entry.source) entry.source.stop(); } catch (e) { /* already stopped */ }
+      entry.gain.disconnect();
+    }, 2500);
+  }
+
   global.ConsoleAudio = {
     context: context,
     resume: resume,
     enqueue: enqueue,
     stop: stop,
+    bed: bed,
+    unbed: unbed,
+    bedLevel: level,
+    beds: function () { return Object.keys(beds); },
     on: function (name, fn) { handlers[name] = fn; },
     get analyser() { return analyser; },
     get isPlaying() { return playing; }

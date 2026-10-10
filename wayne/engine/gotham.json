@@ -4406,22 +4406,6 @@
    "rotate": 0
   },
   {
-   "name": "Atlantic Ocean",
-   "at": [
-    34.0,
-    166.0
-   ],
-   "rotate": 0
-  },
-  {
-   "name": "Atlantic Ocean",
-   "at": [
-    78.0,
-    158.0
-   ],
-   "rotate": 0
-  },
-  {
    "name": "Kane River",
    "at": [
     -30.0,
@@ -4436,6 +4420,22 @@
     118.6
    ],
    "rotate": -12
+  },
+  {
+   "name": "Blüdhaven Bay",
+   "at": [
+    97.5,
+    17.0
+   ],
+   "rotate": -49
+  },
+  {
+   "name": "Atlantic Ocean",
+   "at": [
+    56.0,
+    162.0
+   ],
+   "rotate": 0
   }
  ],
  "places": [
@@ -4454,6 +4454,53 @@
    ],
    "bio": "The Wayne family seat since the 1800s, out in Gotham County past the Robert Kane Memorial Bridge — forty-odd rooms, a park, and caves in the bluffs beneath.",
    "note": "Home. Alfred keeps it running. The cave keeps me running."
+  },
+  {
+   "name": "Wayne Family Plot",
+   "x": -1.6,
+   "y": 11.8,
+   "area": "Gotham County",
+   "kind": "landmark",
+   "icon": "cemetery",
+   "match": [
+    "family plot",
+    "the family graves",
+    "my parents' graves",
+    "the wayne graves",
+    "the graves"
+   ],
+   "bio": "The Wayne family burial ground on the rise west of the manor: a low stone wall, a small mausoleum, two centuries of Waynes — and Thomas and Martha, side by side.",
+   "note": "I still go. Alfred pretends he doesn't know when."
+  },
+  {
+   "name": "Memorial Island",
+   "x": 44.4,
+   "y": 71.92,
+   "area": "Robinson Park",
+   "kind": "landmark",
+   "icon": "statue",
+   "match": [
+    "memorial island",
+    "the obelisk",
+    "war memorial"
+   ],
+   "bio": "A wooded islet in the middle of the Reservoir with the Gotham War Memorial on it — a granite obelisk from 1919, names on every face, reached only by rowing boat.",
+   "note": "Most people only ever see it from the bank."
+  },
+  {
+   "name": "Bristol Boat Club",
+   "x": -6.34,
+   "y": 27.45,
+   "area": "Bristol",
+   "kind": "landmark",
+   "icon": "marina",
+   "match": [
+    "boat club",
+    "bristol boat club",
+    "sailing club"
+   ],
+   "bio": "Bristol's private sailing club on the lake's north shore: a white clubhouse, a jetty of dinghies, and a waiting list measured in decades.",
+   "note": "Membership came with the house. I've never once sailed there."
   },
   {
    "name": "Drake Manor",
@@ -4616,7 +4663,8 @@
    "kind": "quarter",
    "match": [
     "park row"
-   ]
+   ],
+   "bio": "Crime Alley's old name, and still the name on the street signs: once the theatre row where the Waynes walked out of a showing of Zorro, now pawnshops, flophouses and Leslie Thompkins's clinic, the one light that stayed on."
   },
   {
    "name": "Monarch Theatre",
@@ -4871,7 +4919,8 @@
    "kind": "quarter",
    "match": [
     "gotham heights"
-   ]
+   ],
+   "bio": "The Upper West Side's hilltop quarter: brownstones with stoops and window boxes, the reservoir's walking path, and the kind of quiet money that doesn't need a doorman to prove it."
   },
   {
    "name": "Diamond District",
@@ -4915,7 +4964,8 @@
     "theatre",
     "theater",
     "matinee"
-   ]
+   ],
+   "bio": "Gotham's Broadway — the Monarch, marquees blazing, stage doors where autograph hunters wait in the cold, and the Joker's old taste for a captive audience."
   },
   {
    "name": "Gotham Opera House",
@@ -4957,7 +5007,8 @@
     "financial district",
     "the bank",
     "stock exchange"
-   ]
+   ],
+   "bio": "The canyons of the Diamond District where the money lives: the Stock Exchange, bank towers, traders on the steps at lunch, and Deathstroke's kind of contract written on the side."
   },
   {
    "name": "GCPD Central",
@@ -5069,7 +5120,8 @@
    "kind": "quarter",
    "match": [
     "east end"
-   ]
+   ],
+   "bio": "The old docks quarter Selina Kyle grew up in and still calls hers: tenements, fire escapes, alleys cats and thieves both know, and a loyalty you can't buy."
   },
   {
    "name": "Chinatown",
@@ -5219,7 +5271,8 @@
     "central business district",
     "downtown blüdhaven",
     "downtown bludhaven"
-   ]
+   ],
+   "bio": "Blüdhaven's downtown: glass towers built on whaling money and a police force on someone else's payroll, the precinct three blocks from the mob's favourite restaurant."
   },
   {
    "name": "Waterloo Docks",
@@ -5234,7 +5287,8 @@
     "waterfront",
     "harbor",
     "harbour"
-   ]
+   ],
+   "bio": "Blüdhaven's working waterfront — cranes, bonded warehouses, and smuggling that pays more than the shipping ever did; Nightwing's beat starts here most nights."
   },
   {
    "name": "Avalon Heights",
@@ -5245,7 +5299,8 @@
    "match": [
     "avalon",
     "heights"
-   ]
+   ],
+   "bio": "Blüdhaven's uptown, old whaling captains' mansions turned into flats, with a view down to the harbour and a cat café the whole street adores."
   },
   {
    "name": "Halyard Square",
@@ -5255,7 +5310,8 @@
    "kind": "district",
    "match": [
     "halyard"
-   ]
+   ],
+   "bio": "Blüdhaven's old market square: the Majestic cinema, Sal's All-Night diner, and the street Dick Grayson walks home along at dawn."
   },
   {
    "name": "Blüdhaven Precinct",
@@ -5281,7 +5337,8 @@
    "match": [
     "port's park",
     "ports park"
-   ]
+   ],
+   "bio": "A scrubby waterfront park on Blüdhaven's container docks, half park and half freight yard, where shipping containers became bars and nobody asks what came in the others."
   },
   {
    "name": "Fort Joseph",
@@ -5291,7 +5348,8 @@
    "kind": "district",
    "match": [
     "fort joseph"
-   ]
+   ],
+   "bio": "Blüdhaven's northern neighbourhood around the old harbour fort, cannons on the green, a navy past, and the oldest streets in the city."
   },
   {
    "name": "Haly's Circus Winter Quarters",
@@ -5464,7 +5522,8 @@
    "kind": "quarter",
    "match": [
     "little italy"
-   ]
+   ],
+   "bio": "Old Gotham's Italian quarter — red-sauce restaurants, social clubs with blacked-out windows, and the Falcones and Maronis carving it up between the cannoli."
   },
   {
    "name": "Museum Mile",
@@ -5474,7 +5533,8 @@
    "kind": "quarter",
    "match": [
     "museum mile"
-   ]
+   ],
+   "bio": "The Upper East Side's run of museums along Robinson Park: the Gotham Museum of Natural History, the Wayne Gallery of art, and the Egyptian wing everyone's grandfather was robbed in."
   },
   {
    "name": "The Boardwalk",
@@ -7078,6 +7138,22 @@
    "bio": "Simon Stagg's company — chemicals, aviation, defence contracts — run from a glass tower in Otisburg with a mooring mast on its roof for the airship he flies over the city as an advertisement.",
    "note": "Stagg sells to whoever's buying. The airship's the only thing about him that's out in the open.",
    "canon": "Batman: Arkham Knight (2015)"
+  },
+  {
+   "name": "Chinatown Night Market",
+   "x": 27.6,
+   "y": 102.9,
+   "area": "Chinatown",
+   "kind": "landmark",
+   "icon": "market",
+   "match": [
+    "night market",
+    "chinatown night market",
+    "the market in chinatown"
+   ],
+   "bio": "Pell Street closed to cars from six till two: sixty-odd stalls under red and gold awnings, lanterns strung end to end — dumplings, skewers, egg waffles, bubble tea, knock-off watches and phone cases, a fortune teller who's never once been wrong about rain. Packed on weekends, louder than anywhere in Gotham that isn't a fight.",
+   "note": "Tim knows which dumpling stall stays open last. The triads take their cut at the far gate, quietly.",
+   "canon": "an original for the console"
   }
  ],
  "regions": [

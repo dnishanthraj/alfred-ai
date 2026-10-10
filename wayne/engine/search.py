@@ -165,6 +165,38 @@ def is_factual_lookup(prompt):
     return any(re.search(pattern, lowered) for pattern in FACTUAL_PATTERNS)
 
 
+# Asking what they make of something specific out in the world — a film, an
+# album, a match, a book — said any of the ways it gets said.
+_ASKS_A_TAKE = re.compile(
+    r"\b(?:opinions?|thoughts|takes?|views?|verdict|what do (?:you|u|y'?all|you guys) (?:think|reckon)|"
+    r"what did (?:you|u) (?:think|make)|how (?:was|is|good is|bad is)|"
+    r"(?:have|did|has) (?:you|u|anyone|any of you) (?:seen|watched|heard|played|read|see|watch|hear|play|read)|"
+    r"rate|ranking|rank)\s+(?:on|of|about|the)?\s*(?P<subject>[^?.!\n]{3,80})", re.I)
+_NOT_A_TITLE = re.compile(r"(?i)^(?:me|him|her|them|us|this|that|it|tonight|today|my|your|our|his|the family|"
+                          r"the plan|the case|the city|gotham|bruce|dick|tim|jason|barbara|cass|alfred|lucius|selina|"
+                          r"randy)\b")
+
+
+def subject_of_a_take(prompt):
+    """
+    The thing he wants their take on, if it's something out in the world they
+    might not have heard of — "spiderman brand new day" from "opinions on
+    spiderman brand new day" — else "". Opinions are theirs; what the thing is,
+    is a fact, and a quiet search gives them it to have an opinion about.
+    """
+    found = _ASKS_A_TAKE.search(prompt or "")
+    if not found:
+        return ""
+    subject = re.sub(r"(?:\s+(?:lately|recently|so far|then|yet|guys|anyone|y'?all|already))+$", "",
+                     found.group("subject").strip(), flags=re.I).strip(" ,;:")
+    if len(subject.split()) < 2 and not re.search(r"[A-Z]", subject[1:] if subject else ""):
+        # One plain lowercase word ("opinions on cake") is chat, not a title.
+        return ""
+    if _NOT_A_TITLE.match(subject) or any(re.search(p, subject.lower()) for p in _PERSONAL_SUBJECTS):
+        return ""
+    return " ".join(subject.split()[:8])
+
+
 def needs_search(prompt, last_alfred_msg=""):
     prompt_lower = prompt.lower().strip()
 

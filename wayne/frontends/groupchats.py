@@ -177,7 +177,8 @@ class GroupChats:
 
     async def _maybe_reply(self, group, contact, unread):
         # Owed an answer when he asks; one of them asking is likely, not owed.
-        must = any(groupchat.addressed(m["text"], contact) for m in unread if m["from"] == "me")
+        must = (any(groupchat.addressed(m["text"], contact) for m in unread if m["from"] == "me")
+                or groupchat.follows_notice(group, contact, unread))
         lively = groupchat.liveliness(group, self.directory)
         if not must and random.random() >= groupchat.reply_odds(contact, group, unread,
                                                                 groupchat.energy(group), lively):

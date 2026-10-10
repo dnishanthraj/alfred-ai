@@ -61,10 +61,11 @@ Each one is a JSON profile in [`wayne/contacts/profiles/`](wayne/contacts/profil
 <tr><td width="50%" valign="top">
 
 ### 📞 Calls
-- **Hold to talk** (the button or <kbd>Space</kbd>), or type. Talk over them and they stop.
-- **Speech starts in about half a second.** Sentences are voiced as the model writes them, and the words appear in time with the voice.
+- **Hold <kbd>Space</kbd> to talk**, or type; the mic button mutes you, and they know you've gone quiet. Talk over them and they stop.
+- **Speech starts in about half a second.** The turn is read ahead while you're still talking, sentences are voiced as the model writes them, and the words appear in time with the voice.
+- **Voices that fit the moment**, and the sound of where they are. Woken by your call, they yawn; mid-fight, they grunt and cut off; on a stakeout, they whisper. Under it, rain and thunder, sirens, a kitchen, Selina's cats, Tim's houseboat. Stage directions are performed, never shown.
 - **A ring that means something.** It covers the model warming up; busy people decline, sleeping ones ring out, and they call you back.
-- **Group calls**, you plus four, each with a visualiser of their own. While you're ringing someone in, the others talk among themselves (*"why are you ringing him?"*). Late joiners get asked where they've been, people now and then talk over each other and sort it out, and you can leave from the end-call button.
+- **Group calls**, you plus four, each with a visualiser of their own, answering in a few seconds. *"Dick, get Tim on"* rings Tim; everyone hears who declined, who joined and who left. While someone's ringing, the others talk among themselves; people talk over each other and sort it out, and you can jump in any time.
 
 </td><td width="50%" valign="top">
 
@@ -81,7 +82,7 @@ Each one is a JSON profile in [`wayne/contacts/profiles/`](wayne/contacts/profil
 <tr><td valign="top">
 
 ### 🗓️ Their lives
-- **A day of their own**, planned each morning by the model: sleep, work, patrol, errands, a film they wanted to catch.
+- **A day of their own**, planned each morning by the model: sleep, work, patrol, errands, a film they wanted to catch — weekdays, weekends and the holidays (Columbus Day, Halloween, Christmas Eve) as Gotham lives them.
 - **Where they are** comes from what they're doing, and agrees for everyone. If Barbara's patrolling with Cass, they're in the same place on the map, on the hover card and in what they say. When it changes, they **travel** there by road, over the bridges, as long as it takes.
 - **Days of their own.** Nobody patrols at noon unless you ask: Lucius is at the office, Barbara at the lab, Randy at the hangar.
 - **They get in touch first.** They report back when they said they would, check in when a call worried them, close a case and tell you how it went, or text because something reminded them of you.
@@ -90,10 +91,11 @@ Each one is a JSON profile in [`wayne/contacts/profiles/`](wayne/contacts/profil
 </td><td valign="top">
 
 ### 🚨 The city
-- **A police scanner** with a steady stream of reports drawn from each district's own trouble: Crime Alley far more than the Upper East Side, and three times busier at night. GCPD dispatches are written by the model, and some of them are as grim as Gotham gets.
+- **A police scanner** with a steady stream of reports drawn from each district's own trouble: Crime Alley far more than the Upper East Side, and three times busier at night. Knife and gang crime between named crews, domestics, overdoses, and under it the monsters' work, only when they're loose. Every report has its dead and hurt, which change as the call goes on; dispatches and incident logs are written by the model, quote people as they talk, and some are as grim as Gotham gets.
 - **Cases.** Put someone on a report from the map, or just tell them in conversation. Awake, they take it about as readily as they take orders (Dick nearly always, Randy rarely); asleep, they get your text when they wake. They travel there, talk about it, and close it when they say it's handled. Now and then a patrol takes a call on its own.
 - **Hearsay.** What one of them hears may reach another, with who said it.
 - **Secrets that stay secret.** Every fact about you is tagged with who knows it, so Lucius never learns who's under the Batwing mask.
+- **The Codex** (<kbd>C</kbd>): everyone in Bruce's world and every rogue as a file — vital details, a biography you can rewrite (a contact's is the directory's own), where each rogue is now (loose, in custody, Arkham, Blackgate), how they work, their weakness and your contingency — and every place on the map. Drop a picture on a face to give it one.
 
 </td></tr>
 </table>
@@ -130,7 +132,8 @@ Press <kbd>M</kbd>. Gotham is drawn from [`wayne/engine/gotham.json`](wayne/engi
   - subway, rail, ferries and shipping channels; container terminals, cranes over building sites, water towers and helipads;
   - pitches, ball fields, courts, a running track, a country club, a racecourse, Slaughter Swamp;
   - clubs, bars, diners, cafés, gyms, cinemas, hotels, shops, churches, fire stations and schools, each named;
-  - tree-lined suburbs, lit windows, and terrain you can see in 3D — with nothing standing on a road.
+  - tree-lined suburbs, lit windows, and terrain you can see in 3D, every building standing level on it — with nothing standing on a road;
+  - past the sprawl, the county: fields in their hedgerows, woods and farmsteads; the Wayne estate behind its wall (the lodge at the gates, the family plot, the stables, the glasshouse, a boathouse and a folly on the lake); islands and boathouses on the city's lakes.
 - **Things moving, on timetables that follow the hour:** subway trains under the streets and trains on their lines, ferries between piers, ships coming in with their tugs, planes landing and taking off, police, news, medevac and tour helicopters, sailboats off the marina, the lighthouse turning, traffic on the highways.
 - **At night**, the Bat-Signal over GCPD.
 - **Search** (<kbd>/</kbd>) for people, places, pins and reports. Use **Layers** to toggle what's drawn, and right-click to drop **pins** of your own.
@@ -236,6 +239,7 @@ If you try a reasoning model (qwen3, deepseek-r1, gpt-oss), set `"think": false`
 | <kbd>Enter</kbd> | Send what you typed |
 | <kbd>Esc</kbd> | Stop playback · close the map · close a picker |
 | <kbd>M</kbd> | Open the map |
+| <kbd>C</kbd> | Open the Codex |
 | <kbd>/</kbd> | Search the map |
 | <kbd>@</kbd> | Tag someone (in a group, `@everyone` too) |
 | Double-click a message | React |
@@ -312,7 +316,7 @@ wayne-console/
 
 **Be someone else.** Who you are lives in an operator profile, [`wayne/operators/bruce.json`](wayne/operators/bruce.json): your story, what each contact calls you ("Master Bruce", "Mr. Wayne", "old man"), and the world, with every fact tagged by who knows it. Copy it somewhere private, rewrite it, and point `WAYNE_OPERATOR` at it. Every contact follows.
 
-**Add someone.** Drop a JSON file in `wayne/contacts/profiles/`, and add a portrait at `web/portraits/<id>.png` if you like. Portraits are gitignored, since they're usually personal or someone else's copyright.
+**Add someone.** Drop a JSON file in `wayne/contacts/profiles/`. For a portrait, drop a picture on their face in the Codex: it's saved as `web/portraits/<id>.png` (anyone else's in `web/portraits/codex/`) and framed in a pop-up, the same framing everywhere. Portraits are gitignored, since they're usually personal or someone else's copyright.
 
 <details>
 <summary><b>The profile fields that matter</b></summary>

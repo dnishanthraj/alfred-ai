@@ -114,3 +114,45 @@ def test_the_first_person_named_is_the_one_spoken_to():
     assert call.addressed("Lucius, Alfred says the suit's too heavy.") == [lucius]
     assert call.addressed("What do you two reckon?") == [alfred, lucius]
     assert call.addressed("Right then.") == []
+
+
+def test_their_own_line_loses_any_label():
+    dick, tim = FakeMember("nightwing", "Dick", "Dick Grayson"), FakeMember("robin", "Tim", "Tim Drake")
+    call = _call(dick, tim)
+    assert call.own_words(dick, "You: It's not cereal, Tim.") == "It's not cereal, Tim."
+    assert call.own_words(dick, "Dick: Fine.") == "Fine."
+    assert call.own_words(dick, "Tim: I'd never.") == ""          # a line for someone else is dropped
+
+
+def test_named_by_him_they_answer_him_first():
+    dick, tim = FakeMember("nightwing", "Dick", "Dick Grayson"), FakeMember("robin", "Tim", "Tim Drake")
+    call = _call(dick, tim)
+    _run(call, "Dick, where are you exactly?")
+    assert "answer what he said to you first" in call.note_for(dick)
+    assert "answer what he said to you first" not in call.note_for(tim)
+
+
+def test_what_happens_on_the_call_is_heard_by_all_and_by_whoever_joins():
+    dick, tim = FakeMember("nightwing", "Dick", "Dick Grayson"), FakeMember("robin", "Tim", "Tim Drake")
+    call = _call(dick, tim)
+    call.event("Barbara declined — he'd rung them too")
+    assert "(Barbara declined — he'd rung them too)" in dick.heard and "(Barbara declined — he'd rung them too)" in tim.heard
+    cass = FakeMember("orphan", "Cass", "Cassandra Cain")
+    call.join(cass)
+    assert any("Barbara declined" in line for line in cass.heard)      # handed what happened before she joined
+
+
+def test_asked_something_the_call_waits_for_him():
+    dick, tim = FakeMember("nightwing", "Dick", "Dick Grayson"),         FakeMember("robin", "Tim", "Tim Drake", replies=["Him, are you even listening?"])
+    call = _call(dick, tim)
+    assert not call.waiting_on_him()
+    _run(call, "Tim, thoughts?")
+    assert call.waiting_on_him()
+
+
+def test_talking_over_someone_he_answers_them():
+    dick, tim = FakeMember("nightwing", "Dick", "Dick Grayson"), FakeMember("robin", "Tim", "Tim Drake")
+    call = _call(dick, tim)
+    call.last_speaker = tim                       # Tim's line was written, Dick's was the one playing
+    list(call.turn("No, wait —", interrupted=True, talked_over="nightwing"))
+    assert dick.asked and not tim.asked

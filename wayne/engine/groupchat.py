@@ -27,7 +27,10 @@ from ..memory import texts
 # Energy a thread starts with when Bruce posts, and what each autonomous
 # message keeps of it. Three or four rounds between them, then quiet.
 FULL = 1.0
-DECAY = 0.55
+# How much life a thread has left after each message none of them was owed —
+# his messages restore it. At 0.55 a thread died two messages after he spoke;
+# a group that's around carries on for a handful, answering each other.
+DECAY = 0.72
 # Below this, nobody starts anything new in the thread.
 QUIET = 0.15
 # How recent a group's messages must be to come up in what a member knows.
@@ -131,18 +134,47 @@ def secrets_note(group, contact_id):
             "a family and its friends would say. Real names only.")
 
 
-def block(contact_id, directory, now=None):
+_WORD = re.compile(r"[a-z][a-z']{4,}")
+_COMMON = {"about", "there", "their", "would", "could", "should", "think", "really", "right", "still", "going",
+           "where", "which", "what's", "that's", "you're", "don't", "yeah", "okay", "thing", "maybe", "never", "always",
+           "again", "after", "before", "today", "tonight", "later", "something", "anything", "nothing", "being"}
+
+
+def _related(prompt, lines, group):
+    """Whether what's being said now has anything to do with a chat's latest: its name, the chat, a shared subject."""
+    said = (prompt or "").lower()
+    if not said:
+        return False
+    if group.name.lower() in said or re.search(r"\b(group ?chat|the chat|gc)\b", said):
+        return True
+    words = set(_WORD.findall(said)) - _COMMON
+    theirs = set(_WORD.findall(" ".join(m.get("text", "") for m in lines).lower())) - _COMMON
+    return bool(words & theirs)
+
+
+def block(contact_id, directory, now=None, prompt=None):
     """
-    What this contact knows of their group chats: each one they're in, as far as
-    they've read it. Background, like hearsay — theirs to bring up or not.
+    What this contact knows of their group chats, as far as they've read them —
+    background, like hearsay, theirs to bring up or not. The thread rides along
+    when what's being said now touches it (`prompt`) or someone in it was
+    talking to them; otherwise only its last half hour, briefly. Every turn
+    carrying a day of every chat had them bringing the chat's in-jokes into
+    calls about something else entirely.
     """
     now = now or time.time()
     name = names(directory)
     parts = []
+    contact = directory.get(contact_id)
     for group in store.groups_with(contact_id):
-        seen = [m for m in group.seen_by(contact_id, limit=5) if now - m["at"] < 86400]
+        seen = [m for m in group.seen_by(contact_id, limit=5) if now - m["at"] < 3 * 3600]
         if not seen:
             continue
+        mentioned = contact is not None and any(addressed(m.get("text", ""), contact) for m in seen
+                                                if m.get("from") != contact_id)
+        if prompt is not None and not mentioned and not _related(prompt, seen, group):
+            seen = [m for m in seen if now - m["at"] < 1800][-2:]
+            if not seen:
+                continue
         members = ", ".join([operator.name()] + [name(m) for m in group.members if m != contact_id])
         parts.append(f"Group chat \"{group.name}\" (you, {members}) — the latest you've read:\n"
                      + transcript(seen, name))
@@ -340,6 +372,27 @@ def liveliness(group, directory):
     return 0.6 + 0.9 * online / len(members)
 
 
+def follows_notice(group, contact, messages):
+    """
+    His message straight after a line about them — "You added Randy", "Randy
+    left the group" — is, most likely, for them: "where do you think you're
+    going?" The rest read it too, and may say something or not.
+    """
+    if not any(m.get("from") == "me" for m in messages) or not hasattr(group, "messages"):
+        return False
+    log = group.messages()
+    index = {m.get("id"): i for i, m in enumerate(log)}
+    for m in messages:
+        i = index.get(m.get("id"))
+        if m.get("from") != "me" or not i:
+            continue
+        before = log[i - 1]
+        if (before.get("kind") == "system" and m["at"] - before["at"] < 600
+                and re.search(rf"\b{re.escape(contact.name)}\b", before.get("said") or before.get("text", ""))):
+            return True
+    return False
+
+
 def reply_odds(contact, group, unread, energy, lively=1.0):
     """
     The chance they say something after reading these messages. Named: always.
@@ -347,7 +400,7 @@ def reply_odds(contact, group, unread, energy, lively=1.0):
     chattiness, scaled by how much life the thread has left.
     """
     said = [m for m in unread if m.get("kind") != "system"]
-    if any(addressed(m["text"], contact) for m in said if m["from"] == "me"):
+    if any(addressed(m["text"], contact) for m in said if m["from"] == "me") or follows_notice(group, contact, said):
         return 1.0
     if any(addressed(m["text"], contact) for m in said):
         # One of them asking: likely, but not owed. Owed, two of them tagging

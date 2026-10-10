@@ -85,10 +85,6 @@ class Contact:
     deflections: tuple = ()
     # One sentence telling the evaluation judge who this is meant to be.
     judge: str = ""
-    # How the personnel-file portrait is cropped: {"size": "180%", "position":
-    # "50% 18%"}. Supplied images vary — a square render, a tall full-length
-    # shot — and one crop does not suit them all.
-    portrait: dict = field(default_factory=dict)
     # How they write a text message — "full sentences, proper punctuation",
     # "lowercase, no full stops". A text from Selina should not read like one
     # from Alfred.
@@ -133,6 +129,13 @@ class Contact:
     # whether he can see where they are at all (Find My, between family).
     home: str = ""
     shares_location: bool = True
+    # How they get about town when they're not in the suit: "drive", or "subway".
+    gets_about: str = "drive"
+    # What home sounds like behind them on a call — "cats_home" for Selina's cats,
+    # "houseboat" for Tim's (see wayne.audio.ambience.SCENES). Empty: an ordinary home.
+    home_sound: str = ""
+    # "he", "she" or "they" — for the page's labels ("Who she is to me").
+    pronoun: str = "they"
     # Hobbies, games, viewing, music, reading, takes — and the topics they keep
     # up with, which engine.culture searches for what's new.
     interests: dict = field(default_factory=dict)
@@ -266,7 +269,6 @@ def _load_profile(path):
         own_life=tuple(raw.get("own_life", [])),
         deflections=tuple(raw.get("deflections", [])),
         judge=raw.get("judge", ""),
-        portrait=raw.get("portrait", {}),
         texting=raw.get("texting", ""),
         group=raw.get("group", "Contacts"),
         texting_pace=raw.get("texting_pace", {}),
@@ -285,6 +287,9 @@ def _load_profile(path):
         beat=tuple(raw.get("beat", [])),
         sees_whereabouts=bool(raw.get("sees_whereabouts", False)),
         shares_location=bool(raw.get("shares_location", raw.get("shares_status", True))),
+        gets_about=str(raw.get("gets_about", "drive")),
+        home_sound=str(raw.get("home_sound", "")),
+        pronoun=str(raw.get("pronoun", "they")),
     )
 
 

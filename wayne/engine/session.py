@@ -35,7 +35,7 @@ from .. import config, delivery, events, operator
 from ..memory import History, Story, Vault
 from ..memory.texts import TextLog
 from . import culture, grapevine, groupchat, guards, initiative, places, presence, prompting, world
-from .search import format_search_results, google_search, is_factual_lookup
+from .search import format_search_results, google_search, is_factual_lookup, subject_of_a_take
 
 # Searches run on a worker so the holding line can be written meanwhile.
 _SEARCHES = concurrent.futures.ThreadPoolExecutor(max_workers=2)
@@ -300,6 +300,15 @@ def _tapback_emoji(said):
 _CALL_ADD = re.compile(r"\[\s*add\s*:\s*([^\]]+)\]", re.I)
 
 # Written at the end of a reply when they're the one closing the call.
+# Emoji are for texts. Read off a call's subtitles — "Always 🫡" — they're a
+# face nobody made, and the voice can't say them anyway.
+_EMOJI = re.compile("[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U00002B00-\U00002BFF\uFE0F\u200D]+")
+
+
+def _unemoji(text):
+    return re.sub(r"\s{2,}", " ", _EMOJI.sub("", text or "")).strip()
+
+
 _HANG_UP = re.compile(r"\[\s*(hang(s|ing)?\s+up|end(s|ing)?\s+(the\s+)?call|click)\b[^\]]*\]", re.I)
 
 # Offered once a call has had some substance — never on the greeting, which
@@ -375,6 +384,29 @@ class ContactSession:
         ollama.chat(model=self.contact.model, messages=payload, stream=False,
                     options=self._options(num_predict=1), **self._extra())
 
+    def keep_warm(self, texting=False):
+        """
+        Read their stable prefix — character and history, up to their last
+        line — so the next turn starts from it instead of from nothing.
+
+        The model keeps its place in a conversation only at checkpoints, made
+        at the end of each request (its attention window is local: it can't
+        rewind to just anywhere). A turn's own checkpoint sits after that
+        turn's reference notes, which the next turn doesn't repeat, so the next
+        prompt parts company before it and the whole of it — 3,700 tokens,
+        seven seconds — was read again, every turn on a call with company,
+        where someone else always spoke in between. Read up to their last line
+        once they've said it, the checkpoint lands exactly where the next turn
+        carries on, and only that turn's own words are new: about a second and
+        a half. A one-token request when the model is otherwise idle.
+        """
+        history = self.history.for_model()
+        if not history or history[-1]["role"] != "assistant":
+            return
+        payload = prompting.build_payload(self.contact, history, "", texting=texting)[:-1]
+        ollama.chat(model=self.contact.model, messages=payload, stream=False,
+                    options=self._options(num_predict=1), **self._extra())
+
     def _chat_once(self, payload, **overrides):
         response = ollama.chat(
             model=self.contact.model, messages=payload,
@@ -415,7 +447,7 @@ class ContactSession:
         recent = [
             sentence
             for reply in self.history.recent_assistant(turns=12) if reply.strip()
-            for sentence in guards.split_sentences(reply) if sentence.strip()
+            for sentence in guards.split_sentences(delivery.clean(reply)) if sentence.strip()
         ]
 
         buffer = ""          # tokens not yet forming a complete sentence
@@ -435,6 +467,7 @@ class ContactSession:
                            if re.match(rf"\W*{re.escape(operator_name())}\b", r or ""))
         self._hanging_up = False
         self._call_add = []
+        away = not self._at_home()
 
         def finalize(sentence):
             """Guard one sentence. Returns (emit, sentence) or (False, None)."""
@@ -455,6 +488,11 @@ class ContactSession:
                 text = self.call.own_words(self, text)
                 if not text:
                     return False, None
+            if not getattr(self, "_texting_now", False):
+                text = _unemoji(text)
+            else:
+                # A text has no voice to perform "[munches]": the words alone.
+                text = delivery.clean(text)
             # A cue with no words after it — "Of course. [sighs]" — has
             # nothing to say on screen and nothing to attach to in the voice.
             if not delivery.clean(text):
@@ -467,7 +505,7 @@ class ContactSession:
             # otherwise good answer, one clause of three.
             # One cue a reply. Offered a voice that can sigh, he sighed at the
             # start of nearly every sentence.
-            if delivery.voiced(text) != delivery.clean(text):
+            if delivery.cued(text):
                 if self._cue_spent:
                     text = delivery.clean(text)
                 else:
@@ -479,9 +517,17 @@ class ContactSession:
             if guards.presumes_presence(delivery.clean(text)):
                 dropped_presence += 1
                 return False, None
+            # Where they are is a fact: "I'm in my kitchen" from someone out on a roof is dropped.
+            if away and guards.claims_home(delivery.clean(text)):
+                dropped_presence += 1
+                return False, None
             # "Just 'okay'?" — people don't audit each other's word counts on a
             # call. Told not to, every contact still did it to a short reply.
             if guards.remarks_on_brevity(delivery.clean(text), prompt):
+                dropped_presence += 1
+                return False, None
+            # "You okay?", "You sound tired" — to a man who only said "hm".
+            if guards.takes_his_temperature(delivery.clean(text), prompt):
                 dropped_presence += 1
                 return False, None
             if index == 0 and not spoken and self.already_greeted:
@@ -1108,7 +1154,7 @@ class ContactSession:
         if re.match(r"\W*skip\b", text or "", re.I):
             return ""
         text = re.sub(r"\[[^\]]*\]", "", text or "")
-        return self._plain(text).strip()
+        return _unemoji(self._plain(text))
 
     def utter(self, text, cut_off=False):
         """
@@ -1147,7 +1193,7 @@ class ContactSession:
         self._hanging_up = bool(_HANG_UP.search(text or ""))
         self._call_add = [m.strip() for m in _CALL_ADD.findall(text or "")]
         text = _CALL_ADD.sub("", text or "")
-        text = self._plain(text)
+        text = _unemoji(self._plain(text))
         # Joining a call is a greeting and leaving one a goodbye: the guards
         # that strip those from ordinary turns emptied both to "Mm.".
         text = guards.apply(text, "", 2, not greeting, self.contact.forbidden_address,
@@ -1171,7 +1217,8 @@ class ContactSession:
     def _background(self):
         """What they've heard secondhand, and what's been said in their group chats."""
         from ..contacts import directory
-        parts = [grapevine.block(self.contact.id), groupchat.block(self.contact.id, directory())]
+        parts = [grapevine.block(self.contact.id),
+                 groupchat.block(self.contact.id, directory(), prompt=getattr(self, "_said", None))]
         return "\n\n".join(p for p in parts if p)
 
     def group_post(self, group, unread, must=False, opening=None, task=None, chase=None, tapback=None):
@@ -1211,6 +1258,26 @@ class ContactSession:
         lately = culture.note(self.contact, " ".join(m["text"] for m in unread[-4:]) if unread else (opening or ""))
         if lately:
             context.append(lately)
+        # Asked about something out in the world — a film, a match — they have
+        # what it is, quietly, to have their own take on; and a plan to go out
+        # finds real places, not ones made up on the spot.
+        asked = next((m["text"] for m in reversed(unread or []) if m.get("from") != self.contact.id
+                      and subject_of_a_take(m.get("text", ""))), "")
+        if asked:
+            take = subject_of_a_take(asked)
+            topic = culture.topic_for(self.contact, asked)
+            try:
+                found = format_search_results(google_search(f"{take} review {topic}".strip()))
+            except Exception:
+                found = ""
+            if found:
+                context.append(f"What's out there about {take}, if you happen to know it — you'd have heard, seen "
+                               "or read it the way someone like you would; your take is your own, and if you "
+                               "honestly wouldn't know it, say so your way:\n" + found)
+        spot = places.resolve(presence.of(self.contact).whereabouts()[0] or "")
+        out = places.outing(" ".join(m["text"] for m in (unread or [])[-4:]), spot["x"], spot["y"]) if spot else ""
+        if out:
+            context.append(out)
         style = f" ({self.contact.texting})" if self.contact.texting else ""
         if task:
             ask = (f"{operator_name()} asked you privately to do this in the group: {task}. Do it now, in your own "
@@ -1338,6 +1405,14 @@ class ContactSession:
         elif why == "case_taken":
             ask = (f"You've just taken a case yourself: {about}. Tell him, briefly, your way — or if you "
                    "wouldn't bother him with it, reply with exactly SKIP.")
+        elif why == "case_arrived":
+            ask = (f"You've just got to the scene: {about}. Whether you tell him you're there is yours — a "
+                   "word or two the way you'd send it on the job, or nothing: if you wouldn't bother, reply "
+                   "with exactly SKIP.")
+        elif why == "case_trouble":
+            ask = (f"The case has gone bad: {about}. You're in it, with seconds to spare. If you'd call for "
+                   "help, text him the way you would right now — a few words, typos and all; if you'd never "
+                   "ask, or can't spare the second, reply with exactly SKIP.")
         elif why == "case_closed":
             ask = (f"You've just wrapped up a case: {about}. Let him know how it went, your way — a line or "
                    "two, not a report. If you wouldn't bother, reply with exactly SKIP.")
@@ -1411,7 +1486,7 @@ class ContactSession:
         except Exception:
             yield events.state(events.IDLE)
             return
-        text = guards.apply(self._plain(text), "", cap, self.already_greeted,
+        text = guards.apply(_unemoji(self._plain(text)), "", cap, self.already_greeted,
                             self.contact.forbidden_address, farewell=farewell)
         self._recent_asides.append(text)
         for i, sentence in enumerate(guards.split_sentences(text)):
@@ -1489,15 +1564,31 @@ class ContactSession:
             # carry, and without it Tim answered "who's running point?" in five.
             length, self._turn_cap = prompting.spoken_length(self.contact, prompt)
             length = length or None
-        if texting and getattr(self, "pestered", 0) >= 3:
-            awareness.append(f"He's sent you {self.pestered} texts in a row in the last few minutes. "
-                             "React to that the way you would.")
+        # A run of texts is ordinary — people fire off three in a row all the time,
+        # and "three texts in a row? you okay?" from Tim and Dick alike, every
+        # time, was the tell. Only a real barrage, and only sometimes, is worth a word.
+        if texting and getattr(self, "pestered", 0) >= 6 and random.random() < 0.35:
+            awareness.append(f"He's sent you {self.pestered} texts in a few minutes. Most people would just "
+                             "answer; say something about it only if it's genuinely odd for him.")
+        if texting:
             self.pestered = 0
         # Where they are and who with, every turn — not only in the greeting, or
         # "where are you?" two turns in was made up on the spot.
-        here = presence.of(self.contact).note()
-        if here and via != "text_on_call":
-            awareness.append(here)
+        # On a call the part of the turn that doesn't depend on his words — where
+        # they are, how their voice is, the case they're on — is built in one
+        # place, the same every time, and read ahead while he's still talking
+        # (see prefetch_turn): only his words and what they bring are new.
+        head = None
+        if via is None and not from_contact and not self.call:
+            pre, self._prefetched = getattr(self, "_prefetched", None), None
+            fresh = pre and time.time() - pre["at"] < 45 and pre["history"] == len(self.history.messages)
+            head = pre["head"] if fresh else self._standing_head()
+        else:
+            here = presence.of(self.contact).note()
+            if here and via != "text_on_call":
+                awareness.append(here)
+            if via is None and not from_contact:
+                awareness.extend(self._voice_notes())
         if texting:
             state = presence.of(self.contact).now()
             if state["status"] == presence.BUSY and state["doing"]:
@@ -1577,7 +1668,7 @@ class ContactSession:
                 awareness = [n for n in awareness if not n.startswith("Your last few replies have been a word")]
         if self.call:
             awareness.append(self.call.note_for(self, follow_up))
-        elif via is None and self._said_this_call() >= 2:
+        elif via is None and self._said_this_call() >= 2 and head is None:
             awareness.append(CLOSING_DIRECTIVE)
         vault_block = self.vault.as_block(prompt)
 
@@ -1591,11 +1682,8 @@ class ContactSession:
         # Weather with nowhere attached and nowhere known: ask, don't search.
         placeless = (_WEATHERISH.search(prompt) and not config.LOCATION
                      and not re.search(r"\b(in|at|for) [A-Z]", prompt))
-        if self.contact.can_search and not self._can_look():
-            state = presence.of(self.contact).now()
-            awareness.append(
-                f"You're away from any screen right now ({state['doing'] or 'out'}) — you can't "
-                "look anything up. Answer from what you know, or say you'll check when you can.")
+        if self.contact.can_search and not self._can_look() and head is None:
+            awareness.append(self._screenless_note())
         lately = "" if from_contact else culture.note(self.contact, prompt)
         if lately:
             awareness.append(lately)
@@ -1603,6 +1691,11 @@ class ContactSession:
         city = "" if from_contact else places.note(prompt)
         if city:
             awareness.append(city)
+        # Plans to go somewhere — a drink, a coffee — find real places near them, not invented ones.
+        spot = places.resolve(presence.of(self.contact).whereabouts()[0] or "") if not from_contact else None
+        out = places.outing(prompt, spot["x"], spot["y"]) if spot else ""
+        if out:
+            awareness.append(out)
         # With someone on the line who doesn't know about the masks, nothing of
         # the cases, the tracker or the scanner is put in their mouths — the
         # "don't mention patrols" warning sat beside "your case is yours to talk about".
@@ -1611,10 +1704,10 @@ class ContactSession:
         tracker = "" if guarded or from_contact else self._tracker(prompt)
         if tracker:
             awareness.append(tracker)
-        work = "" if guarded or from_contact else self._casework(prompt)
+        work = "" if guarded or from_contact else self._casework(prompt, brief=head is None)
         if work:
             awareness.append(work)
-        leaning = self._leaning_on()
+        leaning = self._leaning_on() if head is None else ""
         if leaning:
             awareness.append(leaning)
         known = ""
@@ -1623,14 +1716,18 @@ class ContactSession:
             yield events.state(events.SEARCHING)
             search_context = yield from self._run_search(
                 prompt, hold_for=None if via == "text" or not self.contact.search_aloud else prompt)
-        elif (is_factual_lookup(prompt) and not covered and not placeless and not follow_up
-              and not from_contact and not self._about_people(prompt)):
+        elif ((is_factual_lookup(prompt) or subject_of_a_take(prompt)) and not covered and not placeless
+              and not follow_up and not from_contact and not self._about_people(prompt)):
             # Nobody at a screen still knows things. The answer is found quietly
             # and handed over as what they might know — theirs to use if someone
             # like them would, never as a lookup: Dick knows the score, Jason
-            # doesn't know the charts, and nobody says "let me check".
+            # doesn't know the charts, and nobody says "let me check". Asked
+            # their take on a film they'd never heard of, they get what it is —
+            # the opinion's still theirs.
             topic = culture.topic_for(self.contact, prompt)
-            found = yield from self._run_search(f"{prompt} {topic}" if topic else prompt, hold_for=None,
+            take = subject_of_a_take(prompt)
+            query = f"{take} review" if take and not is_factual_lookup(prompt) else prompt
+            found = yield from self._run_search(f"{query} {topic}" if topic else query, hold_for=None,
                                                 silent=True)
             if found:
                 field = ("This is your world — something you follow — so you'd likely know it."
@@ -1644,9 +1741,10 @@ class ContactSession:
         hearsay = "\n\n".join(part for part in (self._background(), known) if part)
         user_turn = prompting.compose_user_turn(
             prompt, vault_block, search_context, awareness, spoken=said,
-            hearsay=hearsay, contact=self.contact, length=length)
+            hearsay=hearsay, contact=self.contact, length=length, head=head)
         payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn,
                                           texting=texting)
+        self._texting_now = texting
 
         yield events.state(events.THINKING)
         yield events.reply_start()
@@ -1672,7 +1770,7 @@ class ContactSession:
 
             user_turn = prompting.compose_user_turn(
                 prompt, vault_block, search_context, awareness, spoken=said, contact=self.contact,
-                length=length)
+                length=length, head=head)
             payload = prompting.build_payload(
                 self.contact, self.history.for_model(), user_turn, texting=texting)
             yield events.state(events.THINKING)
@@ -1806,7 +1904,7 @@ class ContactSession:
                          r"kidnap\w*|gang|riot|hostage|crime|dispatch|called in|take (that|this) one|"
                          r"check (it|that) out|on the scanner)\b")
 
-    def _casework(self, prompt):
+    def _casework(self, prompt, brief=True):
         """
         For the ones who work scenes: the case they're on (always — it's what
         they're doing), and when he's talking about trouble, what's open near
@@ -1816,7 +1914,7 @@ class ContactSession:
         if self.contact.id not in cases.FIELD:
             return ""
         parts = []
-        brief = cases.brief(self.contact.id)
+        brief = cases.brief(self.contact.id) if brief else ""
         if brief:
             parts.append(brief)
         if self._CRIMEY.search(prompt or "") and not cases.active(self.contact.id):
@@ -1871,6 +1969,129 @@ class ContactSession:
         if self.heard:
             self.history.record_exchange("\n".join(capped(self.heard)), "Mm.")
             self.heard = []
+
+    _LOUD = re.compile(r"\b(club|bar|party|gala|concert|stadium|arena|game|crowd|subway|train|traffic|construction|"
+                       r"pub|nightclub|market|fair|festival|kitchen rush|gym)\b", re.I)
+    _HUSHED = re.compile(r"\b(stake ?out|staking|library|hospital|church|funeral|meeting|class|lecture|hiding|"
+                         r"surveillance|sneak\w*|tailing|recon|board)\b", re.I)
+    _ASLEEP = re.compile(r"\b(asleep|sleep\w*|in bed|napping|nap)\b", re.I)
+
+    def _voice_note(self):
+        """
+        How their voice is on this line, from where they are and what they're
+        doing — the cues the moment has, offered, never required. Someone he
+        woke can yawn; someone mid-fight may not get a sentence out; someone on
+        a stakeout whispers. One per turn at most, and only when it's real.
+        """
+        if not delivery.supported():
+            return ""
+        from . import cases
+        whereabouts = presence.of(self.contact)
+        state = whereabouts.now()
+        doing = (state.get("doing") or "").lower()
+        where = (whereabouts.whereabouts()[0] or "").lower()
+        case = cases.active(self.contact.id) if self.contact.id in cases.FIELD else None
+        stage = cases.phase(case)[0] if case else ""
+        trip = whereabouts.get("trip") or {}
+        moving = trip.get("end", 0) > time.time() and len(trip.get("pts") or []) > 1
+        hour = time.localtime().tm_hour
+        if stage in ("in it", "gone wrong"):
+            note = ("You're in the middle of it as he talks. You may not manage whole sentences: a grunt or a "
+                    "cry written as the sound ('Hngh—', 'Argh!') with [grunts] or [panting] before it, a line "
+                    "cut off with a dash, a word or two between blows — or nothing at all for a moment (reply "
+                    "with just [no reply]). Only what you'd actually get out.")
+        elif stage == "arriving":
+            note = "You've just got there and you're keeping out of sight: [whispers], very few words."
+        elif stage == "wrapping up":
+            note = "It's just over and you're getting your breath back: [breathless] or [exhales], if it's real."
+        elif (self._ASLEEP.search(doing) or (state["status"] == presence.OFFLINE and (hour >= 23 or hour < 8))) \
+                and self._said_this_call() < 2:
+            note = ("He's woken you. For the first line or two your voice can show it — [yawns], [groggy], "
+                    "[sleepy] — if it would.")
+        elif self._HUSHED.search(doing):
+            # A stakeout is a patrol that's stopped moving: still, and silent.
+            note = "Where you are, you'd keep your voice down: [whispers] or [hushed]."
+        elif places.is_patrol(doing) or (moving and trip.get("by") in ("over the rooftops", "on foot")):
+            note = "You're on the move as you talk: [breathless] now and then, short lines, the wind in it."
+        elif self._LOUD.search(doing) or self._LOUD.search(where):
+            note = "It's loud where you are: [shouting] over it fits — or you only caught part of what he said."
+        elif self._HUSHED.search(where):
+            note = "Where you are, you'd keep your voice down: [whispers] or [hushed]."
+        else:
+            note = ""
+        home = getattr(self.contact, "home", "") or ""
+        out_and_about = where and home.lower() not in where and "home" not in where
+        if delivery.sounds_supported() and out_and_about and random.random() < 0.3:
+            note += (" If a sound around you belongs in the moment — a door, traffic, the bag at the checkout — "
+                     "you may put it in brackets, a few words: it carries down the line. Rarely.")
+        return note.strip()
+
+    def _voice_notes(self):
+        """How their voice is on this line, and whether he's muted: notes for a call turn."""
+        notes = []
+        voice = self._voice_note()
+        if voice:
+            notes.append(voice)
+        if getattr(self, "he_muted", False):
+            notes.append("He's on mute — the icon's on your screen — so this reached you typed, not said. "
+                         "Notice it only if you would.")
+        return notes
+
+    def _screenless_note(self):
+        state = presence.of(self.contact).now()
+        return (f"You're away from any screen right now ({state['doing'] or 'out'}) — you can't look anything "
+                "up. Answer from what you know, or say you'll check when you can.")
+
+    def _standing_head(self):
+        """
+        The part of a one-to-one call turn that doesn't depend on his words —
+        the time, the feeds, where they are, their voice, the case they're on,
+        what they've been meaning to raise — always in the same order, so it
+        can be read ahead while he speaks and reused byte for byte.
+        """
+        from . import cases
+        notes = []
+        here = presence.of(self.contact).note()
+        if here:
+            notes.append(here)
+        notes.extend(self._voice_notes())
+        if self.contact.can_search and not self._can_look():
+            notes.append(self._screenless_note())
+        if self.contact.id in cases.FIELD:
+            brief = cases.brief(self.contact.id)
+            if brief:
+                notes.append(brief)
+        leaning = self._leaning_on()
+        if leaning:
+            notes.append(leaning)
+        if self._said_this_call() >= 2:
+            notes.append(CLOSING_DIRECTIVE)
+        return prompting.standing_block(self.contact, notes)
+
+    def prefetch_turn(self):
+        """
+        While he's talking: read ahead the part of his next turn that won't
+        change with what he says, so when he stops only his words and what they
+        bring are new to the model. The difference is most of a turn's wait —
+        a second and more, gone while he was still speaking.
+        """
+        if self.call:
+            return
+        head = self._standing_head()
+        self._prefetched = {"head": head, "at": time.time(), "history": len(self.history.messages)}
+        payload = prompting.build_payload(self.contact, self.history.for_model(), prompting.reference_opening(head))
+        ollama.chat(model=self.contact.model, messages=payload, stream=False,
+                    options=self._options(num_predict=1), **self._extra())
+
+    def _at_home(self):
+        """Whether they're home right now — arrived, not on the way."""
+        whereabouts = presence.of(self.contact)
+        where, _ = whereabouts.whereabouts()
+        trip = whereabouts.get("trip") or {}
+        if trip.get("end", 0) > time.time() and len(trip.get("pts") or []) > 1:
+            return False
+        home = (getattr(self.contact, "home", "") or "").lower()
+        return bool(where) and (where.lower() == home or where.lower().startswith("home"))
 
     def _said_this_call(self):
         """How many times he has spoken since this call began."""

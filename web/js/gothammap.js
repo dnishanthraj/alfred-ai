@@ -262,6 +262,25 @@
       ctx.beginPath(); ctx.moveTo(0, 14); ctx.lineTo(-5, 21); ctx.lineTo(5, 21); ctx.closePath(); ctx.fill();
     };
   }
+  // The Batwing from above: a black bat in silhouette, scalloped wings edged in
+  // the console's blue, the canopy and twin engines glowing.
+  function batwingSprite(shadow) {
+    return function (ctx) {
+      ctx.beginPath();
+      ctx.moveTo(0, -16); ctx.quadraticCurveTo(2.6, -9, 3, -3);
+      ctx.lineTo(16, 2); ctx.quadraticCurveTo(13, 4, 12.5, 7); ctx.quadraticCurveTo(9.5, 5.5, 8, 8);
+      ctx.quadraticCurveTo(5.5, 6.5, 4, 10); ctx.lineTo(2, 12); ctx.lineTo(0, 9.5); ctx.lineTo(-2, 12); ctx.lineTo(-4, 10);
+      ctx.quadraticCurveTo(-5.5, 6.5, -8, 8); ctx.quadraticCurveTo(-9.5, 5.5, -12.5, 7); ctx.quadraticCurveTo(-13, 4, -16, 2);
+      ctx.lineTo(-3, -3); ctx.quadraticCurveTo(-2.6, -9, 0, -16); ctx.closePath();
+      if (shadow) { ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'; ctx.fill(); return; }
+      ctx.fillStyle = '#0b1118'; ctx.strokeStyle = 'rgba(143, 211, 255, 0.85)'; ctx.lineWidth = 0.8;
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(90, 168, 255, 0.95)';
+      ctx.beginPath(); ctx.ellipse(0, -7, 1.1, 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(140, 210, 255, 0.95)';
+      [-1.6, 1.6].forEach(function (x) { ctx.beginPath(); ctx.arc(x, 10.6, 0.9, 0, Math.PI * 2); ctx.fill(); });
+    };
+  }
   function livery(body, beacon) {
     return function (ctx) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
@@ -327,13 +346,14 @@
         incidents: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         trail: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         movers: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-        // The ground itself: hills shaded in 2D, raised when the map tilts.
-        terrain: { type: 'raster-dem', tiles: ['/static/map/terrain/{z}/{x}/{y}.png'], tileSize: 256,
-                   encoding: 'mapbox', minzoom: 9, maxzoom: 11, bounds: [-0.48, -0.36, 0.38, 0.5] },
+        // The ground itself: hills shaded in 2D, raised when the map tilts — finer
+        // close in (z12–13 only where the map can be panned), so a house sits level.
+        terrain: { type: 'raster-dem', tiles: ['/static/map/terrain/{z}/{x}/{y}.png?v=' + (opts.data.version || '0')], tileSize: 256,
+                   encoding: 'mapbox', minzoom: 9, maxzoom: 13, bounds: [-0.48, -0.36, 0.38, 0.5] },
         // The same ground for the hillshade: one DEM source serving both shading
         // and 3D terrain renders each worse (MapLibre's own advice).
-        relief: { type: 'raster-dem', tiles: ['/static/map/terrain/{z}/{x}/{y}.png'], tileSize: 256,
-                  encoding: 'mapbox', minzoom: 9, maxzoom: 11, bounds: [-0.48, -0.36, 0.38, 0.5] }
+        relief: { type: 'raster-dem', tiles: ['/static/map/terrain/{z}/{x}/{y}.png?v=' + (opts.data.version || '0')], tileSize: 256,
+                  encoding: 'mapbox', minzoom: 9, maxzoom: 13, bounds: [-0.48, -0.36, 0.38, 0.5] }
       },
       layers: [
         { id: 'void', type: 'background', paint: { 'background-color': C.void } },
@@ -357,6 +377,16 @@
           paint: { 'hillshade-exaggeration': 0.4, 'hillshade-shadow-color': '#03080f',
                    'hillshade-highlight-color': '#1d4d6e', 'hillshade-accent-color': '#06121c',
                    'hillshade-illumination-direction': 315 } },
+        // The county past the sprawl: fields in their hedgerows and the woods
+        // between them — faint, as farmland is at night, but not nothing.
+        { id: 'field', type: 'fill', source: 'city', filter: is('field'),
+          paint: { 'fill-color': ['match', ['get', 'k'], 'crop', '#0f1d1e', 'pasture', '#0c1c1b', 'orchard', '#0d2220', '#101a21'],
+                   'fill-opacity': 0.95 } },
+        { id: 'field-edge', type: 'line', source: 'city', filter: is('field'), minzoom: 11.6,
+          paint: { 'line-color': '#143a2c', 'line-width': z([11.6, 0.5, 14, 1.6, 17, 5]), 'line-opacity': 0.7 } },
+        { id: 'wood', type: 'fill', source: 'city', filter: is('wood'), paint: { 'fill-color': '#09231c', 'fill-opacity': 0.95 } },
+        { id: 'wood-edge', type: 'line', source: 'city', filter: is('wood'),
+          paint: { 'line-color': C.parkEdge, 'line-width': 0.6, 'line-opacity': 0.25 } },
         { id: 'park', type: 'fill', source: 'city', filter: is('park'), paint: { 'fill-color': C.park, 'fill-opacity': 0.9 } },
         { id: 'plaza', type: 'fill', source: 'city', filter: is('plaza'), paint: { 'fill-color': '#122131', 'fill-opacity': 0.95 } },
         { id: 'plaza-edge', type: 'line', source: 'city', filter: is('plaza'),
@@ -523,7 +553,7 @@
           paint: {
             'fill-extrusion-color': ['match', ['get', 'k'], '~landmark', '#7ccaf5', '~deck', '#2a6a94',
               '~container', ['match', ['%', ['get', 'h'], 2], 0, '#6b5326', '#2f5068'], '~lit', '#3a86bd',
-              '~tank', '#3d5568', '~pad', '#8fd3ff', '~crane', '#c9a23a', '~ride', '#ff5fa2', '~wheel', '#e8d7b0',
+              '~tank', '#3d5568', '~pad', '#8fd3ff', '~crane', '#c9a23a', '~frame', '#2b3a47', '~stall', '#3f6f8f', '~stall-red', '#a8343a', '~stall-gold', '#b58a2e', '~gate', '#c0392b', '~ride', '#ff5fa2', '~wheel', '#e8d7b0',
               // Each quarter's own stuff: the old town's stone and brownstone, downtown's
               // glass, the works' steel, the suburbs' painted houses.
               '~old', ['interpolate', ['linear'], ['get', 'h'], 0, '#13171f', 30, '#1c2230', 70, '#283044'],
@@ -550,21 +580,22 @@
         { id: 'trunks', type: 'fill-extrusion', source: 'trees', minzoom: 15, filter: ['==', ['get', 'p'], 0],
           paint: { 'fill-extrusion-color': '#13261f', 'fill-extrusion-height': ['get', 'top'], 'fill-extrusion-opacity': 1 } },
         // The subway as a transit map: clean coloured lines on a dark casing, its trains
-        // riding them as dots — over the city at a distance, fading as the buildings rise,
-        // so up close there's only the stations' entrances, never light between the roofs.
-        { id: 'subway-casing', type: 'line', source: 'city', filter: is('subway'), minzoom: 10.8, maxzoom: 14.6,
+        // riding them as dots — over the city at a distance only. They're gone by the time
+        // the buildings rise, flat or tilted, leaving the stations as dots: lines across
+        // the roofs looked like paint spilled on the city.
+        { id: 'subway-casing', type: 'line', source: 'city', filter: is('subway'), minzoom: 10.8, maxzoom: 12.8,
           layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: { 'line-color': C.void, 'line-width': z([10.8, 2.6, 13, 5.4, 14, 6.6]),
-                   'line-opacity': ['interpolate', ['linear'], ['zoom'], 13.4, 0.9, 14.4, 0] } },
-        { id: 'subway', type: 'line', source: 'city', filter: is('subway'), minzoom: 10.8, maxzoom: 14.6,
+          paint: { 'line-color': C.void, 'line-width': z([10.8, 2.6, 12.8, 5]),
+                   'line-opacity': ['interpolate', ['linear'], ['zoom'], 12.1, 0.9, 12.7, 0] } },
+        { id: 'subway', type: 'line', source: 'city', filter: is('subway'), minzoom: 10.8, maxzoom: 12.8,
           layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: { 'line-color': ['get', 'col'], 'line-width': z([10.8, 1.3, 13, 2.8, 14, 3.4]),
-                   'line-opacity': ['interpolate', ['linear'], ['zoom'], 13.4, 0.95, 14.4, 0] } },
-        { id: 'metro', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'metro'], minzoom: 11, maxzoom: 14.6,
-          paint: { 'circle-radius': z([11, 2, 13, 3.4, 14, 4]), 'circle-color': '#f4faff',
-                   'circle-stroke-color': ['get', 'col'], 'circle-stroke-width': z([11, 1, 14, 1.8]),
-                   'circle-opacity': ['interpolate', ['linear'], ['zoom'], 13.4, 1, 14.4, 0],
-                   'circle-stroke-opacity': ['interpolate', ['linear'], ['zoom'], 13.4, 1, 14.4, 0] } },
+          paint: { 'line-color': ['get', 'col'], 'line-width': z([10.8, 1.3, 12.8, 2.6]),
+                   'line-opacity': ['interpolate', ['linear'], ['zoom'], 12.1, 0.95, 12.7, 0] } },
+        { id: 'metro', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'metro'], minzoom: 11, maxzoom: 12.8,
+          paint: { 'circle-radius': z([11, 2, 12.8, 3.2]), 'circle-color': '#f4faff',
+                   'circle-stroke-color': ['get', 'col'], 'circle-stroke-width': z([11, 1, 12.8, 1.6]),
+                   'circle-opacity': ['interpolate', ['linear'], ['zoom'], 12.1, 1, 12.7, 0],
+                   'circle-stroke-opacity': ['interpolate', ['linear'], ['zoom'], 12.1, 1, 12.7, 0] } },
         // Aircraft: the shadow on the ground, falling further off as it climbs, then the plane.
         { id: 'plane-shadow', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'plane-shadow'], minzoom: 10.5,
           layout: { 'icon-image': 'gm-plane-shadow', 'icon-size': z([10.5, 0.5, 15, 1.1, 18, 2.6]), 'icon-rotate': ['get', 'r'],
@@ -636,6 +667,17 @@
         { id: 'airship', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'airship'], minzoom: 10.5,
           layout: { 'icon-image': 'gm-airship', 'icon-size': z([10.5, 0.8, 15, 1.8, 18, 4.4]), 'icon-rotate': ['get', 'r'],
                     'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        // Lanterns strung over the night market's aisles: warm dots, brighter after dark.
+        { id: 'lantern', type: 'line', source: 'city', filter: is('lantern'), minzoom: 14.6,
+          layout: { 'line-cap': 'round' },
+          paint: { 'line-color': '#ffb347', 'line-width': z([14.6, 1.6, 17, 4, 18, 6]), 'line-dasharray': [0.05, 1.6],
+                   'line-opacity': 0.85, 'line-blur': 0.6 } },
+        { id: 'batwing-shadow', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'batwing-shadow'], minzoom: 10.5,
+          layout: { 'icon-image': 'gm-batwing-shadow', 'icon-size': z([10.5, 0.5, 15, 1.1, 18, 2.4]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        { id: 'batwing', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'batwing'], minzoom: 10.5,
+          layout: { 'icon-image': 'gm-batwing', 'icon-size': z([10.5, 0.6, 15, 1.25, 18, 2.8]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
         { id: 'beam', type: 'fill', source: 'movers', filter: ['==', ['get', 'm'], 'beam'],
           paint: { 'fill-color': '#fff1c4', 'fill-opacity': ['get', 'o'] } },
         // Stations as roundels: white, ringed in their line's colour — the entrances, at any zoom.
@@ -669,16 +711,23 @@
           paint: { 'line-color': '#ff5a4f', 'line-width': z([13.2, 0.5, 16, 1.3, 18, 2.2]), 'line-opacity': 0.38,
                    'line-dasharray': [0.1, 8], 'line-offset': z([13.2, -0.4, 16, -1.6, 18, -4]) } },
         // The subway lines' names along them, as a transit map has them.
-        { id: 'subway-label', type: 'symbol', source: 'city', filter: is('subway'), minzoom: 11.6, maxzoom: 14.2,
+        { id: 'subway-label', type: 'symbol', source: 'city', filter: is('subway'), minzoom: 11.4, maxzoom: 12.7,
           layout: { 'symbol-placement': 'line', 'text-field': ['upcase', ['get', 'n']], 'text-font': ['Noto Sans Medium'],
-                    'text-size': z([11.6, 9, 13.5, 11]), 'text-letter-spacing': 0.2, 'symbol-spacing': 520, 'text-max-angle': 25 },
-          paint: { 'text-color': ['get', 'col'], 'text-halo-color': C.void, 'text-halo-width': 1.8 } },
+                    'text-size': z([11.4, 9, 12.7, 10]), 'text-letter-spacing': 0.2, 'symbol-spacing': 520, 'text-max-angle': 25 },
+          paint: { 'text-color': ['get', 'col'], 'text-halo-color': C.void, 'text-halo-width': 1.8,
+                   'text-opacity': ['interpolate', ['linear'], ['zoom'], 12.1, 1, 12.6, 0] } },
         { id: 'water-label', type: 'symbol', source: 'city', filter: is('water_label'),
           layout: { 'text-field': ['get', 'n'], 'text-font': ['Noto Sans Italic'],
                     'text-size': ['interpolate', ['linear'], ['zoom'], 10, ['case', ['has', 's'], 9, 11], 12, ['case', ['has', 's'], 9, 13.5],
                                    14, ['case', ['has', 's'], 11, 16], 15, ['case', ['has', 's'], 12, 16]],
                     'text-letter-spacing': 0.35, 'text-rotate': ['get', 'r'], 'text-max-width': 30 },
           paint: { 'text-color': '#3a7aa8', 'text-opacity': 0.85 } },
+        // The piers' numbers at their ends, the way the waterfront knows them.
+        { id: 'pier-label', type: 'symbol', source: 'city', filter: is('pier_label'), minzoom: 15.4,
+          layout: { 'text-field': ['upcase', ['get', 'n']], 'text-font': ['Noto Sans Medium'], 'text-size': z([15.4, 8.5, 18, 11]),
+                    'text-letter-spacing': 0.18, 'text-rotate': ['get', 'r'], 'text-rotation-alignment': 'map',
+                    'text-allow-overlap': false },
+          paint: { 'text-color': '#7fa9c8', 'text-halo-color': C.void, 'text-halo-width': 1.4, 'text-opacity': 0.9 } },
         { id: 'road-label', type: 'symbol', source: 'city', minzoom: 13.6,
           filter: ['all', is('road'), ['has', 'n'], ['!=', ['get', 'c'], 'street']],
           layout: { 'symbol-placement': 'line', 'text-field': ['upcase', ['get', 'n']], 'text-font': ['Noto Sans Medium'],
@@ -721,7 +770,7 @@
   function loadCity() {
     // All three at once — then built in order, so the city draws first.
     var files = ['gotham.geojson', 'gotham-buildings.json', 'gotham-trees.json'].map(function (name) {
-      return fetch('/static/map/' + name).then(function (r) { return r.json(); });
+      return fetch('/static/map/' + name + '?v=' + (opts.data.version || '0')).then(function (r) { return r.json(); });
     });
     return files[0].then(function (fc) {
       fc.features.forEach(function (f) { f.geometry.coordinates = convert(f.geometry.coordinates); });
@@ -766,7 +815,7 @@
 
   /* --- hovering: the console's own tooltip, never the map's ----------------- */
 
-  var HOVERABLE = ['incident', 'airship', 'plane', 'chopper', 'heli', 'train-car', 'ship', 'boat', 'tug', 'sail', 'patrol', 'metro',
+  var HOVERABLE = ['incident', 'airship', 'batwing', 'plane', 'chopper', 'heli', 'train-car', 'ship', 'boat', 'tug', 'sail', 'patrol', 'metro',
                    'landmark', 'spot', 'venue', 'station', 'railstation', 'parked', 'district-label', 'quarter-label', 'road-label',
                    'primary', 'highway', 'avenue', 'secondary', 'subway', 'ferry', 'shipping', 'pitch', 'golf', 'lot', 'park', 'water',
                    'marsh', 'trail-stop', 'district'];
@@ -963,8 +1012,8 @@
       var marker = personMarker(c, onJourney(journey(route), Date.now() / 1000).at);
       if (!marker._trip || marker._trip.start !== route.start) marker._trip = journey(route);
       marker.getElement().classList.add('is-moving');
-      finish(c, marker, c.name + ' · on the way to ' + (c.presence.where || c.presence.spot.name) + ' · ' +
-             minutesLeft(route) + ' min');
+      finish(c, marker, c.name + ' · on the way to ' + (c.presence.where || c.presence.spot.name) +
+             (route.by ? ' · ' + route.by : '') + ' · ' + minutesLeft(route) + ' min');
     });
     // Those who keep where they are to themselves: where he last knew them to be, faded.
     ghosts.forEach(function (c) {
@@ -1015,7 +1064,8 @@
       var company = (p['with'] || []).map(function (cid) { return (contacts[cid] || {}).name; }).filter(Boolean);
       var route = travelling(c);
       text.querySelector('small').textContent = p.spot
-        ? (route ? '→ ' + (p.where || p.spot.name) + ' · ' + minutesLeft(route) + ' min' : (p.where || p.spot.name))
+        ? (route ? '→ ' + (p.where || p.spot.name) + (route.by ? ' · ' + route.by : '') + ' · ' + minutesLeft(route) + ' min'
+                 : (p.where || p.spot.name))
           + (company.length ? ' · with ' + company.join(', ') : '')
         : p.last_seen ? 'Last seen ' + ago(Date.now() / 1000 - p.last_seen.at) + ' · ' + p.last_seen.where : 'Location hidden';
       li.appendChild(face);
@@ -1069,7 +1119,8 @@
       ? 'Last seen ' + ago(Date.now() / 1000 - p.last_seen.at) + ' · ' + p.last_seen.where + ' — ' + p.last_seen.how
       : (route ? 'On the way to ' : '') + (p.where || p.spot.name) +
         (p.spot.area && p.spot.area !== p.where && p.spot.area !== p.spot.name ? ' · ' + p.spot.area : '') +
-        (route ? ' · ' + minutesLeft(route) + ' min' : '') + (company.length ? ' · with ' + company.join(', ') : '');
+        (route ? (route.by ? ' · ' + route.by : '') + ' · ' + minutesLeft(route) + ' min' : '') +
+        (company.length ? ' · with ' + company.join(', ') : '');
     card.querySelector('[data-act="follow"]').hidden = !p.spot;
     card.querySelector('[data-act="follow"]').classList.toggle('is-on', following === id);
   }
@@ -1124,6 +1175,7 @@
   function showInfo(title, sub, body, note, imageUrl, tint) {
     var card = $('.gm-info');
     openReport = null;
+    card.querySelector('.gm-info__log').hidden = true;
     card.querySelector('.gm-info__assign').hidden = true;
     card.querySelector('.gm-info__note').classList.remove('is-plain');
     card.style.setProperty('--accent', tint || C.edge);
@@ -1152,8 +1204,37 @@
     showInfo(p.name, p.area, p.bio, p.note, iconUrl(p.icon || ''), ICON_TINT[p.icon]);
   }
 
+  // The incident log behind a report — who called it in, what units found, where it stands.
+  // Written the first time it's opened, so the first look waits a moment for it.
+  var logCache = {};
+  function reportLog(report) {
+    var box = $('.gm-info__log'), list = box.querySelector('.gm-log');
+    box.hidden = false;
+    var key = report.id + ':' + report.status;        // a log grows as the case moves on
+    if (logCache[key]) { drawLog(list, logCache[key]); return; }
+    list.innerHTML = '<li class="gm-log__wait">Pulling the log\u2026</li>';
+    fetch('/api/scanner/' + encodeURIComponent(report.id) + '/log').then(function (r) { return r.json(); })
+      .then(function (body) {
+        if ((body.log || []).length) logCache[key] = body;
+        if (openReport === report.id) drawLog(list, body);
+      }).catch(function () { if (openReport === report.id) list.innerHTML = '<li class="gm-log__wait">The log won\u2019t load.</li>'; });
+  }
+
+  function drawLog(list, body) {
+    list.innerHTML = '';
+    (body.log || []).forEach(function (e) {
+      var li = document.createElement('li');
+      li.className = 'gm-log__entry';
+      li.innerHTML = '<time></time><b></b><span></span>';
+      li.querySelector('time').textContent = e.time || '';
+      li.querySelector('b').textContent = e.who || '';
+      li.querySelector('span').textContent = e.text || '';
+      list.appendChild(li);
+    });
+    if (!(body.log || []).length) list.innerHTML = '<li class="gm-log__wait">No log yet.</li>';
+  }
+
   function incidentCard(report) {
-    openReport = report.id;
     var contacts = opts.contacts();
     var who = report.assignee && contacts[report.assignee];
     var near = visible().filter(function (c) {
@@ -1166,9 +1247,13 @@
     var img = warning(report.severity), canvas = document.createElement('canvas');
     canvas.width = img.width; canvas.height = img.height;
     canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
-    showInfo(report.kind, report.place + ' · ' + clock(report.at) + ' · ' + report.status,
-             report.dispatch ? 'Dispatch: \u201c' + report.dispatch + '\u201d' : 'Dispatch is still coming through.',
+    var toll = tollText(report.toll);
+    showInfo(report.kind, report.place + ' · ' + clock(report.at) + ' · ' + report.status + (toll ? ' · ' + toll : ''),
+             (report.suspect ? 'Suspect: ' + report.suspect + '. ' : report.gang ? 'Looks like ' + report.gang + '. ' : '') +
+             (report.dispatch ? 'Dispatch: \u201c' + report.dispatch + '\u201d' : 'Dispatch is still coming through.'),
              '', canvas.toDataURL(), SEVERITY[report.severity]);
+    openReport = report.id;          // after showInfo, which clears it for any other card
+    reportLog(report);
     $('.gm-info__note').hidden = false;
     $('.gm-info__note').textContent = state;
     $('.gm-info__note').classList.add('is-plain');
@@ -1261,15 +1346,26 @@
     return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   }
 
+  // "2 dead, 3 hurt" — or nothing when nobody is.
+  function tollText(t) {
+    if (!t) return '';
+    return [t.dead ? t.dead + ' dead' : '', t.hurt ? t.hurt + ' hurt' : ''].filter(Boolean).join(', ');
+  }
+
   function reportItem(r, withWho) {
     var li = document.createElement('li');
     li.className = 'gm-list__item';
     li.style.setProperty('--sev', SEVERITY[r.severity]);
     var who = r.assignee && opts.contacts()[r.assignee];
-    li.innerHTML = '<i class="gm-list__sev"></i><span class="gm-list__text"><b></b><small></small></span>';
+    li.innerHTML = '<i class="gm-list__sev"></i><span class="gm-list__text"><span class="gm-list__head"><b></b>' +
+                   '<time></time></span><small></small><span class="gm-list__status"></span></span>';
     li.querySelector('b').textContent = r.kind;
-    li.querySelector('small').textContent = r.place + ' · ' + clock(r.at) + ' · ' +
-      (who ? who.name + ' — ' + (r.case === 'closed' ? 'closed' : r.case) : r.status);
+    li.querySelector('time').textContent = clock(r.at);
+    var toll = tollText(r.toll);
+    li.querySelector('small').textContent = r.place + (r.area && r.area !== r.place ? ', ' + r.area : '') + (toll ? ' · ' + toll : '');
+    var status = li.querySelector('.gm-list__status');
+    status.textContent = who ? who.name + ' · ' + (r.case === 'closed' ? 'closed' : r.case) : r.status;
+    status.dataset.s = who ? 'case' : r.status.replace(/ /g, '-');
     if (withWho && who) {
       var face = document.createElement('span');
       face.className = 'gm-list__face';
@@ -1372,12 +1468,25 @@
   /* --- day and night: the same dark console, the city lit up after dusk --- */
 
   var night = 1;
-  function nightness(date) {
-    var h = date.getHours() + date.getMinutes() / 60;
-    if (h >= 20 || h < 5.5) return 1;
-    if (h >= 8 && h < 17.5) return 0;
-    return h < 8 ? 1 - (h - 5.5) / 2.5 : (h - 17.5) / 2.5;
+  // The sun over Gotham — an east-coast city at New York's latitude, on the
+  // console's own clock — so the evening comes as it does outside: later in
+  // June, before six in December, gold first, then blue, then night.
+  var LATITUDE = 40.7;
+  function sunHeight(date) {
+    var year = date.getFullYear(), start = new Date(year, 0, 1);
+    var day = Math.floor((date - start) / 86400000) + 1;
+    var standard = Math.max(start.getTimezoneOffset(), new Date(year, 6, 1).getTimezoneOffset());
+    var summer = date.getTimezoneOffset() < standard ? 1 : 0;      // clocks forward: the sun's noon is at one
+    var solar = date.getHours() + date.getMinutes() / 60 - summer;
+    var tilt = 23.44 * Math.sin(2 * Math.PI * (284 + day) / 365) * Math.PI / 180;
+    var phi = LATITUDE * Math.PI / 180, hourAngle = (solar - 12) * 15 * Math.PI / 180;
+    return Math.asin(Math.sin(phi) * Math.sin(tilt) + Math.cos(phi) * Math.cos(tilt) * Math.cos(hourAngle)) * 180 / Math.PI;
   }
+  function smooth(a, b, x) { var t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+  // 0 by day, 1 at night: dusk from the sun a few degrees up to well below the horizon.
+  function nightness(date) { return 1 - smooth(-10, 4, sunHeight(date)); }
+  // The low sun's gold, strongest just before it sets and just after it rises.
+  function goldenness(date) { var e = sunHeight(date); return smooth(-3, 1.5, e) * (1 - smooth(4, 11, e)); }
   function mix(a, b, f) {
     var pa = [1, 3, 5].map(function (i) { return parseInt(a.substr(i, 2), 16); });
     var pb = [1, 3, 5].map(function (i) { return parseInt(b.substr(i, 2), 16); });
@@ -1385,25 +1494,31 @@
   }
   function lighting() {
     if (!ready) return;
-    night = nightness(new Date());
-    var n = night;
-    // The ground a shade lighter by day; the glow of roads, coast and traffic up after dark.
-    map.setPaintProperty('void', 'background-color', mix('#06101a', C.void, n));
-    map.setPaintProperty('land', 'fill-color', ['match', ['get', 'k'], 'mainland', mix('#112131', C.mainland, n),
-                                                mix('#13253a', C.land, n)]);
+    var now = new Date();
+    night = nightness(now);
+    var n = night, gold = goldenness(now);
+    // The ground a shade lighter by day and dimming through the dusk; the glow of
+    // roads, coast and traffic coming up as it goes; a warm cast at the golden hour.
+    var water = mix(mix('#06101a', C.void, n), '#1a1410', gold * 0.35);
+    map.setPaintProperty('void', 'background-color', water);
+    map.setPaintProperty('land', 'fill-color', ['match', ['get', 'k'],
+                                                'mainland', mix(mix('#112131', C.mainland, n), '#2a2016', gold * 0.3),
+                                                mix(mix('#13253a', C.land, n), '#2e2318', gold * 0.3)]);
     map.setPaintProperty('coast-glow', 'line-opacity', 0.07 + 0.08 * n);
+    if (map.getLayer('lantern')) map.setPaintProperty('lantern', 'line-opacity', 0.35 + 0.6 * n);
     map.setPaintProperty('primary-glow', 'line-opacity', 0.18 + 0.2 * n);
     map.setPaintProperty('highway-glow', 'line-opacity', 0.16 + 0.18 * n);
     map.setPaintProperty('traffic', 'line-opacity', 0.32 + 0.28 * n);
     map.setPaintProperty('traffic-avenue', 'line-opacity', 0.18 + 0.28 * n);
     map.setPaintProperty('traffic-tail', 'line-opacity', 0.15 + 0.28 * n);
-    map.setLight({ anchor: 'viewport', intensity: 0.32 + 0.18 * (1 - n), color: mix('#cfe6ff', '#9fc8ff', n) });
+    map.setLight({ anchor: 'viewport', intensity: 0.32 + 0.18 * (1 - n),
+                   color: mix(mix('#cfe6ff', '#9fc8ff', n), '#ffc58f', gold * 0.75) });
     root.classList.toggle('is-night', n > 0.5);
   }
 
   var signal = null;
   function batSignal() {
-    var hour = new Date().getHours(), night = hour >= 19 || hour < 6;
+    var night = nightness(new Date()) > 0.6;          // lit once the dusk is well on, as the sky goes
     var gcpd = (gazetteer.places || []).filter(function (p) { return p.name === 'GCPD Central'; })[0];
     if (!gcpd) return;
     if (night && !signal) {
@@ -1590,9 +1705,9 @@
     buildings: ['buildings', 'footprint', 'trees', 'trunks'],
     transit: ['subway', 'subway-casing', 'subway-label', 'station', 'station-label', 'ferry', 'shipping', 'train-car', 'metro', 'boat', 'ship', 'tug',
               'sail', 'patrol', 'rail', 'rail-bed', 'railbridge', 'railbridge-truss', 'railstation', 'railstation-label',
-              'plane', 'plane-shadow', 'parked', 'chopper', 'beam', 'airship', 'airship-shadow'],
+              'plane', 'plane-shadow', 'parked', 'chopper', 'beam', 'airship', 'airship-shadow', 'batwing', 'batwing-shadow'],
     crime: ['incident', 'incident-pulse', 'smoke', 'case-ring', 'heli', 'heli-light', 'heli-spot'],
-    life: ['venue', 'venue-glow'],
+    life: ['venue', 'venue-glow', 'lantern'],
     safety: ['safety'],
     trails: ['trail', 'trail-ahead', 'trail-stop']
   };
@@ -1718,8 +1833,20 @@
         // never comes into view.
         minZoom: 11, maxZoom: 18.5, maxPitch: 70, attributionControl: false,
         renderWorldCopies: false, dragRotate: true, pitchWithRotate: true,
-        maxBounds: [ll(-130, 230), ll(230, -110)]
+        // The view never leaves the county the map fills: no edge, no grey beyond it.
+        maxBounds: [ll(-58, 163), ll(183, -68)]
       });
+      // Zoomed out, the tilt eases off — the city fills the view and the far
+      // horizon, where the county ends, never comes into it.
+      function tiltFor() {
+        // Flat all the way out; the tilt comes back as you close in — 60° by
+        // street level, 70° right down among the roofs.
+        var z = map.getZoom();
+        var most = z <= 11.7 ? 0 : z >= 14 ? 70 : z >= 13.2 ? 60 + (z - 13.2) / 0.8 * 10 : (z - 11.7) / 1.5 * 60;
+        if (Math.abs(map.getMaxPitch() - most) > 0.5) map.setMaxPitch(most);
+      }
+      map.on('zoom', tiltFor);
+      tiltFor();
       map.on('load', function () {
         ICON_KINDS.forEach(function (kind) {
           if (!map.hasImage('gm-' + kind)) map.addImage('gm-' + kind, icon(kind), { pixelRatio: 2 });
@@ -1738,6 +1865,8 @@
         map.addImage('gm-heli-med', sprite(30, livery('#f2f2f2', '#ff3b3b')), { pixelRatio: 2 });
         map.addImage('gm-heli-civ', sprite(30, livery('#16324e', '#ffd27f')), { pixelRatio: 2 });
         map.addImage('gm-airship', sprite(46, airshipSprite(false)), { pixelRatio: 2 });
+        map.addImage('gm-batwing', sprite(40, batwingSprite(false)), { pixelRatio: 2 });
+        map.addImage('gm-batwing-shadow', sprite(40, batwingSprite(true)), { pixelRatio: 2 });
         map.addImage('gm-airship-shadow', sprite(46, airshipSprite(true)), { pixelRatio: 2 });
         ready = true;
         loadCity();
@@ -1750,7 +1879,8 @@
         setInterval(loadIncidents, 60000);
         batSignal();
         lighting();
-        setInterval(function () { batSignal(); lighting(); }, 300000);
+        setInterval(lighting, 60000);                      // the dusk comes on minute by minute
+        setInterval(batSignal, 300000);
         startAnimating();
         loadPins();
         if (!root.hidden) { map.resize(); if (!fitted) { fit(); fitted = true; } placePeople(); }
@@ -1818,7 +1948,9 @@
     update: function () { if (map && !root.hidden) placePeople(); },
     refreshCases: function () { if (map && !root.hidden) loadIncidents(); },
     search: function () { if (root && !root.hidden) $('.gm-search__input').focus(); },
-    focus: function (id) { if (map && !root.hidden) select(id, true); }
+    focus: function (id) { if (map && !root.hidden) select(id, true); },
+    // A place from the Codex: there, close enough to see it.
+    flyTo: function (x, y) { if (map && !root.hidden) map.flyTo({ center: ll(x, y), zoom: Math.max(map.getZoom(), 15.4), duration: 1200 }); }
   };
 
   window.GothamMap = GothamMap;

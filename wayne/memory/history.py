@@ -224,11 +224,12 @@ class History:
 
     def append(self, role, content):
         with self._lock:
-            # Stage cues are for the voice, not the record. Kept in memory they
-            # would be imitated, and every reply would start to come with a sigh.
-            # Only his side carries cues; what the operator said is kept verbatim.
+            # What they did while they spoke stays with what they said — "[takes
+            # a deep breath] Look, B." — so they know they just sighed. One cue a
+            # reply at most (see session), so memory doesn't fill with sighs. What
+            # the operator said is kept verbatim.
             if role == "assistant":
-                content = delivery.clean(content)
+                content = delivery.remembered(content)
             self.messages.append({"role": role, "content": content, "at": time.time()})
 
     def record_aside(self, text):
@@ -251,7 +252,7 @@ class History:
                 # Still here." — and once that was in the context he produced more
                 # of it. One turn has at most one trailing aside; a newer one
                 # replaces the older, because that is what actually happened.
-                self.messages[-1]["aside"] = delivery.clean(text)
+                self.messages[-1]["aside"] = delivery.remembered(text)
                 self.messages[-1]["at"] = time.time()
             else:
                 self.append("assistant", text)

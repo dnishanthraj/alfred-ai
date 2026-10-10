@@ -7,6 +7,67 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Added
 
+- **The Codex** (<kbd>C</kbd>). Everyone in Bruce's world — the family, the
+  company, the city, friends, Vicki Vale, Talia, Kate, Duke, Clark — and every
+  rogue, as a file: the vital details, then one biography of his to rewrite (a
+  contact's is the directory's own text, edited from either). A rogue's file
+  adds how they work, their associates, their weakness and his contingency, and
+  where they are right now — loose, in GCPD custody, Arkham or Blackgate — as
+  the city's revolving door turns (a case closed with an arrest puts them in
+  custody; now and then someone breaks out). Every place on the map, its
+  description his to rewrite. Drop a picture on a face and it's saved as
+  `<name>.png` where the page looks for it, then framed in a pop-up — drag to
+  place, slide to zoom — with the same framing in the directory, the Codex and
+  on calls. The Codex and the map switch with one button.
+
+- **The scanner, as Gotham is.** Knife and gang crime between named crews (the
+  Ghost Dragons, the False Face Society, the Odessa Mob…), turf wars, drive-bys,
+  domestics, overdoses, sexual assault, child abductions — and the monsters'
+  signature work only when they're loose. Every report carries its dead and
+  hurt, which change as the call goes on and show on the map; dispatches and
+  logs quote people the way they talk, swearing and all, and never with sexual
+  detail.
+
+- **Voices that fit the moment.** Stage directions are performed by Eleven v4,
+  kept in memory, and never shown (nor sent in a text). Woken by the call, they
+  yawn; mid-fight, they grunt and cut off; on a stakeout, they whisper; on the
+  way to a scene, they're breathless. Under every call, the sound of where they
+  are — the city, rain and thunder, sirens, a kitchen, Selina's cats, Tim's
+  houseboat, sixty one-shot sounds — generated once through ElevenLabs' sound
+  effects and cached. No emoji in anything spoken.
+
+- **Calls that keep up.** Group-call turns in 2.5–4 seconds (the shared prompt
+  is kept warm between speakers) and one-to-one replies starting in about half
+  a second (the turn is read ahead while he's still talking). Everyone on the
+  line hears who declined, joined or left; "Dick, add Tim" rings Tim; nobody
+  asks "you still there?" while someone's ringing; the call drives itself, with
+  people talking over each other, and he can jump in any time. The mic button
+  mutes (Space still talks), and they know. On the map or in the Codex, the call
+  follows as a small overlay you can drag anywhere.
+
+- **What they say fits where they are.** Whereabouts follow the schedule,
+  journeys included ("on the way to the library — not there yet"); nobody
+  describes their kitchen from a rooftop; schedules know weekdays, weekends and
+  the US holidays. A case goes en route → arriving → in it → wrapping up, with
+  an arrival text and a call for backup when it goes wrong.
+
+- **People, not services.** Fewer check-ins (one asked of a man who only said
+  "hm" is dropped), real takes and arguments, nicknames and family dynamics,
+  age-true texting, and an opinion question answered with a quiet search.
+
+- **The map, finished at its edges.** Lakes sit at their own level and the
+  ground slopes gently to the water (Bristol Lake had dug itself a crater);
+  finer terrain close in, walled compounds levelled whole and long walls in
+  sections, so every building stands level. Past the sprawl, the county —
+  fields in their hedgerows, woods, farmsteads — and zoomed out the map stays
+  flat and inside it. The Wayne estate behind its wall: the lodge at the gates,
+  the family plot, the old stables, the glasshouse and formal garden, a pool, a
+  court, the helipad, a boathouse and a folly on Wayne Lake. Memorial Island and
+  a boathouse on the Reservoir, the Bristol Boat Club. The subway shows as lines
+  only until the buildings rise. After dark the whole console turns neon.
+
+- **Message tabs.** Open DMs and group chats sit as tabs across the top.
+
 - **The map, polished for lore and sense.** Everything moves at its real speed
   — a container ship takes the half hour it would to cross the harbour, the
   subway runs at its thirty kilometres an hour, helicopters at two hundred — on

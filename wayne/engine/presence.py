@@ -511,44 +511,81 @@ class Presence:
             shown["spot"] = places.resolve(shown["where"])
             trip = self.trip(shown["where"], shown["spot"], t)
             if trip:
-                shown["route"] = {"pts": trip["pts"], "start": trip["start"], "end": trip["end"], "from": trip.get("from", "")}
+                shown["route"] = {"pts": trip["pts"], "start": trip["start"], "end": trip["end"], "from": trip.get("from", ""),
+                                  "by": trip.get("by", "")}
         return shown
 
     # --- getting about -----------------------------------------------------
 
+    def _set_off(self, where, t, horizon=150 * 60, step=150):
+        """
+        (when, from where) they left for `where`: the last moment before t that
+        their day had them somewhere else — or (None, None) if they've been
+        there all along, as far back as a journey could reach.
+        """
+        for back in range(step, horizon + step, step):
+            before, _ = self.whereabouts(t - back)
+            if before != where:
+                lo, hi = t - back, t - back + step          # elsewhere at lo, there by hi
+                for _ in range(6):
+                    mid = (lo + hi) / 2
+                    if self.whereabouts(mid)[0] == where:
+                        hi = mid
+                    else:
+                        lo = mid
+                return hi, before
+        return None, None
+
     def trip(self, where, spot, t=None):
         """
-        Their journey, while they're making one: when where they are changes,
-        they go there — from wherever they were, mid-journey or not — along
-        the roads, taking as long as the roads take (see wayne.engine.travel).
-        None once they've arrived, or if the move happened while no one looked.
+        Their journey, while they're making one: from the moment their day took
+        them somewhere new — a block of their plan beginning, something they
+        said — they go there from wherever they were, mid-journey or not, along
+        the roads and taking as long as the roads take (see wayne.engine.travel).
+        Worked out from their day itself, not from anyone watching: called just
+        after he left Burnside, Tim is on the train, not already at the library.
+        None once they've arrived.
         """
         if not spot:
             return None
         t = t or time.time()
         with self._lock:
-            looked, self._looked = self._looked, t
+            self._looked = t
             trip = self._state.get("trip")
             here = (spot["x"], spot["y"])
             if trip and trip.get("to") == where:
                 return trip if t < trip["end"] else None
-            moving = trip and trip.get("pts") and t < trip["end"]
-            origin = travel.position(trip, t) if trip and trip.get("pts") else None
-            seen = looked is not None and t - looked < 20 * 60
-            if origin is None or not seen or math.dist(origin, here) < 0.8:
+        left_at, before = self._set_off(where, t)
+        with self._lock:
+            trip = self._state.get("trip")
+            if left_at is None:
+                self._state["trip"] = {"to": where, "pts": [list(here)], "start": t, "end": t}
+                self.save()
+                return None
+            moving = bool(trip and trip.get("pts") and len(trip["pts"]) > 1 and trip.get("start", 0) <= left_at < trip["end"])
+            if moving:
+                origin = travel.position(trip, left_at)        # turned round on the way somewhere else
+            else:
+                came = places.resolve(before or "")
+                origin = (came["x"], came["y"]) if came else None
+            if origin is None or math.dist(origin, here) < 0.8:
                 self._state["trip"] = {"to": where, "pts": [list(here)], "start": t, "end": t}
                 self.save()
                 return None
             doing = (self.now(t).get("doing") or "").lower()
             # In the suit — patrolling, or heading to a case — it's the roofs, not the roads.
             suited = places.is_patrol(doing) or ("on the way to the" in doing and bool(getattr(self.contact, "beat", None)))
-            pts, minutes = travel.route(origin, here, None if moving else trip.get("to"), spot["name"], patrol=suited)
-            trip = {"to": where, "from": "" if moving else trip.get("to", ""), "pts": pts, "start": t,
-                    "end": t + minutes * 60}
+            how = getattr(self.contact, "gets_about", "drive") or "drive"
+            pts, minutes = travel.route(origin, here, None if moving else before, spot["name"], patrol=suited,
+                                        mode=how)
+            means = ("over the rooftops" if suited and len(pts) <= 12 else "on the bike" if suited
+                     else "on foot" if len(pts) == 2 else "on the subway" if how == "subway" and len(pts) < 12 else "driving")
+            trip = {"to": where, "from": "" if moving else (before or ""), "pts": pts, "start": left_at,
+                    "end": left_at + minutes * 60, "by": means}
             self._state["trip"] = trip
             self._state["trips"] = (self._state.get("trips") or [])[-7:] + [trip]
             self.save()
-            return trip
+            return trip if t < trip["end"] else None
 
     def trips(self, since):
         """The journeys they've made since `since`, oldest first — the roads behind them on the map."""
@@ -587,7 +624,10 @@ class Presence:
         status = self.line(t)
         said = f' Your status line, which he can see, says "{status}".' if status else ""
         place = self._spoken_place(where)
-        if doing:
+        trip = self.trip(where, places.resolve(where), t) if where else None
+        if trip:
+            line = self._en_route(trip, place, doing, t)
+        elif doing:
             how_long = describe_until(block.get("until", 0), t) if firm else ""
             line = (f"Right now you're {doing}"
                     + (f", at {place}" if place and place.split(" (")[0].lower() not in doing.lower() else "")
@@ -595,16 +635,35 @@ class Presence:
         else:
             line = f"Right now you're at {place}." if place else ""
         if names:
-            line += f" You're with {' and '.join(names)}."
-        trip = self._state.get("trip")
-        if trip and len(trip.get("pts") or []) > 1 and t < trip.get("end", 0):
-            left = max(1, round((trip["end"] - t) / 60))
-            line += f" You're on your way there now, about {left} minute{'s' if left != 1 else ''} out."
+            company_line = "You're meeting" if trip else "You're with"
+            line += f" {company_line} {' and '.join(names)}."
+        spot = places.resolve(where) if where and not trip else None
+        nearby = places.around(spot["x"], spot["y"], but=spot["name"]) if spot else []
+        if nearby:
+            line += f" Close by: {', '.join(nearby)}."
         if state["status"] == OFFLINE:
             line += " Your phone wasn't in your hand; he's reached you anyway."
         elif state["status"] == BUSY and doing:
             line += " You're in the middle of it."
         return (line + said).strip()
+
+    def _en_route(self, trip, place, doing, t):
+        """Where they are on a journey, in so many words: left from, going to, passing now, how long."""
+        left = max(1, round((trip["end"] - t) / 60))
+        gone = max(1, round((t - trip["start"]) / 60))
+        by = trip.get("by") or ""
+        x, y = travel.position(trip, t)
+        passing = places.near(x, y)
+        origin = self._spoken_place(trip.get("from") or "")
+        through = {"on the subway": "under", "over the rooftops": "over the roofs", "on foot": "walking through"}.get(by, "through")
+        line = (f"Right now you're on your way to {place}" + (f", {by}" if by else "")
+                + (f" — you left {origin} {gone} minute{'s' if gone != 1 else ''} ago" if origin else "")
+                + (f"; just now {through} {passing}" if passing else "")
+                + f". About {left} minute{'s' if left != 1 else ''} to go. You aren't there yet: if he asks where you "
+                  "are, you're on the way.")
+        if doing and doing.lower() not in ("travelling", "on the way"):
+            line += f" When you get there: {doing}."
+        return line
 
     def _spoken_place(self, where):
         """'Home, Blüdhaven' as they'd think of it — home; anywhere else, by its name."""

@@ -16,6 +16,7 @@ Only the people who'd work a scene take cases: Dick, Tim, Barbara, Cass,
 Jason, Randy — not Alfred, not Lucius, not Selina.
 """
 import json
+import re
 import threading
 import time
 
@@ -94,7 +95,8 @@ def assign(report, contact_id, by="him", travel=0):
         if case is None:
             case = {"id": report["id"], "kind": report["kind"], "severity": report["severity"],
                     "place": report["place"], "area": report["area"], "x": report["x"], "y": report["y"],
-                    "dispatch": report.get("dispatch", ""), "opened_at": now, "log": []}
+                    "dispatch": report.get("dispatch", ""), "suspect": report.get("suspect", ""),
+                    "opened_at": now, "log": []}
             cases.append(case)
         case.update({"assignee": contact_id, "by": by, "status": "assigned", "updated_at": now,
                      "travel": round(travel, 1),
@@ -130,8 +132,17 @@ def advance(now=None, arrived=None):
     return due
 
 
+# How a case ends with someone behind bars, in the words people write it.
+_CAUGHT = re.compile(r"(?i)\b(custody|arrest\w*|cuffed|caught|locked (him|her|them) up|took (him|her|them) down|"
+                     r"handed (him|her|them) (over|to)|gcpd ha(s|ve) (him|her|them)|in a cell|bagged|apprehended|"
+                     r"back in arkham|back to arkham|off to blackgate)\b")
+
+
 def close(case_id, outcome):
-    """It's over: how it ended, in a line."""
+    """
+    It's over: how it ended, in a line. If one of the rogues was behind it and
+    the ending has them caught, they're in GCPD custody now (see codex.capture).
+    """
     now = time.time()
     with _lock:
         cases = everything()
@@ -140,6 +151,21 @@ def close(case_id, outcome):
             return None
         case.update({"status": "closed", "closed_at": now, "updated_at": now, "outcome": outcome.strip()[:240]})
         case["log"].append({"at": now, "text": "closed"})
+        _save(cases)
+    if case.get("suspect") and _CAUGHT.search(outcome or ""):
+        from . import codex
+        codex.capture(case["suspect"], f"caught on the {case['kind'].lower()} at {case['place']}")
+    return case
+
+
+def mark(case_id, **fields):
+    """Note something on a case — that they called for help, say."""
+    with _lock:
+        cases = everything()
+        case = next((c for c in cases if c["id"] == case_id), None)
+        if case is None:
+            return None
+        case.update(fields)
         _save(cases)
     return case
 
@@ -150,6 +176,47 @@ def drop(case_id):
         _save(cases)
 
 
+# The kinds where being on scene means a fight; the rest are searched, asked about, pieced together.
+_VIOLENT = ("robbery", "assault", "hostage", "gang", "shots", "shooting", "riot", "smash", "kidnap", "stabbing",
+            "fight", "carjack", "home invasion", "attack", "explosion", "arson")
+
+
+def _roll(case, what):
+    import hashlib
+    return int(hashlib.sha1(f"{case['id']}:{what}".encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
+
+
+def goes_wrong(case):
+    """Whether this one goes sideways — more of them than dispatch said, someone hurt: the serious ones, sometimes."""
+    return case["severity"] >= 3 and _roll(case, "trouble") < 0.18 + 0.1 * (case["severity"] - 3)
+
+
+def phase(case, now=None):
+    """
+    Where they've got to with it, from the clock: (key, how it is) — on the
+    way; just there, sizing it up; in the thick of it; wrapping up. Worked out,
+    not stored, so a call and the map agree on it at every moment.
+    """
+    now = now or time.time()
+    if case["status"] == "closed":
+        return "closed", "it's over"
+    if case["status"] == "assigned":
+        left = max(1, round((case["updated_at"] + case.get("travel", 9) * 60 - now) / 60))
+        return "en route", f"on your way there, about {left} minute{'s' if left != 1 else ''} out"
+    span = max(60.0, case.get("due", now) - case["updated_at"])
+    f = (now - case["updated_at"]) / span
+    violent = any(word in case["kind"].lower() for word in _VIOLENT)
+    if f < 0.18:
+        return "arriving", "just got there — taking it in, quiet, before anyone knows you're there"
+    if f < 0.68:
+        if goes_wrong(case):
+            return "gone wrong", ("it's gone bad — more of them than dispatch said, or someone's hurt; you're in it "
+                                  "and could use help")
+        return ("in it", "in the thick of it — fighting" if violent else
+                "in the thick of it — searching, asking, piecing it together")
+    return "wrapping up", "it's settling — cuffs on or the scene secured, GCPD on the way, catching your breath"
+
+
 def brief(contact_id, now=None):
     """What they're working, or just finished, as a line for the model."""
     now = now or time.time()
@@ -157,9 +224,10 @@ def brief(contact_id, now=None):
     if case:
         minutes = int((now - case["opened_at"]) / 60)
         who = "He put you on it" if case["by"] == "him" else "You took it yourself"
+        _, how = phase(case, now)
         return (f"You're working a case: {case['kind'].lower()} at {case['place']} ({case['area']})"
                 + (f" — dispatch said: \"{case['dispatch']}\"" if case.get("dispatch") else "")
-                + f". {who} {minutes} minutes ago; you're {case['status']}. It's yours to talk about, "
+                + f". {who} {minutes} minutes ago. Right now you're {how}. It's yours to talk about, "
                 "your way — what you've found, what you think, how it's going.")
     done = recent(contact_id, now)
     if done:

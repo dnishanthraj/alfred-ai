@@ -1,5 +1,6 @@
 """Getting about: by the roads, over the bridges, taking as long as the roads take — never a jump."""
 import math
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -51,3 +52,22 @@ def test_a_move_seen_is_travelled_and_one_unseen_just_is():
     assert state.trip("Wayne Tower", tower, t=trip["end"] + 1) is None
     state._looked = None                                          # the console was off overnight
     assert state.trip("Wayne Manor", manor, t=trip["end"] + 9 * 3600) is None
+
+
+def _at(hour, minute=0):
+    now = time.localtime()
+    return time.mktime((now.tm_year, now.tm_mon, now.tm_mday, hour, minute, 0, 0, 0, -1))
+
+
+def test_rung_just_after_leaving_he_is_on_the_way_not_already_there():
+    # Called just after he left Burnside, Tim said he was at the university library.
+    routine = ({"from": 9, "to": 14, "doing": "at Burnside College", "where": "Burnside", "status": "busy", "drift": 0},
+               {"from": 14, "to": 18, "doing": "studying", "where": "Gotham University", "status": "busy", "drift": 0})
+    tim = SimpleNamespace(id="robin", name="Tim", home="Wayne Manor", routine=routine, shares_status=True,
+                          texting_pace={}, initiative={}, gets_about="drive")
+    state = presence.of(tim)
+    line = state.note(t=_at(14, 4))
+    assert "on your way to Gotham University" in line and "aren't there yet" in line
+    assert "you left Burnside" in line and "studying" in line
+    # Long since there, he simply is.
+    assert state.note(t=_at(16, 30)).startswith("Right now you're studying, at Gotham University")

@@ -65,9 +65,10 @@ def afterthought(session, exchanges, by="text"):
         f"2. Did {contact.name} agree or offer to get back in touch — call {operator.name()}, text "
         f"him, report back? If {operator.name()} asked and {contact.name} refused, brushed it off or "
         f"only said 'maybe' or 'if it matters', the answer is no.\n"
-        f"3. Across the whole conversation: does {contact.name} come away worried about "
-        f"{operator.name()} — something he said, how he sounded — and not reassured by the end? "
-        f"Only if it's clear; ordinary concern that was settled is no.\n"
+        f"3. Across the whole conversation: does {contact.name} come away genuinely worried about "
+        f"{operator.name()} — he's hurt, in danger, or plainly not himself in a way {contact.name} "
+        f"would really notice — and not reassured by the end? Terseness, teasing, typos, being busy "
+        f"or a bad mood is no; so is ordinary concern that was settled.\n"
         + (f"4. {contact.name} is working a case ({case['kind'].lower()} at {case['place']}). From the newest "
            f"exchange: did they say it's dealt with — caught, stopped, over? If so, how, in a few words.\n"
            if case else "") + "\n"
@@ -136,7 +137,9 @@ def apply(session, found):
         # It stayed with them. Whether they say so later is theirs — Dick will,
         # Jason might, a terse "you good?" an hour on; Randy probably won't.
         leaning = session.contact.initiative or {}
-        odds = leaning.get("checks_in", 0.15 + leaning.get("per_day", 0.4) * 0.35)
+        # Half as often as their leaning alone: a family that checked in after every
+        # short reply had them all asking "you okay, B?" in the same voice.
+        odds = 0.5 * leaning.get("checks_in", 0.15 + leaning.get("per_day", 0.4) * 0.35)
         if random.random() < odds and not any(i.get("origin") in ("promise", "worry") for i in state.intents()):
             due = _after_quiet_hours(time.time() + random.uniform(25, 180) * 60)
             state.intend("text", worry.strip()[:120], due, origin="worry")
@@ -257,9 +260,14 @@ def day_plan(contact, when=None, others="", people=()):
     loaded (see Console._write_day_plans).
     """
     when = when or time.time()
+    from . import holidays
     day = time.strftime("%A %-d %B", time.localtime(when))
+    season = holidays.note(when)
+    weekend = time.localtime(when).tm_wday >= 5
     instruction = (
-        f"It's {day}. Sketch your day today and tonight as loose blocks of time, the way your "
+        f"It's {day}" + (f" — {season}" if season else "")
+        + (". The weekend: no classes, and no office unless you'd go in anyway" if weekend else "")
+        + ". Sketch your day today and tonight as loose blocks of time, the way your "
         "life actually runs — sleep, work, patrol if you'd go out tonight, and two or three "
         "things that are yours today: errands, people, plans, a whim. The masks come out after "
         "dark: by day you live your own life, not the work. Times are approximate and "

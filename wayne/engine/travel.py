@@ -25,6 +25,10 @@ SETTING_OFF = 2.0                     # keys, stairs, the car: minutes before an
 PATROL = 1.35                         # on a bike, on patrol: quicker than the traffic
 ROOFTOPS = 3.4                        # grapple, run, glide: ~30 km/h across the roofs, straight-ish
 GLIDE = 2.5                           # the most open water a glide will take; wider, it's the bike and a bridge
+WALKING = 0.53                        # on foot: ~5 km/h
+WALK_UNDER = 2.5                      # anywhere this close is a walk
+SUBWAY = 3.3                          # the subway, stops and all: ~30 km/h
+TRAIN_WAIT = 4.0                      # minutes on the platform
 
 _lock = threading.Lock()
 _graph = None
@@ -138,7 +142,62 @@ def _route(a, b, name_a, name_b):
     return tuple(_thin(pts)), minutes
 
 
-def route(a, b, name_a=None, name_b=None, patrol=False):
+def _subway(a, b):
+    """
+    ([(x, y), ...], minutes) by subway — a walk to the nearest station of a line
+    that also stops near b, the ride along it, a walk out — or None if no one
+    line serves both ends.
+    """
+    from . import places
+    best = None
+    for line in places.gazetteer().get("subway", []):
+        stations = [(st[1], st[2]) for st in line["stations"]]
+        near_a = min(range(len(stations)), key=lambda i: math.dist(a, stations[i]))
+        near_b = min(range(len(stations)), key=lambda i: math.dist(b, stations[i]))
+        legs = (math.dist(a, stations[near_a]), math.dist(stations[near_b], b))
+        walk = sum(legs)
+        if near_a == near_b or max(legs) > 4.5:          # an eight-minute walk to a station, at most, either end
+            continue
+        step = 1 if near_b > near_a else -1
+        ride = stations[near_a:near_b + step:step] if step == 1 else stations[near_b:near_a + 1][::-1]
+        length = sum(math.dist(p, q) for p, q in zip(ride, ride[1:], strict=False))
+        minutes = walk / WALKING + TRAIN_WAIT + length / SUBWAY
+        if best is None or minutes < best[1]:
+            best = ([list(a)] + [list(p) for p in ride] + [list(b)], minutes)
+    return best
+
+
+def _rooftops(a, b):
+    """
+    A run over the roofs from a to b: never the straight line a map would draw
+    but a chain of grapples and leaps — off one building to the next across a
+    street, jinking to wherever there's a line to fire at — that still gets
+    where it's going. The same run for the same two points.
+    """
+    import random
+    rnd = random.Random(f"{a}->{b}")
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = math.hypot(dx, dy) or 1.0
+    ux, uy = dx / length, dy / length
+    nx, ny = -uy, ux
+    legs = max(3, min(16, int(length / 0.9)))
+    reach = min(1.0, length / 3.0)
+    pts, side = [a], rnd.choice((-1, 1))
+    for k in range(1, legs):
+        f = (k + rnd.uniform(-0.3, 0.3)) / legs
+        if rnd.random() < 0.7:
+            side = -side                     # across the street to the other row of roofs
+        off = side * rnd.uniform(0.12, 0.5) * reach
+        pts.append((a[0] + dx * f + nx * off, a[1] + dy * f + ny * off))
+    pts.append(b)
+    # The corners taken off once: a swing, not a set square — but still a run, not a curve.
+    soft = [pts[0]]
+    for p, q in zip(pts, pts[1:], strict=False):
+        soft += [(p[0] * 0.75 + q[0] * 0.25, p[1] * 0.75 + q[1] * 0.25), (p[0] * 0.25 + q[0] * 0.75, p[1] * 0.25 + q[1] * 0.75)]
+    return soft[:1] + soft[1:-1] + [pts[-1]]
+
+
+def route(a, b, name_a=None, name_b=None, patrol=False, mode="drive"):
     """
     ([(x, y), ...], minutes) from a to b by the quickest way — `name_a` and
     `name_b` the places they are, if they're places, for the right junction.
@@ -149,16 +208,18 @@ def route(a, b, name_a=None, name_b=None, patrol=False):
     """
     a = (round(a[0], 2), round(a[1], 2))
     b = (round(b[0], 2), round(b[1], 2))
+    if not patrol and math.dist(a, b) <= WALK_UNDER:
+        # Round the corner: they walk, the straight way, as you would.
+        return [list(a), list(b)], max(1.0, math.dist(a, b) / WALKING)
+    if not patrol and mode == "subway":
+        by_train = _subway(a, b)
+        if by_train:
+            return by_train[0], max(1.0, min(by_train[1], 75.0))
     if patrol:
         graph = _load()
         if _widest_water(graph, a, b) <= GLIDE:
-            # Over the roofs: a line that bends a little, as a route over buildings does.
-            dx, dy = b[0] - a[0], b[1] - a[1]
-            length = math.hypot(dx, dy) or 1
-            sway = 0.08 * length * (1 if (int(a[0] * 13 + b[1] * 7) % 2) else -1)
-            mid = ((a[0] + b[0]) / 2 - dy / length * sway, (a[1] + b[1]) / 2 + dx / length * sway)
-            pts = [((1 - t) ** 2 * a[0] + 2 * (1 - t) * t * mid[0] + t * t * b[0],
-                    (1 - t) ** 2 * a[1] + 2 * (1 - t) * t * mid[1] + t * t * b[1]) for t in [k / 10 for k in range(11)]]
+            pts = _rooftops(a, b)
+            length = sum(math.dist(p, q) for p, q in zip(pts, pts[1:], strict=False))
             return [[round(x, 2), round(y, 2)] for x, y in pts], max(1.0, min(length / ROOFTOPS, 75.0))
         pts, minutes = _route(a, b, name_a or "", name_b or "")
         return [list(p) for p in pts], max(1.0, min(minutes / PATROL, 75.0))

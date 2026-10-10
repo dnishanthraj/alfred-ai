@@ -305,6 +305,26 @@ def snapshot(contact=None):
     return [line for line in (feed.read() for feed in _visible(contact)) if line]
 
 
+def sky():
+    """
+    What the weather's doing right now, in a word — "storm", "rain", "snow",
+    "wind", or "" for nothing worth hearing — for the sound of it under a call.
+    """
+    for feed in FEEDS:
+        if getattr(feed, "name", "") == "weather" and feed.text:
+            now = feed.text.split(" now: ", 1)[-1].split(".", 1)[0].lower()
+            if "thunder" in now:
+                return "storm"
+            if any(w in now for w in ("rain", "drizzle", "showers")):
+                return "rain"
+            if "snow" in now:
+                return "snow"
+            m = re.search(r"wind (\d+) mph", now)
+            if m and int(m.group(1)) >= 22:
+                return "wind"
+    return ""
+
+
 def covered(prompt, names=(), contact=None):
     """True when an ambient feed already answers this, so no search is needed."""
     return any(feed.covers(prompt, names) for feed in _visible(contact))

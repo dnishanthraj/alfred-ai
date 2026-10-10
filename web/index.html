@@ -60,6 +60,9 @@
     </div>
     <div class="bar__title" id="bar-title"></div>
     <div class="bar__status">
+      <button class="bar__btn" id="codex-open" type="button" data-tip="Codex — people, rogues, places (C)" aria-label="Codex">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 11.5h5"/></svg>
+      </button>
       <button class="bar__btn" id="map-open" type="button" data-tip="Map of Gotham (M)" aria-label="Map of Gotham">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg>
       </button>
@@ -110,7 +113,7 @@
           <button class="dossier__btn" id="dossier-message" type="button">Message</button>
         </div>
 
-        <label class="dossier__label" for="dossier-text">Who he is to me</label>
+        <label class="dossier__label" for="dossier-text">Biography</label>
         <textarea class="dossier__text" id="dossier-text" spellcheck="false"
                   rows="10"></textarea>
         <div class="dossier__actions">
@@ -123,6 +126,8 @@
     <!-- Messages: a text thread with one contact -->
     <aside class="messages" id="messages" hidden>
       <div class="messages__resize" id="messages-resize" data-tip="Drag to resize"></div>
+      <!-- The conversations he has open, one tab each: switch between them without hunting. -->
+      <nav class="messages__tabs" id="messages-tabs" aria-label="Open conversations"></nav>
       <header class="messages__head">
         <button class="messages__avatar" id="messages-avatar" type="button" data-tip="Open personnel file" aria-label="Open personnel file"></button>
         <div class="messages__who" id="messages-who" data-tip="Open personnel file" role="button" tabindex="0">
@@ -155,6 +160,42 @@
     <!-- The link itself -->
     <section class="stage">
 
+      <!-- The Codex: who's who and what's where. -->
+      <div class="cx" id="codex" hidden role="dialog" aria-label="Codex">
+        <header class="cx__head">
+          <div class="cx__title">Codex</div>
+          <div class="cx-tabs" role="tablist">
+            <button type="button" class="cx-tab is-on" data-tab="people" role="tab" aria-selected="true">People <b></b></button>
+            <button type="button" class="cx-tab" data-tab="rogues" role="tab" aria-selected="false">Rogues <b></b></button>
+            <button type="button" class="cx-tab" data-tab="places" role="tab" aria-selected="false">Places <b></b></button>
+          </div>
+          <input class="cx-search" type="text" placeholder="Search…" autocomplete="off" spellcheck="false" aria-label="Search the Codex">
+          <button type="button" class="gm-tool gm-tool--switch cx-to-map" data-tip="Over to the map (M)" aria-label="Open the map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg><span>Map</span></button>
+          <button type="button" class="gm-tool cx-close" data-tip="Close (Esc)" aria-label="Close the Codex"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </header>
+        <div class="cx__body">
+          <aside class="cx__side">
+            <ul class="cx-list"></ul>
+          </aside>
+          <article class="cx-card"></article>
+        </div>
+      </div>
+
+      <!-- On a call with the map or the Codex open: the line itself, small, over it — drag it anywhere. -->
+      <div class="gm-call" hidden>
+        <div class="gm-call__who"></div>
+        <p class="gm-call__line" aria-live="polite"></p>
+        <div class="gm-call__tools">
+          <button type="button" class="gm-call__talk" aria-label="Mute your mic" aria-pressed="false" data-tip="Mute your mic (hold Space to talk)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+          </button>
+          <button type="button" class="gm-call__back" aria-label="Back to the call" data-tip="Back to the call">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+          </button>
+          <button type="button" class="gm-call__end" aria-label="End call" data-tip="End call"></button>
+        </div>
+      </div>
+
       <!-- The map of Gotham: the city, live, over the stage. -->
       <div class="gm" id="map-view" hidden>
         <header class="gm__head">
@@ -182,6 +223,7 @@
             </div>
           </div>
           <div class="gm__tools">
+            <button type="button" class="gm-tool gm-tool--switch" data-act="codex" data-tip="Over to the Codex (C)" aria-label="Open the Codex"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 11.5h5"/></svg><span>Codex</span></button>
             <button type="button" class="gm-tool" data-act="close" data-tip="Close the map" aria-label="Close the map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
           </div>
         </header>
@@ -222,6 +264,10 @@
             <div class="gm-info__assign" hidden>
               <p class="gm-info__label">Put someone on it</p>
               <div class="gm-info__people"></div>
+            </div>
+            <div class="gm-info__log" hidden>
+              <p class="gm-info__label">Incident log</p>
+              <ol class="gm-log"></ol>
             </div>
           </div>
           <div class="gm-legend" aria-hidden="true"><span>Quiet</span><i></i><span>Rough</span></div>
@@ -265,7 +311,7 @@
       </div>
 
       <form class="compose" id="compose">
-        <button type="button" class="ptt" id="ptt" data-tip="Hold to speak (or hold Space)" aria-label="Hold to speak">
+        <button type="button" class="ptt" id="ptt" data-tip="Mute your mic (hold Space to talk)" aria-label="Mute your mic" aria-pressed="false">
           <span class="ptt__ring" aria-hidden="true"></span>
           <span class="ptt__glyph" aria-hidden="true"></span>
         </button>
@@ -368,6 +414,7 @@
   <script src="/static/js/boot.js"></script>
   <script src="/static/vendor/maplibre/maplibre-gl.js"></script>
   <script src="/static/js/gothamtraffic.js"></script>
+  <script src="/static/js/codex.js"></script>
   <script src="/static/js/gothammap.js"></script>
   <script src="/static/js/app.js"></script>
 </body>

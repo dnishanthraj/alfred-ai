@@ -112,6 +112,11 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 # the previous generation, a touch faster still.
 ELEVENLABS_MODEL = setting("TTS_MODEL", "eleven_v4_turbo")
 
+# The sound of where they are, quietly under a call — the car, the checkout, the
+# wind on a roof — made once per kind of place with ElevenLabs' sound effects
+# and kept (see wayne.audio.ambience). "0" turns it off.
+AMBIENCE = setting("AMBIENCE", "1") != "0"
+
 # --- Push-to-talk (terminal frontend only; the console has its own controls) ---
 PTT_KEY_STR = setting("PTT_KEY", "Key.cmd_r")
 

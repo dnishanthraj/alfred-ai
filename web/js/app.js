@@ -32,6 +32,8 @@
     ringingId: null,     // who is being reached, not yet answered
     pending: {},         // sentences awaiting audio, by key
     pendingSpeaker: {},  // who said each of them, on a call with company
+    freshKeys: {},       // sentences that open a reply: each clears the line when it's heard
+    replyFirst: false,   // the next sentence to arrive opens a reply
     rendered: {},        // sentence keys already shown
     fresh: true,         // next sentence starts a new utterance
     socket: null,
@@ -93,8 +95,10 @@
   var MAX_NUDGES = IDLE_WINDOWS.length - 1;
   // On a call with company a pause is shorter before somebody fills it — or
   // lets it sit; the server decides which, and who.
-  var GROUP_LULL = [4000, 5000];
-  var MAX_LULLS = 4;
+  // On a call with company the next line comes quickly — a beat, not a silence
+  // — while the call has go in it; the server decides whether anyone takes it.
+  var GROUP_LULL = [700, 1500];
+  var MAX_LULLS = 14;
 
   // When he says he needs a moment, he takes one — and comes back on his own.
   var HE_ASKED_FOR_TIME = /\b(give me|just|hold on|hang on|one|bear with)\s*(a\s*)?(moment|minute|second|sec|mo)\b|\blet me (think|check|see)\b/i;
@@ -121,7 +125,7 @@
      'dossier', 'dossier-close', 'dossier-name',
      'dossier-role', 'dossier-text', 'dossier-save', 'dossier-saved',
      'dossier-portrait', 'messages', 'messages-avatar', 'messages-name', 'messages-role',
-     'messages-close', 'messages-thread', 'messages-compose', 'messages-input', 'messages-emoji', 'messages-replying',
+     'messages-close', 'messages-tabs', 'messages-thread', 'messages-compose', 'messages-input', 'messages-emoji', 'messages-replying',
      'messages-resize', 'messages-who', 'rail-toggle', 'rail-resize', 'inbox', 'inbox-count',
      'toasts', 'dossier-call', 'dossier-message', 'incoming', 'incoming-avatar',
      'incoming-name', 'incoming-accept', 'incoming-decline', 'groups', 'group-new',
@@ -143,6 +147,7 @@
     clearWordTimers();
     el.utterance.textContent = '';
     state.pending = {};
+    state.freshKeys = {};
     state.pendingSpeaker = {};
     state.rendered = {};
   }
@@ -158,8 +163,16 @@
   function cutOff() {
     clearWordTimers();
     state.pending = {};
+    state.freshKeys = {};
     var text = el.utterance.textContent.replace(/[\s—-]+$/, '');
     if (text) el.utterance.textContent = text + '—';
+    // On a call with company, the one talked over stops mid-line under their own seat.
+    var seat = state.seats[state.seatLast];
+    if (seat) {
+      var said = seat.line.textContent.replace(/[\s—-]+$/, '');
+      if (said) seat.line.textContent = said + '—';
+      seat.fresh = true;
+    }
     state.fresh = true;
   }
 
@@ -170,6 +183,9 @@
   /** Stop him talking, the way interrupting a person does. */
   function interruptHim() {
     if (!ConsoleAudio.isPlaying) return;
+    // Whoever he talked over is who he's answering, unless he names someone —
+    // the voice he heard, not whoever the model had got to writing next.
+    state.talkedOver = state.party.length > 1 ? (state.seatLast || state.lastSpeaker || null) : null;
     ConsoleAudio.stop();
     cutOff();
   }
@@ -192,10 +208,24 @@
    * reply. Positions restart at 0 for every reply, so the first sentence of an
    * answer that followed "One moment." looked already shown and never was.
    */
+  // Subtitles, not a transcript: a new reply starts a clean line, and within one
+  // the words roll on — never more than this many sentences up at once, so a
+  // long answer passes under the speaker instead of piling up and spilling out.
+  var SUBTITLE_SENTENCES = 2;
+  function rollOn(box) {
+    var said = box.querySelectorAll('.said');
+    for (var i = 0; i < said.length - SUBTITLE_SENTENCES; i++) said[i].remove();
+    var first = box.querySelector('.said');
+    if (first && /^\s+$/.test(first.textContent)) first.textContent = '';
+  }
+
   function revealSentence(text, key, durationMs, timings, speaker) {
     if (state.rendered[key]) return;
     state.rendered[key] = true;
     delete state.pending[key];
+    var opensReply = !!state.freshKeys[key];
+    delete state.freshKeys[key];
+    callbarSaid(speaker, text);        // and over the map, if it's open on the call
 
     // On a call with company, a new voice starts a new line, labelled with who
     // it is, and the instrument takes their colour.
@@ -209,7 +239,7 @@
     // With seats, the words go under the speaker's own ring.
     var seat = speaker && state.seats[speaker];
     if (seat) {
-      if (seat.fresh !== false || speaker !== state.seatLast) seat.line.textContent = '';
+      if (opensReply || seat.fresh !== false || speaker !== state.seatLast) seat.line.textContent = '';
       seat.fresh = false;
       state.seatLast = speaker;
       state.fresh = false;
@@ -219,11 +249,12 @@
       seat.line.appendChild(said);
       if (earlier) said.textContent = ' ';
       typeWords(said, text, durationMs, timings);
+      rollOn(seat.line);
       return;
     }
 
     // The first sentence of a reply replaces whatever was said before it.
-    if (state.fresh) {
+    if (state.fresh || opensReply) {
       el.utterance.textContent = '';
       state.fresh = false;
       if (group && speaker && state.contacts[speaker]) {
@@ -244,6 +275,7 @@
     el.utterance.appendChild(span);
     if (after) span.textContent = ' ';
     typeWords(span, text, durationMs, timings);
+    rollOn(el.utterance);
   }
 
   /* Words revealed in time with the voice: on the real word timings when the
@@ -326,7 +358,10 @@
     if (quietFor > 0) wait += quietFor;
 
     state.idleTimer = setTimeout(function () {
-      if (!state.connectedId || ConsoleAudio.isPlaying) { armIdleCheck(); return; }
+      // Someone being rung in: the quiet is waiting for them, not a lull to fill.
+      if (!state.connectedId || ConsoleAudio.isPlaying || (state.ringingId && state.ringingId !== state.connectedId)) {
+        armIdleCheck(); return;
+      }
       if (closing) {
         state.closing = true;
         send({ type: 'signoff' });
@@ -428,6 +463,17 @@
         name.textContent = contact.name;
         var line = document.createElement('p');
         line.className = 'seat__line';
+        // Let one of them go, from their own seat: they say goodbye, the call goes on.
+        var drop = document.createElement('button');
+        drop.type = 'button';
+        drop.className = 'seat__drop';
+        drop.setAttribute('aria-label', 'Drop ' + contact.name + ' from the call');
+        drop.dataset.tip = 'Drop ' + contact.name + ' from the call';
+        drop.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+        drop.addEventListener('click', (function (cid) {
+          return function (e) { e.stopPropagation(); send({ type: 'drop', id: cid }); };
+        })(id));
+        ring.appendChild(drop);
         node.appendChild(ring);
         node.appendChild(name);
         node.appendChild(line);
@@ -487,9 +533,11 @@
      is one, the silhouette if not, cropped by the profile's framing. Shared by
      the directory and the personnel file. */
   function portraitStyle(node, contact, fallbackPosition) {
-    var base = '/static/portraits/' + contact.id;
+    // Stamped with when the picture was saved: a new one is never the cached old one.
+    var stamp = state.portraitStamp || contact.portrait_v;
+    var base = '/static/portraits/' + contact.id, v = stamp ? '?v=' + stamp : '';
     node.style.backgroundImage =
-      "url('" + base + ".png'), url('" + base + ".jpg'), url('" + base + ".webp'), " +
+      "url('" + base + ".png" + v + "'), url('" + base + ".jpg" + v + "'), url('" + base + ".webp" + v + "'), " +
       "url('/static/portraits/_silhouette.svg')";
     var frame = contact.portrait || {};
     node.style.backgroundSize = frame.size
@@ -666,7 +714,7 @@
 
   var CALL_LINE = {
     missed_call: 'Missed call', declined_call: 'You declined',
-    refused_call: 'Call declined', unanswered_call: 'No answer'
+    refused_call: 'Call declined', unanswered_call: 'No answer', cancelled_call: 'Cancelled call'
   };
 
   function bubbleNode(message, contact, opts) {
@@ -1213,9 +1261,81 @@
     if (force || state.threadAtEnd !== false) box.scrollTop = box.scrollHeight;
   }
 
+  /* --- tabs: the conversations he has open ----------------------------------
+     Each DM or group he opens gets a tab along the top of the panel — most
+     recent last, a handful at most — with an unread dot, closable. */
+  var MAX_TABS = 6;
+  try { state.tabs = JSON.parse(recall('tabs') || '[]') || []; } catch (e) { state.tabs = []; }
+
+  function openTab(kind, id) {
+    var at = state.tabs.findIndex(function (tb) { return tb.kind === kind && tb.id === id; });
+    if (at === -1) {
+      state.tabs.push({ kind: kind, id: id });
+      if (state.tabs.length > MAX_TABS) state.tabs.shift();
+    }
+    remember('tabs', JSON.stringify(state.tabs));
+    renderTabs();
+  }
+
+  function closeTab(kind, id) {
+    var at = state.tabs.findIndex(function (tb) { return tb.kind === kind && tb.id === id; });
+    if (at === -1) return;
+    state.tabs.splice(at, 1);
+    remember('tabs', JSON.stringify(state.tabs));
+    var open = (kind === 'dm' && state.messagesWith === id) || (kind === 'group' && state.groupOpen === id);
+    if (open) {
+      var next = state.tabs[Math.min(at, state.tabs.length - 1)];
+      if (!next) closeMessages();
+      else if (next.kind === 'dm') openMessages(next.id);
+      else openGroup(next.id);
+    }
+    renderTabs();
+  }
+
+  function renderTabs() {
+    var nav = el['messages-tabs'];
+    if (!nav) return;
+    state.tabs = state.tabs.filter(function (tb) {
+      return tb.kind === 'dm' ? !!state.contacts[tb.id] : !!state.groups[tb.id];
+    });
+    nav.innerHTML = '';
+    nav.hidden = state.tabs.length < 2;
+    state.tabs.forEach(function (tb) {
+      var isDm = tb.kind === 'dm', contact = isDm && state.contacts[tb.id], group = !isDm && state.groups[tb.id];
+      var tab = document.createElement('div');
+      tab.className = 'messages__tab';
+      var on = isDm ? state.messagesWith === tb.id : state.groupOpen === tb.id;
+      tab.classList.toggle('is-on', !!on);
+      tab.setAttribute('role', 'tab');
+      tab.tabIndex = 0;
+      var face = document.createElement('span');
+      face.className = 'messages__tab-face';
+      if (contact) { portraitStyle(face, contact, 'center 22%'); face.style.setProperty('--accent', contact.accent); }
+      else face.textContent = (group.name || '#')[0].toUpperCase();
+      var name = document.createElement('span');
+      name.className = 'messages__tab-name';
+      name.textContent = contact ? contact.name : group.name;
+      var unread = isDm ? state.unread[tb.id] : (state.unread[groupKey(tb.id)] || state.pinged[groupKey(tb.id)]);
+      if (unread && !on) tab.classList.add('is-unread');
+      var x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'messages__tab-x';
+      x.setAttribute('aria-label', 'Close ' + name.textContent);
+      x.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+      x.addEventListener('click', function (e) { e.stopPropagation(); closeTab(tb.kind, tb.id); });
+      tab.appendChild(face);
+      tab.appendChild(name);
+      tab.appendChild(x);
+      tab.addEventListener('click', function () { if (isDm) openMessages(tb.id); else openGroup(tb.id); });
+      tab.addEventListener('keydown', function (e) { if (e.key === 'Enter') tab.click(); });
+      nav.appendChild(tab);
+    });
+  }
+
   function openMessages(id) {
     var contact = state.contacts[id];
     if (!contact) return;
+    openTab('dm', id);
     clearToasts('t:' + id);
     setReplyTo(null);
     state.messagesWith = id;
@@ -1561,6 +1681,7 @@
   }
 
   function updateInbox() {
+    renderTabs();
     var n = Object.keys(state.unread).reduce(function (sum, id) { return sum + (state.unread[id] || 0); }, 0);
     remember('unread', JSON.stringify(state.unread));
     el['inbox-count'].hidden = !n;
@@ -1670,6 +1791,7 @@
   function openGroup(id) {
     var g = state.groups[id];
     if (!g) return;
+    openTab('group', id);
     setReplyTo(null);
     state.groupOpen = id;
     state.messagesWith = null;
@@ -2340,15 +2462,35 @@
       if (state.connectedId === event.removed) state.connectedId = state.party[0] || null;
       ConsoleSystem.say('drop', event.removed);
     }
+    var wasAlone = el.seats.hidden;          // one-to-one until now
     renderSeats();
+    syncBeds();
+    renderCallbar();
+    if (wasAlone && state.party.length > 1) {
+      // Turned into a group mid-sentence: what was being said moves under its
+      // speaker's seat and finishes there, instead of vanishing with the old line.
+      var seat = state.seats[state.lastSpeaker || state.party[0]];
+      if (seat) {
+        seat.line.textContent = '';
+        Array.prototype.slice.call(el.utterance.querySelectorAll('.said')).slice(-SUBTITLE_SENTENCES)
+          .forEach(function (span) { seat.line.appendChild(span); });
+        seat.fresh = false;
+        state.seatLast = state.lastSpeaker || state.party[0];
+      }
+    }
     renderDirectory();
   }
 
   function hangUp(opts) {
     opts = opts || {};
+    if (state.muted) { state.muted = false; paintMute(); }
+    clearTimeout(bedTimer);
+    ConsoleAudio.beds().forEach(ConsoleAudio.unbed);
+    setTimeout(renderCallbar, 0);
     // What hadn't been spoken yet stays unspoken — not flashed up as text
     // while the line fades.
     state.pending = {};
+    state.freshKeys = {};
     cancelFlush();
     clearTimeout(state.closeTimer);
     ConsoleAudio.stop();
@@ -2444,6 +2586,7 @@
         cancelFlush();
         state.generationDone = false;
         state.fresh = true;
+        state.replyFirst = true;          // its first sentence clears the board, when it's heard
         break;
 
       case 'sentence':
@@ -2452,6 +2595,7 @@
         state.generationDone = false;
         state.pending[event.key] = event.text;
         state.pendingSpeaker[event.key] = event.speaker;
+        if (state.replyFirst) { state.freshKeys[event.key] = true; state.replyFirst = false; }
         answered(event.speaker);
         break;
 
@@ -2541,6 +2685,8 @@
         if (state.ringingId === event.speaker) { state.ringingId = null; ConsoleTones.stopRinging(); }
         renderSeats();
         renderDirectory();
+        syncBeds();
+        renderCallbar();
         break;
 
       case 'call_ending':
@@ -2631,8 +2777,9 @@
         if (!text) { setState('idle'); return; }
         // Flagged as spoken so the server can reject it if it is the contact's
         // own voice arriving back through the microphone.
-        send({ type: 'prompt', text: text, spoken: true,
+        send({ type: 'prompt', text: text, spoken: true, talked_over: state.talkedOver,
                confidence: typeof data.confidence === 'number' ? data.confidence : 1 });
+        state.talkedOver = null;
       })
       .catch(function () { setState('idle'); });
   }
@@ -2650,6 +2797,190 @@
 
   /* --- wiring ------------------------------------------------------------- */
 
+  function toggleMute(force) {
+    var on = typeof force === 'boolean' ? force : !state.muted;
+    if (on === !!state.muted) { paintMute(); return; }
+    state.muted = on;
+    if (state.mode === 'ambient' || state.ambientWasOn) {
+      // Hands-free stops listening while muted, and picks up again after.
+      if (on) { state.ambientWasOn = state.mode === 'ambient'; if (state.ambientWasOn) setMode('ptt'); }
+      else if (state.ambientWasOn) { state.ambientWasOn = false; setMode('ambient'); }
+    }
+    if (on && state.spaceDown) { state.spaceDown = false; ConsoleMic.pushStop(); settleListening(); }
+    paintMute();
+    if (state.connectedId) send({ type: 'mute', on: on });
+  }
+
+  function paintMute() {
+    var tip = state.muted ? 'Unmute your mic' : 'Mute your mic (hold Space to talk)';
+    el.ptt.dataset.muted = state.muted ? '1' : '0';
+    el.ptt.dataset.tip = tip;
+    el.ptt.setAttribute('aria-pressed', state.muted ? 'true' : 'false');
+    el.ptt.setAttribute('aria-label', tip);
+    var bar = callbarEl();
+    if (bar) {
+      bar.talk.dataset.muted = state.muted ? '1' : '0';
+      bar.talk.dataset.tip = tip;
+      bar.talk.setAttribute('aria-pressed', state.muted ? 'true' : 'false');
+      bar.talk.setAttribute('aria-label', tip);
+    }
+  }
+
+  // While he talks, the contact reads ahead the part of the next turn that won't
+  // change with his words — so when he stops, they answer about twice as fast.
+  var lastReadAhead = 0;
+  function readAhead() {
+    if (!state.connectedId || Date.now() - lastReadAhead < 1500) return;
+    lastReadAhead = Date.now();
+    send({ type: 'listening' });
+  }
+
+  function startTalking() {
+    if (!state.connectedId) return;
+    // In ambient mode the button means "that's it, go".
+    if (state.mode === 'ambient') { ConsoleMic.cut(); return; }
+    interruptHim();
+    setState('listening');
+    ConsoleMic.pushStart();
+  }
+
+  function stopTalking() {
+    if (state.mode !== 'ambient') { ConsoleMic.pushStop(); settleListening(); }
+  }
+
+  /* --- the call, over the map ------------------------------------------------
+     With the map open on a call, the line stays in reach: who's on it, a ring
+     each lit by their own voice, the sentence being said, hold-to-talk, back to
+     the call, and the handset. */
+  var callbar = null;
+  function callbarEl() {
+    if (callbar) return callbar;
+    var root = document.querySelector('.gm-call');
+    if (!root) return null;
+    callbar = { root: root, who: root.querySelector('.gm-call__who'), line: root.querySelector('.gm-call__line'),
+                talk: root.querySelector('.gm-call__talk'), faces: {} };
+    root.querySelector('.gm-call__end').innerHTML = ICONS.end;
+    root.querySelector('.gm-call__end').addEventListener('click', function () { if (state.connectedId) hangUp(); });
+    root.querySelector('.gm-call__back').addEventListener('click', function () { GothamMap.close(); });
+    callbar.talk.addEventListener('click', function (e) { e.preventDefault(); toggleMute(); });
+    dragCallbar(root);
+    return callbar;
+  }
+
+  // Dragged by its glass, not its buttons; kept on screen, and where he left it.
+  function dragCallbar(root) {
+    var stage = root.parentElement, start = null;
+    function place(x, y) {
+      var w = stage.clientWidth, h = stage.clientHeight, bw = root.offsetWidth, bh = root.offsetHeight;
+      x = Math.max(8, Math.min(w - bw - 8, x));
+      y = Math.max(8, Math.min(h - bh - 8, y));
+      root.style.left = x + 'px'; root.style.top = y + 'px'; root.style.bottom = 'auto';
+      return { x: x, y: y };
+    }
+    try {
+      var saved = JSON.parse(localStorage.getItem('gm-call-pos') || 'null');
+      if (saved) setTimeout(function () { if (!root.hidden) place(saved.x, saved.y); root.dataset.pos = '1'; }, 0);
+      if (saved) root.dataset.saved = JSON.stringify(saved);
+    } catch (e) { /* no stored place */ }
+    root.addEventListener('pointerdown', function (e) {
+      if (e.target.closest('button')) return;
+      var box = root.getBoundingClientRect(), frame = stage.getBoundingClientRect();
+      start = { dx: e.clientX - box.left, dy: e.clientY - box.top, fx: frame.left, fy: frame.top };
+      root.classList.add('is-dragging');
+      root.setPointerCapture(e.pointerId);
+    });
+    root.addEventListener('pointermove', function (e) {
+      if (!start) return;
+      var at = place(e.clientX - start.fx - start.dx, e.clientY - start.fy - start.dy);
+      root.dataset.saved = JSON.stringify(at);
+    });
+    ['pointerup', 'pointercancel'].forEach(function (name) {
+      root.addEventListener(name, function () {
+        if (!start) return;
+        start = null;
+        root.classList.remove('is-dragging');
+        try { localStorage.setItem('gm-call-pos', root.dataset.saved || 'null'); } catch (e) { /* private window */ }
+      });
+    });
+    root._place = place;
+  }
+
+  function renderCallbar() {
+    var bar = callbarEl();
+    if (!bar) return;
+    var covered = (window.GothamMap && GothamMap.isOpen()) || (window.Codex && Codex.isOpen());
+    var live = covered && state.connectedId;
+    bar.root.hidden = !live;
+    if (!live) { bar.line.textContent = ''; return; }
+    try {
+      var at = JSON.parse(bar.root.dataset.saved || 'null');
+      if (at && bar.root._place) bar.root._place(at.x, at.y);
+    } catch (e) { /* stays where the stylesheet puts it */ }
+    var ids = state.party.length ? state.party.slice() : [state.connectedId];
+    state.groupRinging.forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
+    if (state.ringingId && ids.indexOf(state.ringingId) === -1) ids.push(state.ringingId);
+    Object.keys(bar.faces).forEach(function (id) {
+      if (ids.indexOf(id) === -1) { bar.faces[id].remove(); delete bar.faces[id]; }
+    });
+    ids.forEach(function (id, i) {
+      var contact = state.contacts[id];
+      if (!contact) return;
+      var face = bar.faces[id];
+      if (!face) {
+        face = bar.faces[id] = document.createElement('span');
+        face.className = 'gm-call__face';
+        face.style.setProperty('--accent', contact.accent);
+        face.innerHTML = '<span class="gm-call__ring"></span><span class="gm-call__name"></span>';
+        portraitStyle(face.querySelector('.gm-call__ring'), contact, 'center 22%');
+        face.querySelector('.gm-call__name').textContent = contact.name;
+        face.dataset.tip = contact.name;
+        bar.who.appendChild(face);
+      }
+      face.style.order = i;
+      face.dataset.state = (state.ringingId === id || state.groupRinging.indexOf(id) !== -1) ? 'ringing' : 'live';
+    });
+    bar.who.dataset.many = ids.length > 1 ? '1' : '0';
+    if (!callbarLoop) callbarLoop = requestAnimationFrame(callbarPulse);
+  }
+
+  function callbarSaid(speaker, text) {
+    var bar = callbarEl();
+    if (!bar || bar.root.hidden) return;
+    var contact = state.contacts[speaker || state.connectedId];
+    bar.line.textContent = '';
+    if (contact && state.party.length > 1) {
+      var who = document.createElement('b');
+      who.textContent = contact.name;
+      who.style.color = contact.accent;
+      bar.line.appendChild(who);
+    }
+    bar.line.appendChild(document.createTextNode(text));
+    Object.keys(bar.faces).forEach(function (id) {
+      bar.faces[id].dataset.speaking = id === (speaker || state.connectedId) ? '1' : '0';
+    });
+  }
+
+  // The speaking ring's glow follows the voice itself, read off the analyser.
+  var callbarLoop = null, callbarBins = null;
+  function callbarPulse() {
+    callbarLoop = null;
+    var bar = callbar;
+    if (!bar || bar.root.hidden) return;
+    var analyser = ConsoleAudio.analyser, level = 0;
+    if (analyser && ConsoleAudio.isPlaying) {
+      callbarBins = callbarBins || new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(callbarBins);
+      var sum = 0;
+      for (var i = 2; i < 64; i++) sum += callbarBins[i];
+      level = Math.min(1, sum / (62 * 160));
+    }
+    Object.keys(bar.faces).forEach(function (id) {
+      var face = bar.faces[id];
+      face.style.setProperty('--lvl', face.dataset.speaking === '1' ? level.toFixed(2) : '0');
+    });
+    callbarLoop = requestAnimationFrame(callbarPulse);
+  }
+
   function wireInput() {
     el.compose.addEventListener('submit', function (e) {
       e.preventDefault();
@@ -2658,23 +2989,12 @@
       interruptHim();
       el.input.value = '';
       noteActivity({ quietFor: requestedTime(text) });
-      send({ type: 'prompt', text: text });
+      send({ type: 'prompt', text: text, talked_over: state.talkedOver });
+      state.talkedOver = null;
     });
 
-    el.ptt.addEventListener('pointerdown', function (e) {
-      e.preventDefault();
-      if (!state.connectedId) return;
-      // In ambient mode the button means "that's it, go".
-      if (state.mode === 'ambient') { ConsoleMic.cut(); return; }
-      interruptHim();
-      setState('listening');
-      ConsoleMic.pushStart();
-    });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (name) {
-      el.ptt.addEventListener(name, function () {
-        if (state.mode !== 'ambient') { ConsoleMic.pushStop(); settleListening(); }
-      });
-    });
+    // Space is push-to-talk; the button mutes. Muted, the line knows it.
+    el.ptt.addEventListener('click', function (e) { e.preventDefault(); toggleMute(); });
 
     // Ambient listening has no control: push-to-talk is the one way to speak
     // until its detector stops hearing the room. setMode('ambient') still works.
@@ -2703,6 +3023,11 @@
       if (document.documentElement.dataset.phase !== 'live') return;
       if (e.defaultPrevented) return;         // a picker or a field already dealt with it
       var typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable);
+      if (!typing && (e.key === 'c' || e.key === 'C') && !e.metaKey && !e.ctrlKey && !e.altKey && window.Codex) {
+        e.preventDefault();
+        if (Codex.isOpen()) Codex.close(); else Codex.open();
+        return;
+      }
       if (!typing && (e.key === 'm' || e.key === 'M') && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         // The button, not GothamMap.open: the map is built on first open.
@@ -2732,10 +3057,16 @@
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (state.mode !== 'ptt' || !state.connectedId) return;
       e.preventDefault();
+      if (state.muted) {
+        el.status.textContent = 'You’re muted';
+        setTimeout(function () { if (el.status.textContent === 'You’re muted') el.status.textContent = ''; }, 1600);
+        return;
+      }
       state.spaceDown = true;
       interruptHim();
       setState('listening');
       ConsoleMic.pushStart();
+      readAhead();
     });
     window.addEventListener('keyup', function (e) {
       if (!PTT_CODES[e.code] || !state.spaceDown) return;
@@ -2755,15 +3086,37 @@
     });
   }
 
+  /* The rooms behind the voices on the line: for each of them, where they are
+     right now — asked again every minute and a half, since they move. */
+  var bedTimer = null;
+  function syncBeds() {
+    clearTimeout(bedTimer);
+    var live = state.connectedId && state.ringingId !== state.connectedId;
+    var on = live ? (state.party.length ? state.party.slice() : [state.connectedId]) : [];
+    ConsoleAudio.beds().forEach(function (id) { if (on.indexOf(id) === -1) ConsoleAudio.unbed(id); });
+    var gated = on.length > 1;
+    on.forEach(function (id) {
+      fetch('/api/ambience/' + encodeURIComponent(id)).then(function (r) { return r.json(); })
+        .then(function (body) {
+          if (!body.scene) { ConsoleAudio.unbed(id); return; }
+          ConsoleAudio.bed(id, '/api/ambience/file/' + encodeURIComponent(body.scene), gated, body.shots);
+        }).catch(function () {});
+    });
+    if (on.length) bedTimer = setTimeout(syncBeds, 90000);
+  }
+
   function wireAudio() {
     ConsoleAudio.on('onSentenceStart', function (text, key, durationMs, words, speaker) {
       setState('speaking');
       if (speaker && state.seats[speaker]) seatSpeaking(speaker);
       revealSentence(text, key, durationMs, words, speaker);
+      var who = speaker || state.connectedId;
+      ConsoleAudio.beds().forEach(function (id) { ConsoleAudio.bedLevel(id, id === who); });
     });
     ConsoleAudio.on('onIdle', function () {
       if (document.documentElement.dataset.state === 'speaking') setState('idle');
       seatSpeaking(null);
+      ConsoleAudio.beds().forEach(function (id) { ConsoleAudio.bedLevel(id, false); });
       if (state.generationDone) scheduleFlush(40);
       closeIfFinished();
     });
@@ -2784,7 +3137,8 @@
   function wireMic() {
     ConsoleMic.on('onLevel', function (level) { if (state.viz) state.viz.setLevel(level); });
     ConsoleMic.on('onUtterance', submitAudio);
-    ConsoleMic.on('onSpeechStart', function () { setState('listening'); });
+    // Hands-free: he's started speaking — listen, and read ahead while he does.
+    ConsoleMic.on('onSpeechStart', function () { setState('listening'); readAhead(); });
     ConsoleMic.on('onSpeechEnd', function () {
       if (document.documentElement.dataset.state === 'listening') setState('idle');
     });
@@ -2886,6 +3240,41 @@
     });
   }
 
+  function initCodex() {
+    if (!window.Codex) return;
+    Codex.init({
+      root: $('codex'),
+      contacts: function () { return state.contacts; },
+      portrait: function (node, c) { portraitStyle(node, c, 'center 22%'); },
+      call: function (id) { placeCall(id); },
+      message: function (id, draft) {
+        openMessages(id);
+        if (draft) { el['messages-input'].value = draft; el['messages-input'].focus(); }
+      },
+      showOnMap: function (x, y) {
+        if (!window.GothamMap) return;
+        if (!GothamMap.isOpen()) document.getElementById('map-open').click();
+        setTimeout(function () { GothamMap.flyTo(x, y); }, 400);
+      },
+      showMap: function () {
+        if (window.GothamMap && !GothamMap.isOpen()) document.getElementById('map-open').click();
+      },
+      // A new face: every portrait on the page fetched afresh.
+      portraitChanged: function () {
+        state.portraitStamp = Date.now();
+        renderDirectory();
+        renderCallbar();
+      },
+      // The Codex and the map are two tabs of one screen: opening one puts the other away.
+      toggled: function (open) {
+        $('codex-open').classList.toggle('is-on', open);
+        if (open && window.GothamMap && GothamMap.isOpen()) GothamMap.close();
+        renderCallbar();
+      }
+    });
+    $('codex-open').addEventListener('click', function () { if (Codex.isOpen()) Codex.close(); else Codex.open(); });
+  }
+
   function initMap() {
     GothamMap.init({
       root: $('map-view'),
@@ -2895,9 +3284,16 @@
       portrait: function (node, c) { portraitStyle(node, c, 'center 22%'); },
       label: presenceLabel,
       message: function (id) { GothamMap.close(); openMessages(id); },
-      call: function (id) { GothamMap.close(); placeCall(id); },
-      toggled: function (open) { $('map-open').classList.toggle('is-on', open); }
+      // Calling from the map keeps the map: the call comes up over it.
+      call: function (id) { placeCall(id); setTimeout(renderCallbar, 60); },
+      toggled: function (open) {
+        $('map-open').classList.toggle('is-on', open);
+        if (open && window.Codex && Codex.isOpen()) Codex.close();
+        renderCallbar();
+      }
     });
+    var toCodex = $('map-view').querySelector('[data-act="codex"]');
+    if (toCodex && window.Codex) toCodex.addEventListener('click', function () { Codex.open(); });
   }
 
   function loadSession() {
@@ -2939,6 +3335,29 @@
       .map(function (n) { return String(n).padStart(2, '0'); }).join(':');
   }, 1000);
 
+  /* --- the sky over the console ---------------------------------------------
+     The same sun as the map's (Gotham at New York's latitude, on this clock):
+     --night eases from 0 by day to 1 at night, and the stylesheet lights the
+     console up as it rises — gold hour and dusk on the way. */
+  function skyNight(date) {
+    var year = date.getFullYear(), start = new Date(year, 0, 1);
+    var day = Math.floor((date - start) / 86400000) + 1;
+    var standard = Math.max(start.getTimezoneOffset(), new Date(year, 6, 1).getTimezoneOffset());
+    var solar = date.getHours() + date.getMinutes() / 60 - (date.getTimezoneOffset() < standard ? 1 : 0);
+    var tilt = 23.44 * Math.sin(2 * Math.PI * (284 + day) / 365) * Math.PI / 180;
+    var phi = 40.7 * Math.PI / 180, ha = (solar - 12) * 15 * Math.PI / 180;
+    var sun = Math.asin(Math.sin(phi) * Math.sin(tilt) + Math.cos(phi) * Math.cos(tilt) * Math.cos(ha)) * 180 / Math.PI;
+    var x = Math.max(0, Math.min(1, (sun + 10) / 14));
+    return 1 - x * x * (3 - 2 * x);
+  }
+  function paintSky() {
+    var n = skyNight(new Date());
+    document.documentElement.style.setProperty('--night', n.toFixed(3));
+    document.documentElement.dataset.sky = n > 0.6 ? 'night' : n > 0.1 ? 'dusk' : 'day';
+  }
+  paintSky();
+  setInterval(paintSky, 60000);
+
   /* --- go ----------------------------------------------------------------- */
 
   cacheElements();
@@ -2956,6 +3375,7 @@
   wireMentions();
   wireTapbacks();
   wireEmoji();
+  initCodex();
   // Back at the window with a thread open: what's on screen has been seen.
   document.addEventListener('visibilitychange', markSeen);
   try { state.unread = JSON.parse(recall('unread') || '{}') || {}; } catch (e) { state.unread = {}; }

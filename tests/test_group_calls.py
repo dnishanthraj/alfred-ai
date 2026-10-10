@@ -15,7 +15,9 @@ class Member:
     """A contact on a call: scripted replies, asides and drafts, recording what it was asked."""
 
     def __init__(self, cid, name, replies=(), asides=(), drafts=()):
-        self.contact = SimpleNamespace(id=cid, name=name, full_name=name)
+        # Enough of a contact for whereabouts to be worked out: no routine, phone to hand.
+        self.contact = SimpleNamespace(id=cid, name=name, full_name=name, routine=(), shares_status=True,
+                                       texting_pace={"phone": 1.0}, texting_style={}, initiative={}, texting="")
         self.history = SimpleNamespace(messages=[], record_aside=lambda text: None)
         self.replies, self.asides, self.drafts = list(replies), list(asides), list(drafts)
         self.call, self.heard, self.asked, self.instructions = None, [], [], []
@@ -151,7 +153,7 @@ def test_whoever_doesnt_yield_just_goes_on(monkeypatch):
     assert len(said) == 3
 
 
-def test_those_in_the_know_are_warned_about_an_outsider_on_the_line():
+def test_those_in_the_know_are_warned_about_an_outsider_on_the_line(private_data):
     dick, selina = Member("nightwing", "Dick"), Member("catwoman", "Selina")
     call = _call(dick, selina)
     assert "Selina" in call.note_for(dick) and "masks" in call.note_for(dick)

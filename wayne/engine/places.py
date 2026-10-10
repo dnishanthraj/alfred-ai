@@ -29,6 +29,42 @@ def gazetteer():
     return json.loads((Path(__file__).with_name("gotham.json")).read_text())
 
 
+_edits_cache = {"mtime": None, "edits": {}}
+
+
+def _edits_path():
+    from .. import paths
+    return paths.DATA_DIR / "_codex_places.json"
+
+
+def edits():
+    """His own descriptions of places, written in the Codex: {place: text}. Read again when the file changes."""
+    path = _edits_path()
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return {}
+    if mtime != _edits_cache["mtime"]:
+        try:
+            _edits_cache["edits"] = json.loads(path.read_text() or "{}")
+        except ValueError:
+            _edits_cache["edits"] = {}
+        _edits_cache["mtime"] = mtime
+    return _edits_cache["edits"]
+
+
+def edit(name, text):
+    """Rewrite what Gotham knows of a place (empty text puts back what the map had)."""
+    from ..memory.store import atomic_write
+    current = dict(edits())
+    if (text or "").strip():
+        current[name] = text.strip()[:1200]
+    else:
+        current.pop(name, None)
+    atomic_write(_edits_path(), json.dumps(current, ensure_ascii=False))
+    _edits_cache["mtime"] = None
+
+
 def _jitter(seed, spread):
     digest = hashlib.sha1(seed.encode()).digest()
     return (digest[0] / 255 - 0.5) * 2 * spread, (digest[1] / 255 - 0.5) * 2 * spread
@@ -75,7 +111,8 @@ def _resolve(lowered):
             return {"name": region["name"], "area": region["name"],
                     "x": round(region["x"] + dx, 1), "y": round(region["y"] + dy, 1)}
     best = (_match([p for p in data["places"] if p["area"] not in regions], lowered)
-            or _match([p for p in data["places"] if p["area"] in regions], lowered, by_name_only=True))
+            or _match([p for p in data["places"] if p["area"] in regions], lowered, by_name_only=True)
+            or _match(venues(), lowered, by_name_only=True))
     return _spot(best) if best else None
 
 
@@ -97,20 +134,97 @@ def note(text, most=2):
         hit = max((len(t) for t in terms if re.search(rf"(?<!\w){re.escape(t)}(?!\w)", lowered)), default=0)
         if hit:
             found.append((hit, place))
+    for venue in venues():
+        name = venue["name"].lower()
+        if len(name) >= 5 and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", lowered):
+            found.append((len(name), {**venue, "kind": "venue"}))
     found = [p for _, p in sorted(found, key=lambda f: -f[0])]
     # Not both a district and something inside it that only matched because of it.
     lines = []
     for place in found[:most]:
+        written = edits().get(place["name"])
         if place["kind"] == "district":
             here = [q["name"] for q in data["places"] if q["area"] == place["area"] and q["kind"] != "district"][:9]
-            sketch = data.get("areas", {}).get(place["name"], "")
+            sketch = written or data.get("areas", {}).get(place["name"], "")
             lines.append(f"{place['name']}: {sketch}" + (f" In it: {', '.join(here)}." if here else ""))
-        elif place.get("bio"):
-            lines.append(f"{place['name']} ({place['area']}): {place['bio']}")
+        elif written or place.get("bio"):
+            lines.append(f"{place['name']} ({place['area']}): {written or place['bio']}")
     if not lines:
         return ""
     return ("What you know of the places he mentioned, as anyone who knows Gotham would — use it only if it "
             "fits, in your own words:\n" + "\n".join(lines))
+
+
+def near(x, y):
+    """
+    Where a point is, as someone passing would put it — "Burnside, by Burnside
+    College" or just "Burnside" — or "" out on the water or past the city.
+    """
+    import math
+    data = gazetteer()
+    spots = [p for p in data["places"] if p.get("kind") != "district"]
+    best = min(spots, key=lambda p: (p["x"] - x) ** 2 + (p["y"] - y) ** 2, default=None)
+    if best is None or math.dist((best["x"], best["y"]), (x, y)) > 6:
+        return ""
+    area = best["area"]
+    if math.dist((best["x"], best["y"]), (x, y)) < 1.2 and best["name"] != area:
+        return f"{area}, by {best['name']}"
+    return area
+
+
+@lru_cache(maxsize=1)
+def venues():
+    """The city's bars, clubs, diners, cafés, gyms, cinemas, hotels and shops, as the map has them — each with its line."""
+    path = Path(__file__).with_name("venues.json")
+    found = json.loads(path.read_text()).get("venues", []) if path.exists() else []
+    notes_path = Path(__file__).with_name("venue_notes.json")
+    notes = json.loads(notes_path.read_text()).get("notes", {}) if notes_path.exists() else {}
+    return [{**v, "bio": notes.get(v["name"], "")} for v in found]
+
+
+def around(x, y, but="", most=3, within=1.6):
+    """The landmarks nearest a point, for someone standing there: what they could see, walk to, mention."""
+    import math
+    data = gazetteer()
+    near = sorted((math.dist((p["x"], p["y"]), (x, y)), p["name"]) for p in data["places"]
+                  if p.get("kind") in ("landmark", "spot") and p["name"] != but)
+    places = [name for d, name in near if d <= within][:most]
+    spots = sorted((math.dist((v["x"], v["y"]), (x, y)), v) for v in venues())
+    places += [f"{v['name']} ({_KIND.get(v['kind'], v['kind'])})" for d, v in spots if d <= within * 0.8][:2]
+    return places
+
+
+_KIND = {"club": "a club", "bar": "a bar", "diner": "a diner", "church": "a church", "fire": "a firehouse",
+         "school": "a school", "cafe": "a café", "gym": "a gym", "cinema": "a cinema", "hotel": "a hotel", "shop": "a shop"}
+# Talk of going somewhere for something: a drink, a coffee, a bite.
+_OUTING = re.compile(r"(?i)\b(drinks?|a pint|beers?|bar|pub|coffee|caf[eé]|brunch|breakfast|lunch|dinner|bite|eat|"
+                     r"food|diner|burger|club|dancing|movie|film|cinema|gym|workout|hotel|shopping)\b")
+
+
+def outing(text, x, y, most=4):
+    """
+    Talk of going out for something, near (x, y): a few real places to suggest
+    — "The Rusty Anchor (a bar, Waterloo Docks)" — or "".
+    """
+    import math
+    if not _OUTING.search(text or ""):
+        return ""
+    wanted = {"drink": ("bar", "club"), "coffee": ("cafe",), "eat": ("diner", "cafe"), "club": ("club",),
+              "film": ("cinema",), "gym": ("gym",), "hotel": ("hotel",), "shop": ("shop",)}
+    lowered = text.lower()
+    kinds = set()
+    for word, which in (("drink", "drink"), ("pint", "drink"), ("beer", "drink"), ("bar", "drink"), ("pub", "drink"),
+                        ("coffee", "coffee"), ("caf", "coffee"), ("brunch", "eat"), ("breakfast", "eat"),
+                        ("lunch", "eat"), ("dinner", "eat"), ("bite", "eat"), ("eat", "eat"), ("food", "eat"),
+                        ("diner", "eat"), ("burger", "eat"), ("club", "club"), ("dancing", "club"), ("movie", "film"),
+                        ("film", "film"), ("cinema", "film"), ("gym", "gym"), ("workout", "gym"), ("hotel", "hotel"),
+                        ("shopping", "shop")):
+        if word in lowered:
+            kinds.update(wanted[which])
+    spots = sorted((math.dist((v["x"], v["y"]), (x, y)), v) for v in venues() if v["kind"] in kinds)
+    picks = [f"{v['name']} ({_KIND.get(v['kind'], v['kind'])}, {v['area']})" for _, v in spots[:most]]
+    return ("If you'd suggest somewhere, these are real places near you: " + "; ".join(picks) + "."
+            if picks else "")
 
 
 def names():

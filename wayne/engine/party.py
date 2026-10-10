@@ -22,6 +22,7 @@ as on any call: talking over whoever is speaking closes the whole exchange.
 """
 import random
 import re
+import time
 
 from .. import events
 from .. import operator as wayne_operator
@@ -58,6 +59,10 @@ class Call:
         # Whether the last unprompted line (a greeting, a reaction) got an
         # answer — so nobody greets a newcomer twice.
         self.aside_answered = False
+        self._last_operator_line = ""     # his latest line — who he named in it gets answered first
+        # When someone on the line last put something to him: the call waits a
+        # moment for his answer before carrying on without him.
+        self.asked_him_at = 0.0
 
     # --- membership ------------------------------------------------------
 
@@ -134,6 +139,10 @@ class Call:
         if follow_up:
             note += (" He didn't ask you directly; you're coming in because of what was "
                      "just said to you or about you. Answer that, briefly.")
+        elif session in self.addressed(self._last_operator_line):
+            # Asked "Dick, where are you exactly?", Dick answered Tim's joke about cereal.
+            note += (" He's just spoken to you by name: answer what he said to you first — anything "
+                     "for the others after, if at all.")
         return note
 
     def in_the_room(self, session):
@@ -169,6 +178,9 @@ class Call:
                     return ""
         for name in {session.contact.name, session.contact.full_name}:
             sentence = re.sub(rf"^\W*{re.escape(name)}\s*:\s*", "", sentence, flags=re.I)
+        # Their own line, labelled the way the transcript labels everyone else's:
+        # "You: It's not cereal, Tim" was read out, label and all.
+        sentence = re.sub(r"^\W*(?:you|me|myself)\s*:\s*", "", sentence, flags=re.I)
         return sentence.strip()
 
     # --- turns -------------------------------------------------------------
@@ -190,14 +202,20 @@ class Call:
                     first = (found.start(), member)
         return [first[1]] if first else []
 
-    def turn(self, prompt, interrupted=False, confidence=1.0):
-        """One operator line, answered by whoever it was for. A generator of events."""
+    def turn(self, prompt, interrupted=False, confidence=1.0, talked_over=""):
+        """
+        One operator line, answered by whoever it was for. A generator of
+        events. Talking over someone, he's answering them — unless he names
+        someone else — whoever the model had got round to writing next.
+        """
         prompt = (prompt or "").strip()
         if not prompt:
             return
         yield events.message("user", prompt)
 
-        speakers = self.addressed(prompt) or [self.last_speaker or self.members[0]]
+        over = next((m for m in self.members if m.contact.id == talked_over), None) if interrupted else None
+        speakers = self.addressed(prompt) or [over or self.last_speaker or self.members[0]]
+        self._last_operator_line = prompt
         operator_line = f"{self.operator}: {prompt}"
         self.transcript.append(operator_line)
         # Everyone not answering first hears the line now; the first speaker
@@ -225,6 +243,7 @@ class Call:
             self.transcript.append(line)
             for other in self.others(member):
                 other.heard.append(line)
+            self._notice_asks(reply)
             # Someone named or asked in that reply may come in — once.
             if not queue and turns < most:
                 for other in self.addressed(reply):
@@ -364,13 +383,13 @@ class Call:
         others = ", ".join(m.contact.full_name for m in self.others(member))
         return (
             "[REFERENCE — context only]\n" + self.note_for(member) + "\n[END REFERENCE]\n\n"
-            f"There's a pause on the call{' again' if quiet_for > 1 else ''} — nobody has said "
-            f"anything for a few seconds. You're on with {self.operator} and {others}. If you'd "
-            "fill it, say what you'd actually say: to one of them by name, about what's been said "
-            "or what's going on with you, or a question for him. A line or two. If you'd let the "
-            "quiet sit, reply with exactly SKIP."
-            + (" He's said nothing for a while now; you might wonder aloud if he's even still there."
-               if quiet_for >= 2 else ""))
+            f"The call's going — you're on with {self.operator} and {others}, and the last line has "
+            "just landed. If you'd come in now, do it the way you would with these people: answer or "
+            "rib whoever spoke, disagree, pick up a thread, ask one of them something by name, or turn "
+            "to him. Keep it to what one person says before someone else talks — often a few words. "
+            "If you'd leave it, or it's run its course, reply with exactly SKIP."
+            + (" He hasn't said anything for a while; someone might check he's still there — or you "
+               "carry on without him." if quiet_for >= 3 else ""))
 
     def collide(self, first, second, quiet_for=1):
         """
@@ -451,6 +470,29 @@ class Call:
         self.transcript.append(f"{member.contact.full_name}: {line}")
         for other in self.others(member):
             other.heard.append(f"{member.contact.full_name}: {line}")
+        self._notice_asks(line)
+
+    def event(self, what):
+        """
+        Something that happened on the call rather than was said — who didn't
+        pick up, who joined, who left — in everyone's ears, and in what anyone
+        joining later is handed: whoever picks up a group ring knows who
+        declined it, instead of asking after them.
+        """
+        line = f"({what})"
+        self.transcript.append(line)
+        for member in self.members:
+            member.heard.append(line)
+
+    def _notice_asks(self, line):
+        """A line that puts something to him by name — the call holds a moment for his answer."""
+        first = self.operator.split()[0]
+        if "?" in (line or "") and re.search(rf"\b({re.escape(first)}|{re.escape(self.operator)})\b", line, re.I):
+            self.asked_him_at = time.time()
+
+    def waiting_on_him(self, within=7.0):
+        """Whether someone's just asked him something and the call should give him a moment."""
+        return time.time() - self.asked_him_at < within
 
     def _speak_aside(self, member, instruction, prompted_by=None, greeting=False, farewell=False):
         # What's been said since they last spoke — or a reaction, a remark into a

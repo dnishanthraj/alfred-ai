@@ -29,8 +29,9 @@
   var CIRCLING = 0.25 * K;          // circling over something
   var AIRSHIP = 0.1 * K;            // ~55 km/h
   var APPROACH = 0.48 * K;          // ~260 km/h on final
+  var BATWING = 1.3 * K;            // ~700 km/h, low and fast
 
-  var subway = [], rails = [], ferries = [], lanes = [], runways = [], taxi = null;
+  var subway = [], rails = [], ferries = [], lanes = [], runways = [], sails = [], taxi = null;
   var spots = {};
 
   /* --- lines to travel along ----------------------------------------------- */
@@ -148,7 +149,7 @@
   /* --- what's on the map ------------------------------------------------------ */
 
   function init(fc, places) {
-    subway = []; rails = []; ferries = []; lanes = []; runways = []; spots = {}; taxi = null;
+    subway = []; rails = []; ferries = []; lanes = []; runways = []; sails = []; spots = {}; taxi = null;
     fc.features.forEach(function (f) {
       var p = f.properties;
       if (p.l === 'subway') {
@@ -175,6 +176,10 @@
         lanes.push(ln);
       } else if (p.l === 'runway_line') {
         runways.push(f.geometry.coordinates);
+      } else if (p.l === 'sailing') {
+        var loop = line(f.geometry.coordinates);
+        loop.b = p.b || 1;
+        sails.push(loop);
       }
     });
     (places || []).forEach(function (p) { spots[p.name] = ll(p.x, p.y); });
@@ -238,16 +243,20 @@
       var here = at(taxi, 0.04 + 0.92 * u);
       out.push(point(here.p, { m: 'patrol', r: tau < lap ? here.r : here.r + 180, n: 'GCPD Harbor Patrol' }));
     }
-    if (hour >= 8 && hour < 19) {
-      // Sailboats off the marina, tacking about in the river.
-      [[12.2, 96.5, 1.1], [12.0, 102.2, 1.3], [11.6, 107.8, 1.0], [13.0, 99.4, 0.8], [12.4, 105.0, 0.9]].forEach(function (c, i) {
-        var around = 2 * Math.PI * Math.sqrt((c[2] * c[2] * 1.25) / 2) * K, period = around / SAIL;
-        var a = (s / period) * 2 * Math.PI + i * 1.7;
-        var p = ll(c[0] + Math.cos(a) * c[2] * 0.5, c[1] + Math.sin(a) * c[2]);
-        var r = heading(p, ll(c[0] + Math.cos(a + 0.05) * c[2] * 0.5, c[1] + Math.sin(a + 0.05) * c[2]));
-        out.push(point(p, { m: 'sail', r: r, n: 'Sailboat' }));
-      });
-    }
+    // Sailboats all round the water: most out by day, a few staying for the
+    // sunset, none in the dark — each on its own loop of open water (see the map
+    // build), some sailing it one way and some the other, never in step.
+    var out_sailing = hour >= 8 && hour < 19 ? 1 : hour === 7 || hour === 19 ? 0.5 : hour === 20 ? 0.25 : 0;
+    sails.forEach(function (loop, i) {
+      var boats = Math.round(loop.b * out_sailing + (i % 3 === 0 && out_sailing ? 0.4 : 0));
+      for (var k = 0; k < boats; k++) {
+        var lap = loop.len / (SAIL * (0.85 + ((i * 7 + k * 3) % 5) * 0.08));
+        var u = ((s / lap + k / Math.max(1, loop.b) + i * 0.137) % 1 + 1) % 1;
+        if (i % 2) u = 1 - u;                                   // round the other way
+        var here = at(loop, u);
+        out.push(point(here.p, { m: 'sail', r: i % 2 ? here.r + 180 : here.r, n: 'Sailboat' }));
+      }
+    });
   }
 
   function planes(s, hour, out) {
@@ -368,6 +377,29 @@
     out.push(point(here.p, { m: 'airship', r: here.r, n: 'Stagg Enterprises airship' + (tau < flying ? '' : ' · moored') }));
   }
 
+  // The Batwing: Bruce's jet, out of the Manor's hangar on a few low passes a
+  // night — over three or four districts and home, fast and dark, gone before
+  // anyone's sure what they saw. Not every night has one; none come by day.
+  var OVERFLY = ['Diamond District', 'Old Gotham', 'The Narrows', 'Crime Alley', 'Burnside', 'Otisburg', 'Amusement Mile',
+                 'Upper East Side', 'Tricorner', 'Robinson Park', 'Chinatown', 'Coventry', 'New Town'];
+  function batwing(s, hour, out) {
+    var manor = spots['Wayne Manor'];
+    if (!manor || !(hour >= 21 || hour < 4)) return;
+    var slot = 2700, k = Math.floor(s / slot), tau = s - k * slot - hash(k * 3 + 1) * 900;
+    if (hash(k) > 0.5 || tau < 0) return;
+    var stops = OVERFLY.filter(function (n) { return spots[n]; });
+    var route = [manor];
+    for (var i = 0; i < 3 + Math.floor(hash(k * 7 + 2) * 2); i++) {
+      var pick = stops[Math.floor(hash(k * 11 + i * 5) * stops.length)];
+      if (route.indexOf(spots[pick]) === -1) route.push(spots[pick]);
+    }
+    var flying = smoothLoop(route).len / BATWING;
+    if (tau > flying) return;
+    var here = circuit(route, BATWING, tau, 0);
+    out.push(point([here.p[0] + 0.8 * K, here.p[1] - 0.8 * K], { m: 'batwing-shadow', r: here.r }));
+    out.push(point(here.p, { m: 'batwing', r: here.r, n: 'The Batwing' }));
+  }
+
   // The lighthouse at Cape Carmine, its beam turning over the water at night.
   function beam(s, hour, out) {
     var lh = spots['Cape Carmine Lighthouse'];
@@ -391,6 +423,7 @@
     planes(s, hour, out);
     choppers(s, hour, reports, out);
     airship(s, out);
+    batwing(s, hour, out);
     beam(s, hour, out);
     return out;
   }

@@ -29,6 +29,7 @@ import random
 from pathlib import Path
 
 import shapely
+import shapely.errors
 import shapely.ops
 import shapely.prepared
 from shapely import affinity
@@ -44,6 +45,7 @@ BUILDINGS = ROOT / "web" / "map" / "gotham-buildings.json"
 # The streets as a network, for the server: how someone gets from one place to
 # another — by road, over the bridges, on a ferry — instead of jumping there.
 ROADS = ROOT / "wayne" / "engine" / "roads.json"
+VENUES = ROOT / "wayne" / "engine" / "venues.json"
 
 # Districts with docks and wharves along them keep their edge hard; elsewhere a
 # strip of waterfront park runs along the shore.
@@ -59,7 +61,12 @@ GLASS = {"Diamond District", "Fashion District", "City Hall District", "Upper Ea
          "Central Business District", "Halyard Square", "Upper West Side"}
 SUBURBS = {"Bristol", "Kane Heights"}
 # Where the city's still growing: building sites with their cranes.
-GROWING = {"New Town", "Otisburg", "Burnside", "Central Business District", "Upper East Side", "Fashion District"}
+GROWING = {"New Town", "Otisburg", "Burnside", "Central Business District", "Upper East Side", "Fashion District",
+           "Diamond District", "Chinatown", "Tricorner", "Robinsville", "Kane Heights", "Coventry", "Halyard Square",
+           "The Narrows", "Financial District"}
+# Where towers are going up: the money districts, each with a frame or two topped by a crane.
+TOWERS_RISING = {"Diamond District", "Central Business District", "Financial District", "New Town", "Upper East Side",
+                 "Fashion District", "Halyard Square"}
 
 
 # --- shapes ---------------------------------------------------------------------
@@ -602,6 +609,34 @@ def little_paris(x, y):
     return {"tiers": tiers}
 
 
+def night_market(x, y):
+    """
+    The Chinatown Night Market: a street closed off and filled after dark —
+    aisles of stalls under coloured awnings, a red gate at each end, lanterns
+    strung over the aisles. Turned to Chinatown's grid.
+    """
+    at = _local(x, y, 35)
+    r = random.Random(3500)
+    tiers, aisles = [], []
+    for row in range(4):
+        cy = -0.42 + row * 0.28
+        cx = -0.78
+        while cx < 0.78:
+            w = r.uniform(0.07, 0.11)
+            if r.random() < 0.9:
+                tiers.append((rect(cx + w / 2, cy, w, 0.07), 0, r.choice((3, 3, 4)),
+                              r.choice(("~stall", "~stall", "~stall-red", "~stall-gold"))))
+            cx += w + r.uniform(0.012, 0.03)
+        if row < 3:
+            aisles.append(LineString([(-0.8, cy + 0.14), (0.8, cy + 0.14)]))
+    # The paifang gates: two red posts and a lintel, at each end of the main aisle.
+    for gx in (-0.95, 0.95):
+        tiers += [(square(gx, -0.12, 0.04), 0, 9, "~gate"), (square(gx, 0.4, 0.04), 0, 9, "~gate"),
+                  (rect(gx, 0.14, 0.06, 0.64), 9, 10.5, "~gate")]
+    ground = [(at(box(-1.0, -0.55, 1.0, 0.55)), "plaza")]
+    return {"tiers": _tiers(at, tiers), "ground": ground, "lanterns": [at(a) for a in aisles]}
+
+
 def kane_industries(x, y):
     """Kane Industries: the brick headquarters with KANE in iron letters on the roof, and its tank farm."""
     at = _local(x, y, -25)
@@ -697,6 +732,7 @@ COMPLEXES = {
     "Burnside College": burnside_college,
     "Fort Dumas": fort_dumas,
     "Little Paris": little_paris,
+    "Chinatown Night Market": night_market,
     "Kane Industries": kane_industries,
     "Port Adams Container Terminal": port_adams,
     "World's Fair Grounds": worlds_fair,
@@ -1145,7 +1181,12 @@ def airport_layout(spec):
 
 def _noded(lines):
     """Every crossing made a junction — on a fine grid first, so a road meeting another meets it exactly."""
-    return shapely.node(shapely.set_precision(lines, 0.001))
+    for grid in (0.001, 0.002, 0.005):
+        try:
+            return shapely.node(shapely.set_precision(lines, grid))
+        except shapely.errors.GEOSException:
+            continue                    # near-parallel lines that won't settle at this grid
+    raise RuntimeError("the road network would not node")
 
 
 def reaching(a, b, past=0.03):
@@ -1351,7 +1392,7 @@ def _png(path, rgb):
                      + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
 
 
-def terrain_tiles(land):
+def terrain_tiles(land, built=(), lakes=(), compounds=()):
     """
     The ground under the city, as terrain-RGB tiles: the island low and flat
     downtown, rising into Cherry Hills and Gotham Heights; the mainland climbing
@@ -1374,35 +1415,115 @@ def terrain_tiles(land):
         return top * (1 - fy) + bottom * fy
 
     shapely.prepare(land)
+
+    def natural(X, Y):
+        """The lie of the land at points (X, Y) before any water: metres above the sea."""
+        fbm = noise(X, Y, 9.0) * 0.6 + noise(X, Y, 3.0) * 0.3 + noise(X, Y, 1.2) * 0.1
+        h = 1.2 + fbm * 3
+        for cx, cy, r, hh in HILLS:
+            h = h + hh * np.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / (r * r))
+        west = np.clip(8 - X, 0, None)
+        h = h + west * 3.2 * (0.7 + fbm * 0.6)
+        # The north shore climbing away, eased in and out at its ends: cut off
+        # hard at x=100 it stood a sixty-metre wall across the hills.
+        fade = np.clip((X - 14) / 8, 0, 1) * np.clip((100 - X) / 8, 0, 1)
+        fade = fade * fade * (3 - 2 * fade)
+        h = h + np.clip(8 - Y, 0, None) * 2.2 * fade * (0.6 + fbm * 0.8)
+        return np.clip(h, 1, 320)
+
+    # Every lake at its own level, a little under the lowest of the ground round
+    # it: the sea is at nought, but Bristol Lake is up in the hills, and sunk to
+    # the sea it dug a crater the houses on its shore slid down.
+    lakes = [g for g in lakes if not g.is_empty]
+    levels = []
+    for lake in lakes:
+        ring = lake.exterior
+        pts = shapely.line_interpolate_point(ring, np.linspace(0, ring.length, 160, endpoint=False))
+        levels.append(max(0.0, float(np.percentile(natural(shapely.get_x(pts), shapely.get_y(pts)), 10)) - 1.2))
+    levels = np.array(levels)
+    lake_tree = shapely.STRtree(lakes) if lakes else None
+
+    def water_level(X, Y):
+        """The surface at wet points: a lake's own level, else the sea's nought."""
+        out = np.zeros(X.size)
+        if lake_tree is not None:
+            pairs = lake_tree.query(shapely.points(X.ravel(), Y.ravel()), predicate="within")
+            out[pairs[0]] = levels[pairs[1]]
+        return out.reshape(X.shape)
+
+    # The shore, a short stretch at a time, and the water across each stretch.
+    stretches = []
+    for line in getattr(land.boundary, "geoms", [land.boundary]):
+        xy = np.asarray(line.coords)
+        stretches.extend(shapely.linestrings(np.stack([xy[:-1], xy[1:]], axis=1)))
+    shore = shapely.STRtree(stretches)
+    shore_level = np.zeros(len(stretches))
+    if lake_tree is not None:
+        mids = shapely.line_interpolate_point(stretches, 0.5, normalized=True)
+        pairs = lake_tree.query(mids, predicate="dwithin", distance=0.02)
+        shore_level[pairs[0]] = levels[pairs[1]]
+    QUAY, BANK = 0.3, 12.0     # a quay strip a metre over the water, then at most 12 m a unit (≈8%) up from it
+
+    def ground(X, Y):
+        """The ground at points (X, Y) as drawn: the land down to its water, the water at its level."""
+        on_land = shapely.contains_xy(land, X, Y)
+        h = natural(X, Y)
+        # Down to the water gently: a quay a metre up along the shore, so a pier
+        # stands level with it, and banks no steeper than a street can climb, so
+        # nothing built near the water hangs off a scarp.
+        pts = shapely.points(X.ravel(), Y.ravel())
+        pairs, gap = shore.query_nearest(pts, max_distance=QUAY + 80 / BANK, return_distance=True)
+        hv = h.ravel().copy()
+        cap = shore_level[pairs[1]] + 0.9 + BANK * np.clip(gap - QUAY, 0, None)
+        hv[pairs[0]] = np.minimum(hv[pairs[0]], cap)
+        h = hv.reshape(h.shape)
+        return np.where(on_land, h, water_level(X, Y))
+
+    pads = pad_height = None
+    if built and not os.environ.get("NO_PADS"):
+        level = list(built) + list(compounds)
+        pads = shapely.STRtree(level)
+        middles = np.array([[g.centroid.x, g.centroid.y] for g in level])
+        pad_height = ground(middles[:, 0], middles[:, 1])
+        # Everything inside a walled compound stands at the compound's level.
+        for k, yard in enumerate(compounds):
+            inside = pads.query(yard, predicate="contains")
+            pad_height[inside] = pad_height[len(built) + k]
     if TERRAIN.exists():
         import shutil
         shutil.rmtree(TERRAIN)
     lon0, lat0, lon1, lat1 = -0.48, -0.36, 0.38, 0.50
+    # Closer in, finer: at z11 a terrain pixel is ~75 m, wider than most houses,
+    # so the ground can't be levelled under one. z12 and z13 (~19 m) cover only
+    # what the map can be panned to, with a margin.
+    near = ((-75 - 55) * K, (65 - 180) * K, (200 - 55) * K, (65 + 85) * K)
     count = 0
-    for z in (9, 10, 11):
+    for z in (9, 10, 11, 12, 13):
         n = 2 ** z
-        tx0, tx1 = int((lon0 + 180) / 360 * n), int((lon1 + 180) / 360 * n)
+        lo0, la0, lo1, la1 = near if z >= 12 else (lon0, lat0, lon1, lat1)
+        tx0, tx1 = int((lo0 + 180) / 360 * n), int((lo1 + 180) / 360 * n)
         def ty(lat, n=n):
             r = math.radians(lat)
             return int((1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * n)
         for tx in range(tx0, tx1 + 1):
-            for tyy in range(ty(lat1), ty(lat0) + 1):
+            for tyy in range(ty(la1), ty(la0) + 1):
                 px = (np.arange(256) + 0.5) / 256
                 lon = (tx + px) / n * 360 - 180
                 lat = np.degrees(np.arctan(np.sinh(np.pi * (1 - 2 * (tyy + px) / n))))
                 LON, LAT = np.meshgrid(lon, lat)
                 X, Y = LON / K + 55, 65 - LAT / K
-                on_land = shapely.contains_xy(land, X, Y)
-                fbm = noise(X, Y, 9.0) * 0.6 + noise(X, Y, 3.0) * 0.3 + noise(X, Y, 1.2) * 0.1
-                h = 3 + fbm * 4
-                for cx, cy, r, hh in HILLS:
-                    h = h + hh * np.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / (r * r))
-                west = np.clip(8 - X, 0, None)
-                h = h + west * 3.2 * (0.7 + fbm * 0.6)
-                north = np.where((X > 14) & (X < 100), np.clip(8 - Y, 0, None) * 2.2, 0)
-                h = h + north * (0.6 + fbm * 0.8)
-                h = np.clip(h, 1, 320)
-                h = np.where(on_land, h, -10 - fbm * 6)
+                h = ground(X, Y)
+                if pads is not None:
+                    # Every building on a level pad at the ground under its middle, eased
+                    # back into the slope round it: an extrusion has one base height, and
+                    # on Bristol's hillside half of every house sank into the hill.
+                    flat = shapely.points(X.ravel(), Y.ravel())
+                    pairs, gap = pads.query_nearest(flat, max_distance=0.32, return_distance=True)
+                    hv = h.ravel()
+                    w = np.clip((0.32 - gap) / (0.32 - 0.1), 0, 1)
+                    w = w * w * (3 - 2 * w)
+                    hv[pairs[0]] = hv[pairs[0]] * (1 - w) + pad_height[pairs[1]] * w
+                    h = hv.reshape(h.shape)
                 v = np.round((h + 10000) * 10).astype(np.int64)
                 rgb = np.stack([(v >> 16) & 255, (v >> 8) & 255, v & 255], axis=-1).astype(np.uint8)
                 path = TERRAIN / str(z) / str(tx)
@@ -1428,15 +1549,45 @@ def build():
         halves = split(poly, LineString([(hole.x, miny - 1), (hole.x, maxy + 1)]))
         return [q for g in halves.geoms if g.geom_type == "Polygon" for q in solid_pieces(g)]
 
+    def on_the_ground(poly, base, kind):
+        """
+        A long or ringed footprint in pieces on a half-unit grid, each standing
+        at its own height. MapLibre gives a building one base, at its middle:
+        the Falcone estate's wall floated over every dip and sank into every
+        rise. Tiers up in the air stay whole, but for the skyway's deck, which
+        runs along the ground as the wall does.
+        """
+        minx, miny, maxx, maxy = poly.bounds
+        if math.hypot(maxx - minx, maxy - miny) <= 1.0 or (base and kind != "~deck"):
+            return [poly]
+        # Only what runs along the ground: a wall, a ring, a U, a long thin shed or
+        # pier. A big solid block stays whole — the ground is levelled under it.
+        frame = poly.minimum_rotated_rectangle
+        sides = sorted(LineString(frame.exterior.coords[i:i + 2]).length for i in range(2)) if frame.geom_type == "Polygon" else [0, 0]
+        thin = sides[0] < 0.22 and sides[1] > 1.0
+        hollow = frame.area > 0 and poly.area / frame.area < 0.45
+        if not (thin or hollow or kind == "~deck"):
+            return [poly]
+        cut, step = [], 0.5
+        x = math.floor(minx / step) * step
+        while x < maxx:
+            y = math.floor(miny / step) * step
+            while y < maxy:
+                cut += [q for q in polys_of(poly.intersection(box(x, y, x + step, y + step))) if q.area > 2e-4]
+                y += step
+            x += step
+        return cut or [poly]
+
     def building(geom, h, kind="", base=0):
-        for poly in (q for g in polys_of(shapely.set_precision(geom, 0.01)) for q in solid_pieces(g)):
-            ring = list(poly.exterior.coords)[:-1]
-            if len(ring) >= 3:
-                row = [int(h), int(base)] + [round(v * 100) for pt in ring for v in pt]
-                buildings.append(row + ([kind] if kind else []))
-                if base == 0:
-                    built.append(poly)
-                    heights.append(h)
+        for whole in (q for g in polys_of(shapely.set_precision(geom, 0.01)) for q in solid_pieces(g)):
+            for poly in on_the_ground(whole, base, kind):
+                ring = list(poly.exterior.coords)[:-1]
+                if len(ring) >= 3:
+                    row = [int(h), int(base)] + [round(v * 100) for pt in ring for v in pt]
+                    buildings.append(row + ([kind] if kind else []))
+                    if base == 0:
+                        built.append(poly)
+                        heights.append(h)
 
     def add(geom, layer, **props):
         if geom is None or geom.is_empty:
@@ -1477,6 +1628,40 @@ def build():
     parks = [Polygon(chaikin(roughen(p["coast"], 400 + i, amp=0.35), 3)).buffer(0)
              for i, p in enumerate(src["parks"])]
     park_names = [p["name"] for p in src["parks"]]
+
+    # The ground a road may take: clear of the water by a highway's half-width and
+    # a kerb. One clearance for every class, or a street and the expressway it
+    # meets would be moved apart where they join.
+    shore_clear = 0.145
+    inland_ground = land.buffer(-shore_clear)
+    inland_prep = shapely.prepared.prep(inland_ground)
+    inland_edge = inland_ground.boundary
+    coast_band = shapely.prepared.prep(land.boundary.buffer(shore_clear + 0.05))
+
+    def ashore(line):
+        """
+        `line` on the safe ground, or None if nothing's left: an end that ran down
+        to the water stops at the quay; a stretch in the middle that strayed to the
+        shore — an expressway along the bank — is eased back inland along it.
+        """
+        if line is None or line.is_empty or not coast_band.intersects(line):
+            return line
+        pts = list(shapely.segmentize(line, 0.1).coords)
+        inside = [inland_prep.contains(Point(c)) for c in pts]
+        if not any(inside):
+            return line                 # an island too small to have any inland: its lane can't be elsewhere
+        first, last = inside.index(True), len(inside) - 1 - inside[::-1].index(True)
+        kept = []
+        for c, ok in zip(pts[first:last + 1], inside[first:last + 1], strict=False):
+            if not ok:
+                near = shapely.ops.nearest_points(inland_edge, Point(c))[0]
+                c = (near.x, near.y) if near.distance(Point(c)) < 0.3 else c
+            c = (round(c[0], 3), round(c[1], 3))
+            if not kept or c != kept[-1]:
+                kept.append(c)
+        if len(kept) < 2 or LineString(kept).length < 0.2:
+            return None
+        return LineString(kept).simplify(0.008)
 
     # Districts: the cells around their centres, clipped to the land they're on.
     ds = src["districts"]
@@ -1695,6 +1880,11 @@ def build():
         for wet in lines_of(full.difference(land)):
             if wet.length < 0.2 or wet.length > 14 or wet.intersects(spans_):
                 continue
+            # Only water it crosses and lands again beyond: a road sketched past the
+            # shore just ends there — a bridge out of it went nowhere (University Avenue).
+            ends = sorted((full.project(Point(wet.coords[0])), full.project(Point(wet.coords[-1]))))
+            if ends[0] < 0.05 or ends[1] > full.length - 0.05:
+                continue
             a = max(0.0, full.project(Point(wet.coords[0])) - 0.3)
             b = min(full.length, full.project(Point(wet.coords[-1])) + 0.3)
             if a > b:
@@ -1731,6 +1921,15 @@ def build():
     # The lanes give way to what stands out there too — the prison's walls, the mall, the track.
     lanes = [p for ln in lanes for p in lines_of(ln.difference(plazas_round)) if p.length > 0.2]
 
+    # Every road on the land by its whole width: one along the shore whose kerb
+    # hung over the water is eased inland, point by point — the same move for
+    # every road through a point, so the junctions stay joined — and one that
+    # ran down to the water now stops at the quay.
+    streets = [(s_, c) for s_, c in ((ashore(s_), c) for s_, c in streets) if s_ is not None]
+    secondary = [s_ for s_ in (ashore(s_) for s_ in secondary) if s_ is not None]
+    lanes = [s_ for s_ in (ashore(s_) for s_ in lanes) if s_ is not None]
+    named = [(ln, c, n) if c == "rail" else (ashore(ln), c, n) for ln, c, n in named]
+    named = [(ln, c, n) for ln, c, n in named if ln is not None]
     # Each bridge's ends run on to the nearest road, so nothing dead-ends at a bank.
     network = unary_union([ln for ln, c, _ in named if c != "rail"] + secondary + [s for s, _ in streets])
     for line, _name in list(bridges):
@@ -1812,12 +2011,14 @@ def build():
     # Piers along the docks: finger piers square to a straight stretch of quay —
     # never on a bend, where they'd fan into each other — none crossing another
     # or a bridge, and on the long ones a shed.
-    placed_piers, candidate_piers = [], []
-    # The streets along the quays: a jetty starts at the water's edge, beyond them.
+    placed_piers, candidate_piers, pier_zone = [], [], {}
+    # The streets along the quays: a jetty starts at the water's edge beyond them.
+    # The roads keep off the water by more than this (see ashore), so cutting a
+    # jetty back from them never leaves it floating off the quay.
     quayside = unary_union([s_.buffer(0.12 if c == "avenue" else 0.09) for s_, c in streets]
                            + [s_.buffer(0.15) for s_ in secondary]
                            + [ln.buffer(0.24 if c == "highway" else 0.2 if c == "primary" else 0.15) for ln, c, _ in named
-                              if c != "rail"]).buffer(0.03)
+                              if c != "rail"])
     bridge_zone = unary_union([ln.buffer(0.6) for ln, _ in bridges]) if bridges else Point(0, 0).buffer(0)
     channels = []
     for f in src.get("ferries", []):
@@ -1873,7 +2074,9 @@ def build():
                 pier = LineString([(p_.x - nx * 0.02, p_.y - ny * 0.02),
                                    (p_.x + nx * length, p_.y + ny * length)]).buffer(0.12, cap_style="flat")
                 pier = max(polys_of(pier.difference(quayside)), key=lambda g: g.area, default=pier)
-                if (pier.intersection(land).area < 0.03 and not pier.intersects(bridge_zone)
+                # Standing on the quay, never out in the water on its own.
+                if (pier.intersection(land).area < 0.03 and pier.distance(land) < 0.002
+                        and not pier.intersects(bridge_zone)
                         and not any(pier.buffer(0.12).intersects(o) for o, _ in candidate_piers)):
                     shed = None
                     if length > 1.3 and r.random() < 0.65:
@@ -1881,42 +2084,101 @@ def build():
                                             (p_.x + nx * (length - 0.15), p_.y + ny * (length - 0.15))]).buffer(0.085, cap_style="flat"),
                                 r.choice((10, 11, 13)))
                     candidate_piers.append((pier, shed))
+                    pier_zone[id(pier)] = (zone["name"], (nx, ny))
                 pos += r.uniform(0.9, 1.25)
 
     # Ferries between their piers and ships in from the sea, by way of the water.
+    numbered = {}
     for pier, shed in sorted(candidate_piers, key=lambda ps: -ps[0].area):
         if any(pier.buffer(0.08).intersects(o) for o in placed_piers):
             continue
-        building(pier, 2, "~pier")
+        building(pier, 3, "~pier")
         placed_piers.append(pier)
+        numbered.setdefault(pier_zone[id(pier)][0], []).append((pier, pier_zone[id(pier)][1]))
         if shed is not None and pier.buffer(0.01).contains(shed[0]):
-            building(shed[0], shed[1], "~works", base=2)
+            building(shed[0], shed[1], "~works", base=3)
+    # Their numbers, as the waterfront knows them: counted along the quay.
+    counting = {"Gotham Docks": (20, "Pier {}"), "East End Docks": (40, "Pier {}"), "Waterloo Docks": (1, "Pier {}"),
+                "Tricorner Naval Yard": (1, "Berth {}"), "Gotham Marina": (0, "Dock {}")}
+    for zone_name, rows in numbered.items():
+        if zone_name not in counting:
+            continue
+        start, form = counting[zone_name]
+        ux, uy = rows[0][1]
+        rows.sort(key=lambda pr: pr[0].centroid.x * -uy + pr[0].centroid.y * ux)
+        for k, (pier, (ux, uy)) in enumerate(rows):
+            tip = max(pier.exterior.coords, key=lambda c: c[0] * ux + c[1] * uy)
+            mid = pier.centroid
+            reach = (tip[0] - mid.x) * ux + (tip[1] - mid.y) * uy
+            at = Point(mid.x + ux * (reach + 0.16), mid.y + uy * (reach + 0.16))
+            turn = math.degrees(math.atan2(uy, ux))
+            turn = turn - 180 if turn > 90 else turn + 180 if turn < -90 else turn
+            add(at, "pier_label", n=form.format(chr(ord("A") + k) if "{}" in form and zone_name == "Gotham Marina"
+                                                else start + k), r=round(turn, 1))
     # Rocks and islets in the open water: the Devil's Teeth off Blackgate, the Gull
-    # Islets under the north shore, the Sentinel Rocks out at the harbour mouth.
+    # Islets under the north shore, the Sentinel Rocks out at the harbour mouth —
+    # strung out as the sea leaves rock, not set out: one or two big, the rest
+    # small, gaps between, no two alike and none a circle.
     islets, ir = [], random.Random(4700)
     lines_kept_clear = unary_union([ln.buffer(1.0) for ln, _ in bridges] or [Point(0, 0).buffer(0)])
-    def tooth(x, y, angle, size):
-        """A sharp sliver of rock, narrow and pointed, like a fang."""
-        return affinity.rotate(Polygon([(x - size * 0.35, y + size), (x, y - size * 1.2), (x + size * 0.35, y + size)]),
-                               angle, origin=(x, y))
-    shapes = {
-        # A curving row of sharp, narrow rocks — the reef that gave the Teeth their name.
-        "The Devil's Teeth": lambda cx, cy: [(tooth(cx + math.cos(t) * 1.2, cy + math.sin(t) * 0.6, math.degrees(t) + 90,
-                                                    ir.uniform(0.09, 0.16)), ir.choice((7, 9, 12)))
-                                              for t in [math.radians(200 + k * 24) for k in range(7)]],
-        # Low, round islets where the gulls sit.
-        "Gull Islets": lambda cx, cy: [(blob(cx + dx, cy + dy, r, 4900 + int(dx * 10)), 2)
-                                       for dx, dy, r in ((-0.6, 0.1, 0.28), (0.1, -0.3, 0.22), (0.7, 0.25, 0.18), (0.2, 0.55, 0.12))],
-        # Lone sea stacks standing up out of the water, like sentries.
-        "Sentinel Rocks": lambda cx, cy: [(disc(cx + dx, cy + dy, r), h)
-                                          for dx, dy, r, h in ((0.0, 0.0, 0.11, 34), (0.8, 0.45, 0.08, 26), (-0.7, 0.6, 0.07, 22))],
+
+    def crag(cx, cy, size, rr, sharp=False):
+        """One rock: an uneven outline — a fang leans to one point, a skerry is low and lumpy."""
+        n = rr.randint(4, 6) if sharp else rr.randint(5, 9)
+        aspect, turn = rr.uniform(0.5, 0.95), rr.uniform(0, math.pi)
+        peak = rr.randrange(n)
+        pts = []
+        for k in range(n):
+            a = k * 2 * math.pi / n + rr.uniform(-0.4, 0.4)
+            d = size * (rr.uniform(1.3, 1.9) if sharp and k == peak else rr.uniform(0.45, 0.95) if sharp
+                        else rr.uniform(0.6, 1.3))
+            x, y = math.cos(a) * d, math.sin(a) * d * aspect
+            pts.append((cx + x * math.cos(turn) - y * math.sin(turn), cy + x * math.sin(turn) + y * math.cos(turn)))
+        return Polygon(pts).buffer(0)
+
+    def reef(cx, cy, axis, length, count, sizes, rr, sharp=False, bend=0.0):
+        """A run of rock along a line that bends, bunched and gapped, mostly small."""
+        rocks, t_ = [], -length / 2
+        while t_ < length / 2 and len(rocks) < count * 2:
+            t_ += rr.choice((0.12, 0.18, 0.25, 0.32, 0.5, 0.9)) * rr.uniform(0.7, 1.3)
+            off = bend * (t_ / max(length, 0.1)) ** 2 * length + rr.gauss(0, 0.07 + 0.05 * abs(t_) / max(length, 0.1))
+            x = cx + math.cos(axis) * t_ - math.sin(axis) * off
+            y = cy + math.sin(axis) * t_ + math.cos(axis) * off
+            size = sizes[0] + (sizes[1] - sizes[0]) * rr.random() ** 2.4
+            g = crag(x, y, size, rr, sharp)
+            if not any(g.buffer(0.025).intersects(o) for o, _ in rocks):
+                rocks.append((g, size))
+            if rr.random() < 0.3:                   # a small one at its foot
+                g2 = crag(x + rr.uniform(-0.12, 0.12), y + rr.uniform(-0.12, 0.12), sizes[0] * rr.uniform(0.5, 0.9), rr)
+                if not any(g2.buffer(0.02).intersects(o) for o, _ in rocks):
+                    rocks.append((g2, sizes[0] * 0.7))
+        return rocks
+
+    groups = {
+        # A jaw of leaning fangs off Blackgate, uneven, with gaps where teeth are missing.
+        "The Devil's Teeth": lambda: [(g, int(4 + s * 70)) for g, s in
+                                      reef(79.0, 124.0, math.radians(-12), 3.4, 10, (0.05, 0.17), ir, sharp=True, bend=0.5)],
+        # Low, lumpy islets where the gulls sit, skerries round them.
+        "Gull Islets": lambda: ([(landmass([(40.0 + dx + math.cos(a) * r * ir.uniform(0.7, 1.2),
+                                              13.0 + dy + math.sin(a) * r * ir.uniform(0.6, 1.1))
+                                             for a in [k * 2 * math.pi / 9 for k in range(9)]], 4900 + i, amp=0.08), 2)
+                                 for i, (dx, dy, r) in enumerate(((-0.7, 0.15, 0.3), (0.35, -0.25, 0.19), (0.95, 0.4, 0.12)))]
+                                + [(g, 1) for g, _ in reef(40.2, 13.1, math.radians(15), 2.6, 7, (0.03, 0.07), ir)]),
+        # Sea stacks standing up out of the water like sentries, rubble round their feet.
+        "Sentinel Rocks": lambda: ([(crag(40.0 + dx, 139.0 + dy, r, ir), h)
+                                    for dx, dy, r, h in ((0.0, 0.0, 0.12, 34), (0.86, 0.38, 0.085, 25), (-0.62, 0.71, 0.07, 19))]
+                                   + [(g, int(2 + s * 30)) for g, s in reef(40.1, 139.3, math.radians(25), 2.0, 6, (0.03, 0.06), ir)]),
     }
     for name, (cx, cy) in (("The Devil's Teeth", (79.0, 124.0)), ("Gull Islets", (40.0, 13.0)), ("Sentinel Rocks", (40.0, 139.0))):
-        made = [(g, h) for g, h in shapes[name](cx, cy)
-                if g.distance(land) > 0.5 and not g.intersects(lines_kept_clear)]
+        made, taken = [], Point(0, 0).buffer(0)
+        for g, h in groups[name]():
+            if g.is_empty or g.distance(land) <= 0.5 or g.intersects(lines_kept_clear) or g.buffer(0.02).intersects(taken):
+                continue
+            made.append((g, h))
+            taken = taken.union(g)
         for g, h in made:
             add(g, "land", n=name, k="islet")
-            building(g.buffer(-0.02) if g.area > 0.02 else g, h, "~rock")
+            building(g.buffer(-0.015) if g.area > 0.02 else g, h, "~rock")
         if made:
             add(Point(cx, cy + 1.3), "water_label", n=name, r=0, s=1)
         islets += [g for g, _ in made]
@@ -1939,6 +2201,31 @@ def build():
         add(LineString(pts), "ferry", n=ferry["name"], st=[round(m / total, 4) for m in marks])
     for lane in src.get("shipping", []):
         add(LineString(waters.route(lane["from"], lane["to"], berth=True)), "lane", n=lane["name"])
+    # Where people sail: loops in open water all round the city — off the marina,
+    # in the harbours, out in the bay, off the Mile, up the rivers where they're
+    # wide — each well clear of the shore, the piers, the rocks and the bridges,
+    # so no boat ever sails through any of them.
+    afloat = obstacles.buffer(0.5).union(unary_union([ln.buffer(0.6) for ln, _ in bridges] or [Point(0, 0).buffer(0)]))
+    afloat = shapely.prepared.prep(afloat)
+    sr_, loops = random.Random(5150), 0
+    for cx, cy, spread, count in ((11.5, 101.0, 2.0, 4), (52.0, 128.0, 3.5, 4), (58.0, 118.5, 2.5, 2),
+                                  (96.0, 18.0, 5.0, 5), (76.0, 20.0, 3.0, 3), (27.0, 11.0, 4.0, 3),
+                                  (64.0, 137.0, 3.5, 2), (36.0, 150.0, 5.0, 3), (86.0, 64.0, 3.0, 2),
+                                  (12.0, 76.0, 2.0, 2), (-14.0, 44.0, 2.0, 1), (108.0, 2.0, 3.0, 2)):
+        made = 0
+        for _ in range(60):
+            if made >= count:
+                break
+            x, y = cx + sr_.uniform(-spread, spread), cy + sr_.uniform(-spread, spread)
+            rx, ry = sr_.uniform(0.5, 1.5), sr_.uniform(0.25, 0.7)
+            hull = affinity.rotate(affinity.scale(Point(x, y).buffer(1.0, 16), rx, ry), sr_.uniform(0, 180))
+            ring = LineString(hull.exterior.coords)
+            if afloat.intersects(ring.buffer(0.05)):
+                continue
+            add(ring, "sailing", b=sr_.choice((1, 1, 2, 2, 3)))
+            made += 1
+            loops += 1
+    print(f"{loops} sailing loops")
     if air:
         # The airport: runways with their markings and lights, the taxiways,
         # aprons, the terminal and its gates, the car parks and the cargo side.
@@ -1984,6 +2271,7 @@ def build():
     # Landmarks first, so the blocks around them leave them room.
     places_by = {p["name"]: p for p in src["places"]}
     reserved = []
+    compounds = []      # walled grounds levelled whole for the terrain
     for name in places_by:
         p = places_by[name]
         tiers = landmark_shapes(name, *footprint_at(p))
@@ -1992,6 +2280,15 @@ def build():
             building(shape, top, kind, base=base)
         if tiers:
             reserved.append(unary_union([t[0] for t in tiers]).buffer(0.4 if name not in COMPLEXES else 0.18))
+            # A walled compound stands on one levelled terrace, wall and all: its
+            # whole ground is a pad for the terrain, not just the buildings on it.
+            whole = unary_union([t[0] for t in tiers])
+            walled = any(g.geom_type == "Polygon" and g.interiors for g, _b, _t in tiers)
+            if walled and whole.envelope.area > 2.0:
+                compounds.append(whole.envelope.buffer(0.08))
+        # Strings of lanterns over a market's aisles, lit after dark.
+        for line in (COMPLEXES[name](*footprint_at(p)).get("lanterns", []) if name in COMPLEXES else []):
+            add(line, "lantern")
     reserved.append(ground_block.buffer(0.05))
     # Arkham behind its wall, a gate where the drive comes in; Blackgate's outer fence.
     for pl in src["places"]:
@@ -2043,27 +2340,40 @@ def build():
         reserved.append(wall.buffer(0.15))
     rk = random.Random(4400)
     keep_water_clear = unary_union([ln.buffer(0.45) for ln, _ in bridges] or [Point(0, 0).buffer(0)])
-    for isle, every, reach in (("Arkham Island", 1.6, (0.35, 1.1)), ("Paris Island", 1.4, (0.3, 0.8))):
-        if areas.get(isle) is None:
+    for isle, heads, solo in (("Arkham Island", 3, 2), ("Paris Island", 2, 1)):
+        shape_ = areas.get(isle)
+        if shape_ is None:
             continue
-        edge = areas[isle].exterior
-        d_ = rk.uniform(0, every)
-        while d_ < edge.length:
-            q = edge.interpolate(d_)
-            ahead = edge.interpolate(min(edge.length, d_ + 0.1))
+        shape_ = max(polys_of(shape_), key=lambda g: g.area)
+        edge, hull = shape_.exterior, shape_.convex_hull.exterior
+        # How exposed each stretch of shore is: on the hull, a headland; far inside it, a cove.
+        samples = [edge.interpolate(k / 120, normalized=True) for k in range(120)]
+        exposure = [-(hull.distance(q)) for q in samples]
+        chosen = []
+        for k in sorted(range(120), key=lambda i: exposure[i], reverse=True):
+            if all(min(abs(k - c), 120 - abs(k - c)) > 120 // (heads + 2) for c in chosen):
+                chosen.append(k)
+            if len(chosen) == heads:
+                break
+        spots = [(samples[k], rk.uniform(1.4, 2.6), rk.randint(4, 8)) for k in chosen]
+        spots += [(edge.interpolate(rk.random(), normalized=True), 0.3, 1) for _ in range(solo)]
+        placed_rocks = []
+        for q, length, count in spots:
+            ahead = edge.interpolate(min(edge.length, edge.project(q) + 0.1))
             nx_, ny_ = -(ahead.y - q.y), ahead.x - q.x
             n_ = math.hypot(nx_, ny_) or 1
             nx_, ny_ = nx_ / n_, ny_ / n_
-            if areas[isle].contains(Point(q.x + nx_ * 0.3, q.y + ny_ * 0.3)):
+            if shape_.contains(Point(q.x + nx_ * 0.3, q.y + ny_ * 0.3)):
                 nx_, ny_ = -nx_, -ny_
-            out_ = rk.uniform(*reach)
-            cx_, cy_ = q.x + nx_ * out_, q.y + ny_ * out_
-            r_ = rk.uniform(0.05, 0.12)
-            jag = Polygon([(cx_ + math.cos(a) * r_ * rk.uniform(0.55, 1.25), cy_ + math.sin(a) * r_ * rk.uniform(0.55, 1.25))
-                           for a in [k * 2 * math.pi / 7 + rk.uniform(-0.3, 0.3) for k in range(7)]]).buffer(0)
-            if not jag.intersects(land) and not jag.intersects(keep_water_clear):
-                building(jag, rk.choice((3, 4, 6, 8)), "~rock")
-            d_ += every * rk.uniform(0.5, 1.5)
+            # The reef runs out from the point, the way the rock under it does.
+            out_ = rk.uniform(0.35, 0.6) + length / 2
+            axis = math.atan2(ny_, nx_) + rk.uniform(-0.5, 0.5)
+            for g, s in reef(q.x + nx_ * out_, q.y + ny_ * out_, axis, length, count, (0.04, 0.12), rk,
+                             sharp=isle == "Arkham Island", bend=rk.uniform(-0.4, 0.4)):
+                if (g.distance(land) > 0.12 and not g.intersects(keep_water_clear)
+                        and not any(g.buffer(0.03).intersects(o) for o in placed_rocks)):
+                    placed_rocks.append(g)
+                    building(g, int(2 + s * 55), "~rock")
     for g, layer in grounds:
         if layer in ("plaza", "works", "grounds", "marsh"):
             add(g, {"plaza": "plaza", "works": "works", "grounds": "plaza", "marsh": "marsh"}[layer])
@@ -2136,6 +2446,7 @@ def build():
     cores = src.get("cores", []) + [[d["at"][0], d["at"][1], 0.55, 2.6] for d in ds]
     count = 0
     building_sites = []
+    rising = []           # towers going up: (footprint, height so far)
     lots = []           # (district, centroid, height, area) — for venues and rooftops
     roofs = {}          # centroid -> the footprint itself, so what sits on a roof stays on it
     yard_trees = []     # suburban yards, planted with the parks below
@@ -2171,8 +2482,18 @@ def build():
                     # Some windows lit, some dark: the city at night — and each
                     # quarter's own stuff: stone, glass, steel.
                     h = round(max(4, min(260, h)))
-                    if name in GROWING and piece.area > 0.22 and len(building_sites) < 12 and r.random() < 0.03:
+                    if name in GROWING and piece.area > 0.22 and len(building_sites) < 26 and r.random() < 0.035:
                         building_sites.append(piece)          # cleared for something new: a site, not a building
+                        continue
+                    if (name in TOWERS_RISING and h >= 60 and len(rising) < 12 and r.random() < 0.06
+                            and piece.area > 0.12):
+                        # A tower half built: the frame up so far, a crane on its roof lifting the next floor.
+                        frame = round(h * r.uniform(0.45, 0.75))
+                        building(piece.simplify(0.04), frame, "~frame")
+                        rising.append((piece, frame))
+                        lots.append((name, piece.centroid, frame, piece.area))
+                        roofs[id(lots[-1][1])] = piece
+                        count += 1
                         continue
                     style = ("~lit" if r.random() < 0.14 else "~works" if g.get("industrial")
                              else "~glass" if name in GLASS and h >= 40 else "~old" if name in OLD_QUARTERS
@@ -2220,6 +2541,114 @@ def build():
                     houses += 1
             pos += hr.uniform(0.32, 0.55)
 
+    extra_trees = []      # trees beyond the parks: the countryside's woods, the lakes' islands
+    # Past the sprawl the mainland is countryside, not nothing: fields in their
+    # hedgerows, each farm's at its own angle, woods where the ground's poor, a
+    # farmstead now and then — house, barn, silo — and the county going on into
+    # the dark the way it does past any city.
+    cr = random.Random(3100)
+    view = box(-82, -92, 207, 187)        # past every edge the map can be panned to
+    road_room = unary_union([ln.buffer(0.3 if c == "highway" else 0.24) for ln, c, _ in named if c != "rail"]
+                            + [ln.buffer(0.2) for ln, c, _ in named if c == "rail"] + [s_.buffer(0.14) for s_ in lanes])
+    # Right up to the towns' edges, round the sprawl's lanes and houses — a
+    # gap left round every town read as a grey halo from above.
+    fringe_houses = [g for g in built if g.distance(town_union) < 8.5]
+    country = (open_land.intersection(view).difference(town_union.buffer(1.2)).difference(airfield)
+               .difference(park_union.buffer(0.4)).difference(water_cut.buffer(0.35)).difference(road_room)
+               .difference(unary_union(reserved).buffer(0.2) if reserved else Point(0, 0).buffer(0)))
+    country = country.difference(land.boundary.buffer(0.35))
+    if fringe_houses:
+        country = country.difference(unary_union(fringe_houses).buffer(0.1))
+    country_prep = shapely.prepared.prep(country)
+    built_now = shapely.STRtree(list(built))
+    woods, farms, farmsteads = [], 0, 0
+    lattice = random.Random(3101)
+    rough = {(i, j): lattice.random() for i in range(-12, 40) for j in range(-14, 34)}
+
+    def wildness(x, y):
+        """Smooth noise over the county, 0..1: high where the woods are."""
+        gx, gy = x / 6.0, y / 6.0
+        i, j = math.floor(gx), math.floor(gy)
+        fx, fy = gx - i, gy - j
+        fx, fy = fx * fx * (3 - 2 * fx), fy * fy * (3 - 2 * fy)
+        def at(a, b):
+            return rough.get((a, b), 0.5)
+        top = at(i, j) * (1 - fx) + at(i + 1, j) * fx
+        bottom = at(i, j + 1) * (1 - fx) + at(i + 1, j + 1) * fx
+        return top * (1 - fy) + bottom * fy
+
+    minx, miny, maxx, maxy = country.bounds if not country.is_empty else (0, 0, 0, 0)
+    block_ = 9.0
+    bx = minx
+    while bx < maxx:
+        by = miny
+        while by < maxy:
+            cell = box(bx, by, bx + block_, by + block_)
+            if not country_prep.intersects(cell):
+                by += block_
+                continue
+            angle = cr.uniform(-35, 35)
+            cx_, cy_ = bx + block_ / 2, by + block_ / 2
+            # Small fields near town, big ones out in the county.
+            grow = 1 + min(1.3, max(0.0, (Point(cx_, cy_).distance(town_union) - 12) / 28))
+            # A farm's fields: strips and squares on its own grid, hedged.
+            y = -block_ * 0.75
+            while y < block_ * 0.75:
+                h = cr.uniform(0.9, 1.7) * grow
+                x = -block_ * 0.75
+                while x < block_ * 0.75:
+                    w = cr.uniform(1.0, 2.4) * grow
+                    plot = affinity.rotate(box(cx_ + x, cy_ + y, cx_ + x + w - 0.06, cy_ + y + h - 0.06), angle,
+                                           origin=(cx_, cy_)).intersection(cell)
+                    x += w
+                    if plot.is_empty or not country_prep.intersects(plot):
+                        continue
+                    for piece in polys_of(plot.intersection(country)):
+                        if piece.area < 0.35:
+                            continue
+                        c = piece.representative_point()
+                        if wildness(c.x, c.y) > 0.62:
+                            woods.append(piece.buffer(0.04))
+                            continue
+                        kind = cr.choices(("crop", "pasture", "fallow", "orchard"), (45, 33, 14, 8))[0]
+                        add(piece.simplify(0.02), "field", k=kind)
+                        farms += 1
+                        if (kind != "fallow" and piece.area > 1.1 and cr.random() < 0.13 / grow
+                                and c.distance(town_union) > 5.5):
+                            # The farmstead in its corner: the house, the barn, the silo.
+                            spot = piece.buffer(-0.2)
+                            if spot.is_empty:
+                                continue
+                            corner = Point(min(spot.exterior.coords if spot.geom_type == "Polygon" else [(c.x, c.y)],
+                                               key=lambda q: q[0] + q[1]))
+                            parts = [(rect(corner.x + 0.08, corner.y + 0.06, 0.14, 0.1), cr.choice((6, 7)), "~house"),
+                                     (rect(corner.x + 0.3, corner.y + 0.08, 0.24, 0.13), 9, "~garage"),
+                                     (disc(corner.x + 0.47, corner.y + 0.02, 0.035), 15, "~tank")]
+                            shapes = [affinity.rotate(g, angle, origin=corner) for g, _h, _k in parts]
+                            if all(piece.contains(g) for g in shapes) and not any(
+                                    built_now.query(g.buffer(0.03), predicate="intersects").size for g in shapes):
+                                for g, (_g, h_, k_) in zip(shapes, parts, strict=True):
+                                    building(g, h_, k_)
+                                farmsteads += 1
+                    # (the hedges are the gaps between the plots)
+                y += h
+            by += block_
+        bx += block_
+    wood = unary_union(woods).intersection(country) if woods else None
+    if wood is not None and not wood.is_empty:
+        add(wood.simplify(0.03), "wood")
+        # A tree here and there in them, for close in: a whole forest of them
+        # would be the heaviest thing on the map.
+        wr = random.Random(3102)
+        wood_prep = shapely.prepared.prep(wood.buffer(-0.12))
+        wminx, wminy, wmaxx, wmaxy = wood.bounds
+        for _ in range(int(wood.area * 1.6)):
+            tx, ty = wr.uniform(wminx, wmaxx), wr.uniform(wminy, wmaxy)
+            if wood_prep.contains(Point(tx, ty)):
+                extra_trees.append([round(tx * 100), round(ty * 100), wr.randint(9, 19), wr.randint(7, 12)])
+    wooded = 0 if wood is None else round(wood.area)
+    print(f"countryside: {farms} fields, {farmsteads} farmsteads, {wooded} sq units of woods")
+
     # On the roofs: water towers on the mid-rises, helipads on the tallest.
     rr = random.Random(1300)
     for _d, c, h, area in lots:
@@ -2234,6 +2663,23 @@ def build():
     # Building sites with their cranes, where the city is still growing: each on
     # its own cleared lot, its jib swung where it passes over nothing at all.
     footprints_now = shapely.STRtree(built)
+    for piece, frame in rising:
+        # The rooftop crane: its mast up through the frame, the jib out over the
+        # street side, high above everything round it — nothing to hit up there.
+        c = piece.representative_point()
+        top = frame + rr.randint(26, 40)
+        jib = None
+        for angle in sorted(range(0, 360, 20), key=lambda _a: rr.random()):
+            boom = affinity.rotate(box(c.x - 0.18, c.y - 0.022, c.x + 0.7, c.y + 0.022), angle, origin=(c.x, c.y))
+            # Swung clear of any tower tall enough to reach it.
+            if not any(heights[k] >= top - 6 and not built[k].equals(piece.simplify(0.04))
+                       for k in footprints_now.query(boom, predicate="intersects")):
+                jib = boom
+                break
+        if jib is None:
+            continue
+        building(square(c.x, c.y, 0.05), top, "~crane", base=frame)
+        building(jib, top - 2, "~crane", base=top - 5)
     for site in building_sites:
         add(site, "site")
         c = site.representative_point()
@@ -2302,6 +2748,7 @@ def build():
     for lot in lots:
         by_district.setdefault(lot[0], []).append(lot)
     vr = random.Random(1400)
+    venue_list = []
     for kind, (names, where) in venues_by.items():
         pool = list(names)
         vr.shuffle(pool)
@@ -2310,7 +2757,15 @@ def build():
                 if not pool or not by_district.get(district):
                     break
                 name, c, h, area = vr.choice(by_district[district])
-                add(Point(round(c.x, 2), round(c.y, 2)), "venue", n=pool.pop(), k=kind, a=district)
+                called = pool.pop()
+                add(Point(round(c.x, 2), round(c.y, 2)), "venue", n=called, k=kind, a=district)
+                venue_list.append({"name": called, "kind": kind, "area": district,
+                                   "x": round(c.x, 2), "y": round(c.y, 2)})
+    # The same venues for the engine: somewhere real to suggest for a drink, a
+    # coffee, a bite — the Rusty Anchor on the map, not a Blue Anchor made up on the spot.
+    VENUES.write_text(json.dumps({"_doc": "Bars, clubs, diners, cafés and the rest, as the map builds them "
+                                           "(scripts/build_map.py) — generated, do not edit.", "venues": venue_list},
+                                 ensure_ascii=False, indent=0))
 
     # Where the city plays: ball fields and pitches in the parks, courts in the
     # small ones — none on a pond, a landmark, a path or another field.
@@ -2378,6 +2833,176 @@ def build():
         ex = golf.bounds[2] - 0.6
         building(rect(ex, club.y, 0.5, 0.26), 11, "~old")
         fields.append(rect(ex, club.y, 0.9, 0.6))
+
+    # The Wayne estate: not just the house in its woods. The wall round the
+    # grounds and the gates where Manor Drive comes in, the lodge inside them;
+    # the family plot on the rise where Thomas and Martha lie; the old stables;
+    # a glasshouse and the formal garden behind the house, a pool and a court
+    # off the terrace, a pad on the lawn for the helicopter; and on the lake a
+    # boathouse with its jetty, and a folly on an island.
+    manor = next((pl for pl in src["places"] if pl["name"] == "Wayne Manor"), None)
+    estate = next((pk for pk, nm in zip(parks, park_names, strict=True) if nm == "Wayne Estate"), None)
+
+    def court(cx, cy, angle):
+        """One tennis court, 24 x 11 m, its lines and net."""
+        w, h = 0.16, 0.075
+        def turn(g):
+            return affinity.rotate(affinity.translate(g, cx, cy), angle, origin=(cx, cy))
+        add(turn(box(-w / 2 - 0.03, -h / 2 - 0.025, w / 2 + 0.03, h / 2 + 0.025)), "pitch", k="court")
+        add(turn(box(-w / 2, -h / 2, w / 2, h / 2).exterior), "pitch_line", k="line")
+        add(turn(LineString([(0, -h / 2), (0, h / 2)])), "pitch_line", k="line")
+        return turn(box(-w / 2 - 0.03, -h / 2 - 0.025, w / 2 + 0.03, h / 2 + 0.025))
+
+    def islet(lake, seed, radius=0.2):
+        """A small island, well out in a lake: its land, and the spot at its middle."""
+        lr_ = random.Random(seed)
+        minx, miny, maxx, maxy = lake.bounds
+        best = None
+        for _ in range(400):
+            q = Point(lr_.uniform(minx, maxx), lr_.uniform(miny, maxy))
+            # Clear of where the lake's name is written, which is its middle.
+            if lake.contains(q) and q.distance(lake.representative_point()) > 0.9:
+                room = q.distance(lake.exterior)
+                # Well out, but not dead centre: an island sits off to one side.
+                score = min(room, radius * 3.2) - 0.15 * q.distance(lake.centroid) / max(1e-6, math.sqrt(lake.area))
+                if room > radius * 2.2 and (best is None or score > best[0]):
+                    best = (score, q)
+        if best is None:
+            return None
+        q = best[1]
+        print(f"islet {seed} at ({q.x:.2f}, {q.y:.2f})")
+        land_ = blob(q.x, q.y, radius, seed)
+        add(land_, "land", n="", k="island")
+        for _k in range(int(radius * 40)):
+            a, d = lr_.uniform(0, 6.283), lr_.uniform(0.05, radius * 0.75)
+            tx, ty = q.x + math.cos(a) * d, q.y + math.sin(a) * d
+            if land_.buffer(-0.04).contains(Point(tx, ty)) and Point(tx, ty).distance(q) > 0.07:
+                extra_trees.append([round(tx * 100), round(ty * 100), lr_.randint(7, 13), lr_.randint(5, 8)])
+        return q
+
+    def boathouse(lake, toward, seed, size=(0.2, 0.12)):
+        """A boathouse on the shore nearest `toward`, and its jetty out over the water."""
+        lr_ = random.Random(seed)
+        ring = lake.exterior
+        start = ring.project(Point(toward))
+        for k in range(24):
+            q = ring.interpolate((start + (k // 2) * 0.12 * (1 if k % 2 else -1)) % ring.length)
+            ahead = ring.interpolate((ring.project(q) + 0.05) % ring.length)
+            tx, ty = ahead.x - q.x, ahead.y - q.y
+            n_ = math.hypot(tx, ty) or 1
+            nx, ny = -ty / n_, tx / n_
+            if not lake.contains(Point(q.x + nx * 0.1, q.y + ny * 0.1)):
+                nx, ny = -nx, -ny                        # the normal that points out over the water
+            end = Point(q.x + nx * 0.28, q.y + ny * 0.28)
+            house_at = Point(q.x - nx * 0.13, q.y - ny * 0.13)
+            if not lake.contains(end) or lake.contains(house_at) or water_cut.contains(house_at):
+                continue
+            angle = math.degrees(math.atan2(ny, nx))
+            jetty = LineString([(q.x - nx * 0.03, q.y - ny * 0.03), (end.x, end.y)]).buffer(0.017, cap_style="flat")
+            house = affinity.rotate(rect(house_at.x, house_at.y, size[1], size[0]), angle, origin=house_at)
+            building(jetty, 1.4, "~pier")
+            building(house, lr_.choice((6, 7)), "~old")
+            reserved.append(house.buffer(0.08))
+            print(f"boathouse {seed} at ({house_at.x:.2f}, {house_at.y:.2f})")
+            return house_at
+        return None
+
+    if manor is not None and estate is not None:
+        mx, my = manor["x"], manor["y"]
+        drive = next((ln for ln, c, nm in named if nm == "Manor Drive"), None)
+        if drive is not None:
+            crossing = drive.intersection(estate.exterior)
+            ends = [g for g in getattr(crossing, "geoms", [crossing]) if g.geom_type == "Point"]
+            if ends:
+                gate = max(ends, key=lambda q: q.distance(Point(mx, my)))
+                # In short lengths: a building stands at one height, and the wall
+                # whole would have floated over every dip in the grounds.
+                ring = estate.exterior
+                for k in range(int(ring.length / 0.25) + 1):
+                    piece = substring(ring, k * 0.25, min(ring.length, (k + 1) * 0.25))
+                    if piece.length > 0.02:
+                        building(piece.buffer(0.012, cap_style="flat").difference(gate.buffer(0.11)).difference(water_cut),
+                                 2.6, "~old")
+                at = drive.project(gate)
+                p0, p1 = drive.interpolate(max(0.0, at - 0.05)), drive.interpolate(at + 0.05)
+                ang = math.atan2(p1.y - p0.y, p1.x - p0.x)
+                nx, ny = -math.sin(ang), math.cos(ang)
+                for side in (1, -1):
+                    building(square(gate.x + nx * 0.105 * side, gate.y + ny * 0.105 * side, 0.045), 4.5, "~old")
+                inward = 1 if drive.interpolate(at + 0.3).distance(Point(mx, my)) < gate.distance(Point(mx, my)) else -1
+                q = drive.interpolate(at + 0.32 * inward)
+                lodge = affinity.rotate(rect(q.x + nx * 0.25, q.y + ny * 0.25, 0.18, 0.13), math.degrees(ang),
+                                        origin=(q.x + nx * 0.25, q.y + ny * 0.25))
+                building(lodge, 7, "~old")
+                reserved.append(lodge.buffer(0.08))
+        estate_parts = [
+            # The family plot: a low wall, the mausoleum, two rows of stones.
+            (rect(mx - 2.6, my + 1.8, 0.38, 0.28).exterior.buffer(0.01), 1.2, "~old"),
+            (rect(mx - 2.6, my + 1.72, 0.11, 0.075), 5, "~old"),
+            # The old stables, an L round a yard.
+            (rect(mx + 2.3, my + 0.6, 0.46, 0.12), 7, "~old"),
+            (rect(mx + 2.47, my + 0.81, 0.12, 0.3), 7, "~old"),
+            # The glasshouse, north of the garages.
+            (rect(mx - 1.25, my - 1.15, 0.32, 0.11), 4.5, "~glass"),
+            # The pool house.
+            (rect(mx + 1.5, my - 0.82, 0.1, 0.06), 4, "~old"),
+            # The pad on the east lawn.
+            (disc(mx + 2.9, my + 2.6, 0.11), 0.5, "~pad"),
+        ]
+        for k in range(2):
+            for j in range(5):
+                estate_parts.append((rect(mx - 2.72 + j * 0.06, my + 1.84 + k * 0.06, 0.014, 0.007), 1, "~old"))
+        for g, h, kind in estate_parts:
+            building(g, h, kind)
+            reserved.append(g.buffer(0.08))
+        # Lawns round the house, the woods kept back from it — and an avenue of
+        # trees down Manor Drive from the gates.
+        reserved.append(blob(mx + 0.3, my + 0.1, 1.55, 4102))
+        if drive is not None:
+            inside_drive = drive.intersection(estate.buffer(-0.3))
+            for part in lines_of(inside_drive):
+                d_ = 0.1
+                while d_ < part.length:
+                    a_, b_ = part.interpolate(d_), part.interpolate(min(part.length, d_ + 0.02))
+                    ang_ = math.atan2(b_.y - a_.y, b_.x - a_.x)
+                    for side in (1, -1):
+                        tx, ty = a_.x - math.sin(ang_) * 0.3 * side, a_.y + math.cos(ang_) * 0.3 * side
+                        extra_trees.append([round(tx * 100), round(ty * 100), 15, 9])
+                    d_ += 0.24
+        # The formal garden behind the house: gravel walks, a fountain, clipped beds.
+        garden = rect(mx, my - 0.95, 0.95, 0.42)
+        add(garden, "plaza")
+        add(disc(mx, my - 0.95, 0.045), "water", k="fountain")
+        for ln in (LineString([(mx - 0.47, my - 0.95), (mx + 0.47, my - 0.95)]),
+                   LineString([(mx, my - 1.16), (mx, my - 0.74)])):
+            add(ln, "path")
+        reserved.append(garden.buffer(0.1))
+        # The pool and the court off the terrace.
+        pool = rect(mx + 1.25, my - 0.82, 0.17, 0.07)
+        add(pool, "water", k="pool")
+        reserved.append(pool.buffer(0.1))
+        reserved.append(court(mx + 1.9, my - 1.0, 0).buffer(0.1))
+        # The lake: the boathouse on the bank nearest the house, a folly on an island.
+        for lake_, spec in zip(lakes, src["lakes"], strict=True):
+            if spec["name"] == "Wayne Lake":
+                boathouse(lake_, (mx, my), 4100)
+                folly = islet(lake_, 4101, 0.22)
+                if folly is not None:
+                    building(disc(folly.x, folly.y, 0.05), 5, "~old")       # a little round temple
+    # Islands and boathouses on the city's other lakes: the Reservoir's memorial
+    # island and the park's boathouse; Bristol's boat club and its islet.
+    for lake_, spec in zip(lakes, src["lakes"], strict=True):
+        if spec["name"] == "The Reservoir":
+            boathouse(lake_, (lake_.centroid.x + 4, lake_.centroid.y), 4200, size=(0.3, 0.14))
+            isle = islet(lake_, 4201, 0.26)
+            if isle is not None:
+                building(square(isle.x, isle.y, 0.1), 1.6, "~old")             # the plinth
+                building(square(isle.x, isle.y, 0.035), 18, "~old")            # the obelisk
+        elif spec["name"] == "Bristol Lake":
+            boathouse(lake_, (lake_.centroid.x, lake_.centroid.y - 4), 4300, size=(0.34, 0.15))
+            isle = islet(lake_, 4301, 0.18)
+            if isle is not None:
+                building(disc(isle.x, isle.y, 0.04), 4, "~old")                # a gazebo
 
     # Trees, through the parks — wholly inside them, crown and all, so none
     # leans out over a pavement or a roof at the park's edge.
@@ -2455,6 +3080,8 @@ def build():
                 and not footprint_tree.query(crown, predicate="intersects").size):
             trees.append([round(x * 100), round(y * 100), h, r])
 
+    trees.extend(extra_trees)
+
     # Water that catches the light.
     import numpy as np
     sr = np.random.default_rng(3)
@@ -2468,6 +3095,27 @@ def build():
         add(Point(p["x"], p["y"]), "place", n=p["name"], k=p["kind"], i=p.get("icon", ""), a=p["area"])
     for w in src["water"]:
         add(Point(w["at"]), "water_label", n=w["name"], r=w.get("rotate", 0))
+    # The bays and coves no label names yet — wherever the sea comes in between two
+    # headlands — named the way Gotham names its waters, for the people who made it.
+    BAYS = ["Moldoff Bay", "Schwartz Cove", "Aparo Bay", "Novick Cove", "O'Neil Bay", "Englehart Cove", "Rogers Bay",
+            "Breyfogle Cove", "Giordano Bay", "Infantino Cove", "Mazzucchelli Bay", "Dixon Cove", "Grant Bay",
+            "Sale Cove", "Loeb Bay"]
+    labelled = [Point(w["at"]) for w in src["water"]] + [Point(at) for at in ((79.0, 125.3), (40.0, 14.3), (40.0, 140.3))]
+    coves = []
+    for g in polys_of(land.buffer(2.4).buffer(-2.4).difference(land)):
+        if g.area < 1.2 or g.intersection(water_cut).area > 0.4 * g.area:
+            continue                                      # a river's reach, not the sea's
+        corners = list(g.minimum_rotated_rectangle.exterior.coords)
+        sides = sorted(math.dist(corners[i], corners[i + 1]) for i in range(2))
+        if sides[1] > 5 * max(sides[0], 0.1):
+            continue                                      # a channel, not a bay
+        at = shapely.ops.polylabel(g, 0.05)
+        if any(at.distance(q) < 4.5 for q in labelled):
+            continue
+        coves.append((g.area, at))
+    for (_area, at), name in zip(sorted(coves, key=lambda c: (-c[0], c[1].x)), BAYS, strict=False):
+        add(at, "water_label", n=name, r=0, s=1)
+        labelled.append(at)
     for name, at in (("Gotham County", (-6, 50)), ("Blackgate Isle", (69, 127.4)), ("Blüdhaven", (121, -22)),
                      ("Justice Island", (57.6, 132.8))):
         add(Point(at), "area_label", n=name)
@@ -2485,7 +3133,7 @@ def build():
                               ensure_ascii=False, separators=(",", ":")))
     BUILDINGS.write_text(json.dumps(buildings, ensure_ascii=False, separators=(",", ":")))
     (OUT.parent / "gotham-trees.json").write_text(json.dumps(trees, separators=(",", ":")))
-    tiles, bounds = terrain_tiles(land)
+    tiles, bounds = terrain_tiles(land, built, lakes, compounds)
     size = sum(f.stat().st_size for f in TERRAIN.rglob("*.png"))
     print(f"{len(features)} features ({OUT.stat().st_size / 1e6:.2f} MB), {len(buildings)} buildings "
           f"({BUILDINGS.stat().st_size / 1e6:.2f} MB), {len(trees)} trees, {tiles} terrain tiles "

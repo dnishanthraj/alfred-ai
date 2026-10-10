@@ -100,7 +100,43 @@ def remarks_on_brevity(sentence, prompt):
     # "Is that all?" / "That's it?" said back to a one-word reply is about its length.
     if re.match(r"\W*(\[\w+\]\s*)?(is that (all|it)|that'?s (all|it))\W*$", s):
         return True
+    if _BREVITY_REMARK.search(s):
+        return True
     return quoted and bool(re.match(r"\W*(don'?t|stop|enough with)\b", s))
+
+
+# How little he said, remarked on in other words: "remarkably brief tonight",
+# "a man of few words", "chatty, aren't we".
+_BREVITY_REMARK = re.compile(
+    r"\b(?:remarkably|very|awfully|rather|so|pretty|bit) (?:brief|terse|quiet|short|succinct)\b|\bfew words\b|"
+    r"\bone[- ]word\b|\bmonosyllab|\bchatty\b|\bshort and sweet\b|\bnot (?:much of )?a talker\b|"
+    r"\b(?:you'?re|you are) (?:being )?(?:quiet|terse|brief|short with me)\b", re.I)
+
+# Taking his temperature — asking how he is, telling him how he sounds. Told not
+# to, every contact still reached for it whenever he was only being brief.
+_CHECK_IN = re.compile(
+    r"^\W*(?:\[[^\]]*\]\s*)?(?:\w+,\s*)?(?:"
+    r"(?:are )?you (?:ok(?:ay)?|good|alright|all right)\b[^.!]*\?"
+    r"|(?:is )?everything (?:ok(?:ay)?|alright|all right)\b[^.!]*\?"
+    r"|you sound (?!like\b)"
+    r"|you seem\b[^.!?]*\b(?:tired|off|down|tense|heavy|quiet|distracted|stressed|wound up)"
+    r"|what'?s (?:really|actually) going on\b"
+    r"|(?:is )?something (?:wrong|bothering you|on your mind)\b"
+    r"|you'?re (?:spiral(?:l)?ing|overthinking (?:it|this)|being paranoid)\b"
+    r"|how are you (?:holding up|really)\b"
+    r")", re.I)
+# What he says that gives a check-in cause.
+_DISTRESS = re.compile(
+    r"\b(?:lost|died|dead|death|killed|hurt|bleeding|hospital|funeral|grie(?:f|ving)|can'?t sleep|nightmares?|"
+    r"scared|afraid|panic|help me|bad (?:night|day)|rough (?:night|day)|awful|terrible|sick|crying|cried|"
+    r"depress\w*|lonely|alone|miss (?:her|him|them|you)|exhausted|wrecked|not okay|not fine|struggling)\b", re.I)
+
+
+def takes_his_temperature(sentence, prompt):
+    """A line asking how he is or telling him how he sounds, when nothing he said gave cause."""
+    if _DISTRESS.search(prompt or ""):
+        return False
+    return bool(_CHECK_IN.search(sentence or ""))
 
 
 def user_is_leaving(prompt):
@@ -334,6 +370,24 @@ PRESENCE_PATTERNS = [
 ]
 
 
+# Somewhere only home has, claimed as where they are right now — "I'm in the
+# kitchen", "standing in my kitchen", "just got out of the shower" — never a
+# plan or a memory ("when I get home", "I left it in the kitchen"). Dick told
+# him all about his kitchen from a rooftop in the Diamond District.
+_AT_HOME = re.compile(
+    r"\b(?:i'?m|i am|just|still|currently|sat|sitting|standing|lying|stuck)\b[^.?!]{0,30}\b(?:in|on|at|out of)\s+"
+    r"(?:my|the|our)\s+(?:kitchen|living room|lounge|bedroom|bathroom|shower|bath|bed|couch|sofa|apartment|flat|"
+    r"place|room|garden|balcony|porch)\b|\b(?:i'?m|i am)\s+(?:at\s+)?home\b|\bback home\b", re.I)
+_NOT_NOW = re.compile(r"\b(when|once|after|later|tonight|tomorrow|will|gonna|going to|'ll|get home|got home|"
+                      r"used to|yesterday|earlier|this morning|last)\b", re.I)
+
+
+def claims_home(sentence):
+    """A sentence putting them at home right now (see _AT_HOME) — for someone who isn't there."""
+    text = sentence or ""
+    return bool(_AT_HOME.search(text)) and not _NOT_NOW.search(text)
+
+
 def presumes_presence(sentence):
     lowered = (sentence or "").lower()
     return any(re.search(pattern, lowered) for pattern in PRESENCE_PATTERNS)
@@ -411,6 +465,9 @@ def apply(text, prompt, max_sentences, already_greeted, forbidden_address=(), fa
     # the length cap, or a reply gets trimmed to make room for staging that is
     # then thrown away.
     text = strip_presence(text) or text
+    kept = [s_ for s_ in split_sentences(text)
+            if not takes_his_temperature(s_, prompt) and not remarks_on_brevity(s_, prompt)]
+    text = " ".join(kept) or text
     if not farewell and not user_is_leaving(prompt):
         text = strip_signoffs(text)
     if already_greeted:
