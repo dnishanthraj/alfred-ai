@@ -555,6 +555,33 @@ class Console(GroupChats):
             # Talking now: any plan to get back to him about a missed call is moot.
             presence.of(contact).drop("callback")
             await self._presence_changed(contact)
+            # Whoever's with them is on the line too — in the room, on their speaker.
+            self._spawn(self._bring_the_room(contact))
+
+    async def _bring_the_room(self, host):
+        """
+        He's called someone who isn't alone: whoever's actually with them —
+        arrived, the same place — is on the call too, on the host's speaker. No
+        ring (they're right there); a moment while the phone goes on speaker;
+        their voices come through the room, quieter, and either of them answers
+        when he says their name.
+        """
+        await asyncio.sleep(random.uniform(1.5, 3.5))
+        if not self.call or host.id not in self._members():
+            return
+        _, company = presence.of(host).whereabouts()
+        for cid in company:
+            other = self.directory.get(cid)
+            if (other is None or cid in self._members() or len(self.call.members) >= MAX_CONTACTS
+                    or presence.of(other).now()["status"] == presence.OFFLINE):
+                continue
+            self.call.speakerphone[cid] = host.id
+            await self.broadcast({"type": "room", "with": dict(self.call.speakerphone)})
+            await self.add(cid, ensure=True, willing=True, remark=False,
+                           note=f"you're with {host.name} — Bruce rang {host.name}, who's put him on speaker; "
+                                "you're not on a line of your own, you're in the room")
+        if self.call and self.call.speakerphone:
+            await self.broadcast({"type": "room", "with": dict(self.call.speakerphone)})
 
     def _abandon_ring(self):
         """
@@ -1718,10 +1745,14 @@ class Console(GroupChats):
             mine = (case.get("members") or {}).get(speaker.id) or {}
             if mine.get("status") == "assigned" and case["status"] == "on scene":
                 how = "on your way to join them"
+            from ..engine import outcomes
+            names = {c.id: c.name for c in self.directory} | {"bruce": "Bruce"}
+            parts = outcomes.roles(cases.team(case), case["kind"], names)
             self._spawn(self._post_as(group, speaker, opening=(
                 f"you're on comms for the {case['kind'].lower()} at {case['place']} — right now you're {how}. "
-                "A quick line to the team, the way people talk on comms mid-op: where you are, what you see, "
-                "a call, a warning — short, no greetings")))
+                f"Each of you is on what you're best at ({parts}). A quick line to the team, the way people talk on "
+                "comms mid-op, from different ends of the same scene: where you are, what you see, a call, a warning, "
+                "the clever move — short, no greetings")))
 
     async def _case_tick(self, now):
         """

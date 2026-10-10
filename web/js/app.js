@@ -84,7 +84,7 @@
   // The old windows (26–48s, then 17–29s, then hang up) closed the call after
   // about a minute and a half of quiet, and every nudge was the same question.
   // Contacts on one call at once: whoever was rung, and two more.
-  var MAX_PARTY = 4;
+  var MAX_PARTY = 7;
 
   var IDLE_WINDOWS = [
     [30000, 30000],   // first lull: he says something of his own
@@ -497,6 +497,10 @@
       }
       seat.node.style.order = i;
       seat.node.dataset.state = state.groupRinging.indexOf(id) !== -1 || state.ringingId === id ? 'ringing' : 'live';
+      // On someone else's phone: say whose.
+      var host = state.room && state.room[id] && state.contacts[state.room[id]];
+      seat.node.querySelector('.seat__name').textContent = contact.name + (host ? ' \u00b7 with ' + host.name : '');
+      seat.node.dataset.room = host ? '1' : '0';
     });
   }
 
@@ -2537,6 +2541,8 @@
   function hangUp(opts) {
     opts = opts || {};
     if (state.muted) { state.muted = false; paintMute(); }
+    state.room = {};
+    ConsoleAudio.setDistant([]);
     clearTimeout(bedTimer);
     ConsoleAudio.beds().forEach(ConsoleAudio.unbed);
     setTimeout(renderCallbar, 0);
@@ -2732,6 +2738,13 @@
       case 'bruce':
         // Where he is and where he's going: his own marker on the map.
         setBruce(event.bruce);
+        break;
+
+      case 'room':
+        // Who's on someone else's phone, on speaker: their voices through the room, their seat says so.
+        state.room = event['with'] || {};
+        ConsoleAudio.setDistant(Object.keys(state.room));
+        renderSeats();
         break;
 
       case 'picked_up':

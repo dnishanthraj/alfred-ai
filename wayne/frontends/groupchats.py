@@ -12,6 +12,7 @@ in turn.
 import asyncio
 import logging
 import random
+import re
 import time
 
 from ..engine import groupchat, initiative, plans, presence
@@ -379,11 +380,21 @@ class GroupChats:
             log.info("%s reacted %s in group %s", contact.id, emoji, group.id)
             await self.broadcast({"type": "group_reaction", "group": group.id, "message": message})
 
+    # A text to him that talks about him — "tell the old man…", "let B know" — was
+    # never for him: it was meant for the chat.
+    _ABOUT_HIM = re.compile(r"(?i)\b(tell|let|ask|warn|remind|update|ping)\s+(the old man|old man|bruce|b|the boss|"
+                            r"batman|the bat|him|dad|pops)\b|\b(bruce|the old man)\s+(needs to|should|wants)\b")
+
     async def _group_actions(self, group, contact, actions):
         """They add someone to the group, or walk out of it — their call, in context."""
         if actions.get("dm"):
-            # Taken private: a text to him, in their thread, as they'd send it.
-            self._spawn(self._dm_from_group(contact, actions["dm"]))
+            if self._ABOUT_HIM.search(actions["dm"]):
+                # Jason's "tell the old man to watch Janus's shell companies" landed in his
+                # own thread with Bruce. It's said about him, to the others: it goes in the chat.
+                self._spawn(self._post_as(group, contact, given=actions["dm"]))
+            else:
+                # Taken private: a text to him, in their thread, as they'd send it.
+                self._spawn(self._dm_from_group(contact, actions["dm"]))
         for name in actions.get("add", [])[:1]:
             newcomer = self.directory.find(name)
             if (newcomer and newcomer.id != contact.id and newcomer.id not in group.members

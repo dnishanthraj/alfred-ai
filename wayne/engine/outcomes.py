@@ -121,6 +121,50 @@ INJURIES = ("a cracked rib", "a knife cut along the forearm", "a concussion", "a
             "a graze from a bullet", "bruised ribs that'll show for a week")
 
 
+# The ratings, in words — what they'd do on a scene, never a number.
+_SKILL_WORDS = {"fight": "fighting", "stealth": "getting in unseen", "detect": "detective work",
+                "tech": "tech and the cameras", "pursuit": "the chase", "hostage": "talking people down, keeping hostages safe",
+                "brutes": "taking on the big ones", "toxins": "toxins and antidotes", "crowd": "crowds and holding a line",
+                "rescue": "getting people out"}
+
+
+def strengths(member, kind=None, top=2):
+    """What they bring — to this kind of call, if one's given — as words: ['detective work', 'tech and the cameras']."""
+    ratings = RATINGS.get(member) or {}
+    want = needs(kind) if kind else {}
+    ranked = sorted(ratings, key=lambda k: -(ratings[k] * (1 + 2 * want.get(k, 0))))
+    return [_SKILL_WORDS[k] for k in ranked[:top]]
+
+
+def weakest(member, kind=None):
+    """Where they're least at home on this call: 'detective work' for Cass, 'taking on the big ones' for Tim."""
+    ratings = RATINGS.get(member) or {}
+    pool = {k: v for k, v in ratings.items() if not kind or k in needs(kind)} or ratings
+    return _SKILL_WORDS[min(pool, key=pool.get)] if pool else ""
+
+
+def roles(team, kind, names):
+    """
+    Who does what on this call: what it asks for most goes to whoever's best at
+    it, the next to the best of the rest — 'Dick on talking people down, Cass on
+    getting in unseen, Tim on the cameras' — and anyone over is on what they're best at.
+    """
+    crew = [m for m in team if m in RATINGS]
+    asked = sorted(needs(kind), key=lambda k: -needs(kind)[k])
+    extra = [k for k in SKILLS if k not in asked]
+    jobs = {}
+    for skill in asked + extra:
+        free = [m for m in crew if m not in jobs]
+        if not free:
+            break
+        best = max(free, key=lambda m: RATINGS[m].get(skill, 0))
+        if skill in asked or RATINGS[best].get(skill, 0) >= 0.85:
+            jobs[best] = skill
+    for m in crew:
+        jobs.setdefault(m, max(RATINGS[m], key=RATINGS[m].get))
+    return "; ".join(f"{names.get(m, m)} on {_SKILL_WORDS[jobs[m]]}" for m in crew)
+
+
 def _roll(case, what):
     return int(hashlib.sha1(f"{case['id']}:{what}".encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
 

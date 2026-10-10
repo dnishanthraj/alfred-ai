@@ -298,11 +298,15 @@ def brief(contact_id, now=None):
         book = directory()
         others = [book.get(c).name if book.get(c) else "Bruce — Batman himself" if c == "bruce" else c
                   for c in team(case) if c != contact_id]
+        from . import outcomes
+        bring = " and ".join(outcomes.strengths(contact_id, case["kind"]))
+        lacking = outcomes.weakest(contact_id, case["kind"])
         return (f"You're working a case: {case['kind'].lower()} at {case['place']} ({case['area']})"
                 + (f" — dispatch said: \"{case['dispatch']}\"" if case.get("dispatch") else "")
                 + f". {who} {minutes} minutes ago" + (f", with {' and '.join(others)} on it too" if others else "")
-                + f". Right now you're {how}. It's yours to talk about, "
-                "your way — what you've found, what you think, how it's going.")
+                + f". Right now you're {how}. On this one you'd play to what you're good at — {bring}"
+                + (f"; {lacking} is where you'd lean on someone" if lacking and others else "")
+                + ". It's yours to talk about, your way — what you've found, what you think, how it's going.")
     done = recent(contact_id, now)
     if done:
         return (f"Earlier tonight you closed a case: {done['kind'].lower()} at {done['place']} — "

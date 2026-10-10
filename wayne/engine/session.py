@@ -1201,10 +1201,14 @@ class ContactSession:
         crew = [book.get(m).name if book.get(m) else ("Bruce" if m == "bruce" else m) for m in (case.get("team") or [])]
         hurt = "; ".join(f"{book.get(w).name if book.get(w) else w} came out of it with {i}"
                          for w, i in (result.get("hurt") or {}).items())
+        from . import outcomes
+        names = {c.id: c.name for c in book} | {"bruce": "Bruce"}
+        parts = outcomes.roles(case.get("team") or [], case["kind"], names)
         instruction = (
             f"Tell what happened on the {case['kind'].lower()} at {case['place']} the way you'd tell it later, to "
-            f"family: who was there ({', '.join(crew)}), who did what — the moment it turned, one detail that "
-            f"stuck — and how it ended: {result['line']}" + (f"; {hurt}" if hurt else "")
+            f"family: who was there ({', '.join(crew)}), who did what — each doing what they're best at"
+            + (f" ({parts})" if parts else "") + " — the moment it turned, one clever thing someone did, one "
+            f"detail that stuck — and how it ended: {result['line']}" + (f"; {hurt}" if hurt else "")
             + ". Three or four sentences, past tense, plain, true to that ending; nobody who wasn't there in it. "
             "Reply with only the story.")
         payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
@@ -1395,7 +1399,8 @@ class ContactSession:
                     + (f" (could be {', '.join(c.name for c in others)})" if others else "") + ".")
         tags = ", ".join("@" + n for n in groupchat.handles(group, book, self.contact.id).values())
         ask += (" If he asks you to take it to a private message, or there's something you'd only say to "
-                "him privately, end with [dm: what you'd text him] — that goes to your thread with him, not "
+                "him privately, end with [dm: what you'd text him — to him, in the second person, never about him] "
+                "— that goes to your thread with him, not "
                 "here.")
         ask += (" Most messages tag nobody; tag someone only to pull in someone who isn't already "
                 f"talking — never the person you're replying to — and only as {tags}, exactly; "

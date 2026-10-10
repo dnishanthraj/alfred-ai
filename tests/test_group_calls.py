@@ -90,10 +90,10 @@ def test_while_a_line_rings_someone_may_say_so():
     assert _said(list(call.ringing(dick, "Jason"))) == [("nightwing", "Ugh. Really? Him?")]
 
 
-def test_a_call_holds_four_besides_him():
-    members = [Member(f"c{i}", f"N{i}") for i in range(5)]
+def test_a_call_holds_seven_besides_him():
+    members = [Member(f"c{i}", f"N{i}") for i in range(9)]
     call = _call(*members)
-    assert len(call.members) == 4 == party.MAX_CONTACTS
+    assert len(call.members) == 7 == party.MAX_CONTACTS                 # the whole family, and no more
 
 
 def test_everyone_means_all_four_get_a_turn():

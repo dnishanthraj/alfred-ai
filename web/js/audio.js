@@ -54,6 +54,37 @@
       .then(function (buf) { return context().decodeAudioData(buf); });
   }
 
+  /* Someone in the room with whoever he called, heard through their phone on
+     speaker: the phone's band, a little of the room, quieter than the one
+     holding it. */
+  var distant = {}, room = null;
+  function impulse(c, seconds) {
+    var n = Math.floor(c.sampleRate * seconds), buf = c.createBuffer(2, n, c.sampleRate);
+    for (var ch = 0; ch < 2; ch++) {
+      var d = buf.getChannelData(ch);
+      for (var i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3);
+    }
+    return buf;
+  }
+  function roomChain() {
+    if (room) return room;
+    var c = context();
+    var input = c.createGain();
+    var low = c.createBiquadFilter(); low.type = 'highpass'; low.frequency.value = 280;
+    var high = c.createBiquadFilter(); high.type = 'lowpass'; high.frequency.value = 2700;
+    var dry = c.createGain(); dry.gain.value = 0.5;
+    var wet = c.createGain(); wet.gain.value = 0.24;
+    var verb = c.createConvolver(); verb.buffer = impulse(c, 0.45);
+    input.connect(low); low.connect(high); high.connect(dry); high.connect(verb); verb.connect(wet);
+    dry.connect(analyser); wet.connect(analyser);
+    room = input;
+    return room;
+  }
+  function setDistant(ids) {
+    distant = {};
+    (ids || []).forEach(function (id) { distant[id] = true; });
+  }
+
   function enqueue(clipId, text, key, words, speaker) {
     var decoded = load(clipId);
     decoded.catch(function () { /* handled when its turn comes */ });
@@ -79,7 +110,7 @@
         if (item.generation !== generation) return;   // stopped while loading
         var source = ctx.createBufferSource();
         source.buffer = decoded;
-        source.connect(analyser);
+        source.connect(distant[item.speaker] ? roomChain() : analyser);
         source.onended = function () {
           if (current === source) { current = null; next(); }
         };
@@ -197,6 +228,7 @@
   }
 
   global.ConsoleAudio = {
+    setDistant: setDistant,
     context: context,
     resume: resume,
     enqueue: enqueue,

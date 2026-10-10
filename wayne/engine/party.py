@@ -27,7 +27,7 @@ import time
 from .. import events
 from .. import operator as wayne_operator
 
-MAX_CONTACTS = 4
+MAX_CONTACTS = 7          # him and seven of them: the whole family on one line
 # Contact turns per operator turn: the people he addressed, plus one follow-up.
 MAX_TURNS = 3
 # How often, after the people he spoke to have answered, someone else jumps in.
@@ -63,6 +63,8 @@ class Call:
         # When someone on the line last put something to him: the call waits a
         # moment for his answer before carrying on without him.
         self.asked_him_at = 0.0
+        # Who's on someone else's phone, on speaker: {their id: the host's id}.
+        self.speakerphone = {}
 
     # --- membership ------------------------------------------------------
 
@@ -131,6 +133,16 @@ class Call:
         secret = self._secrets(session)
         if secret:
             note += " " + secret
+        host = self.speakerphone.get(session.contact.id)
+        if host:
+            holder = next((m.contact.name for m in self.members if m.contact.id == host), "them")
+            note += (f" You're not on a line of your own: he rang {holder}, who has him on speaker. You hear him through "
+                     f"{holder}'s phone and he hears you when you speak up — chip in when you've something to say, "
+                     "answer when he says your name.")
+        for guest, on in self.speakerphone.items():
+            if on == session.contact.id:
+                name = next((m.contact.name for m in self.members if m.contact.id == guest), guest)
+                note += f" You've got him on speaker — {name} is right here with you and can hear him."
         room = self.in_the_room(session)
         if room:
             note += (f" {' and '.join(room)} {'is' if len(room) == 1 else 'are'} right there with you — the same room, "

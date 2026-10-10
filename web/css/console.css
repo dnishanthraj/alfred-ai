@@ -326,6 +326,7 @@ html[data-rail="hidden"] .rail { display: none; }
 .book__item + .book__item { margin-top: 4px; }
 /* The directory edge to edge: a row's highlight runs the whole width of the rail. */
 .panel--book .book, .panel--book .groups__wrap { margin-left: -20px; margin-right: -20px; }
+.panel--book .groups__wrap .book { margin-left: 0; margin-right: 0; }      /* the fold's own list: edge to edge once, not twice */
 .panel--book .book__row { padding-left: 18px; padding-right: 20px; }
 .panel--book .book__group { padding-left: 20px; padding-right: 20px; }
 html[data-rail="compact"] .panel--book .book, html[data-rail="compact"] .panel--book .groups__wrap { margin-left: -10px; margin-right: -10px; }
@@ -337,6 +338,9 @@ html[data-rail="compact"] .panel--book .book, html[data-rail="compact"] .panel--
 .groups__chev { margin-left: auto; width: 7px; height: 7px; border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor; transform: rotate(45deg); transition: transform 0.2s var(--ease); opacity: 0.7; }
 .groups__toggle[aria-expanded="false"] .groups__chev { transform: rotate(-45deg); }
+.groups__toggle:focus { outline: none; }
+.groups__toggle:focus-visible { outline: 1px solid var(--primary-dim); outline-offset: -1px; }
+.groups__toggle:hover { color: var(--text-dim); }
 .groups__archived-toggle { padding: 10px 20px 4px; font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.18em;
   text-transform: uppercase; color: var(--text-faint); }
 .groups__archived-toggle[hidden], .groups--archived[hidden], .book.groups[hidden] { display: none; }
@@ -1333,9 +1337,10 @@ html[data-rail="compact"] .panel__head .panel__label { display: none; }
 .seats { display: flex; justify-content: center; align-items: flex-start; gap: clamp(16px, 4vw, 48px);
   width: 100%; max-width: 980px; flex-wrap: nowrap; }
 .seats[hidden] { display: none; }
-html[data-seats="2"] .viz, html[data-seats="3"] .viz, html[data-seats="4"] .viz,
-html[data-seats="2"] .utterance, html[data-seats="3"] .utterance,
-html[data-seats="4"] .utterance { display: none; }
+html[data-seats="2"] .viz, html[data-seats="3"] .viz, html[data-seats="4"] .viz, html[data-seats="5"] .viz,
+html[data-seats="6"] .viz, html[data-seats="7"] .viz,
+html[data-seats="2"] .utterance, html[data-seats="3"] .utterance, html[data-seats="4"] .utterance,
+html[data-seats="5"] .utterance, html[data-seats="6"] .utterance, html[data-seats="7"] .utterance { display: none; }
 .seat { flex: 0 1 260px; display: flex; flex-direction: column; align-items: center; min-width: 0;
   transition: opacity 0.3s var(--ease); }
 .seat__ring { position: relative; width: min(220px, 26vh, 100%); aspect-ratio: 1; }
@@ -1345,6 +1350,16 @@ html[data-seats="4"] .seats { display: grid; grid-template-columns: repeat(2, mi
   justify-content: center; row-gap: 14px; }
 html[data-seats="4"] .seat__ring { width: min(150px, 17vh, 100%); }
 html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
+/* Five to seven: three across, or four over three — every face kept, the lines tighter. */
+html[data-seats="5"] .seats, html[data-seats="6"] .seats { display: grid; grid-template-columns: repeat(3, minmax(0, 220px));
+  justify-content: center; row-gap: 10px; column-gap: clamp(12px, 3vw, 32px); }
+html[data-seats="7"] .seats { display: grid; grid-template-columns: repeat(4, minmax(0, 190px)); justify-content: center;
+  row-gap: 10px; column-gap: clamp(10px, 2.4vw, 26px); }
+html[data-seats="5"] .seat__ring, html[data-seats="6"] .seat__ring { width: min(128px, 15vh, 100%); }
+html[data-seats="7"] .seat__ring { width: min(112px, 13vh, 100%); }
+html[data-seats="5"] .seat__line, html[data-seats="6"] .seat__line, html[data-seats="7"] .seat__line {
+  min-height: 2.6em; font-size: 13px; max-width: 220px; }
+html[data-seats="5"] .seat__name, html[data-seats="6"] .seat__name, html[data-seats="7"] .seat__name { margin-top: 4px; font-size: 9px; }
 .seat__ring canvas { width: 100%; height: 100%; display: block; }
 .seat__face { position: absolute; inset: 31%; border-radius: 50%; background-repeat: no-repeat;
   border: 1px solid var(--seat-accent); opacity: 0.85; }
@@ -1354,6 +1369,9 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
   font-size: 15px; line-height: 1.45; color: var(--text); }
 .seat[data-speaking="0"] .seat__line { color: var(--text-dim); }
 .seat[data-state="ringing"] { opacity: 0.55; }
+/* In the room, on someone else's speaker: a step back. */
+.seat[data-room="1"] .seat__ring { transform: scale(0.86); opacity: 0.9; }
+.seat[data-room="1"] .seat__name { opacity: 0.85; }
 .seat[data-state="ringing"] .seat__ring { animation: ring-pulse 2.6s var(--ease) infinite; }
 .seat[data-state="ringing"] .seat__name::after { content: " · ringing"; color: var(--text-faint); }
 /* Letting someone go, from their own seat: there when you reach for it. */

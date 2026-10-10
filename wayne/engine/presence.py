@@ -562,6 +562,8 @@ class Presence:
             now = t or time.time()
             live, how = self._seen_working(now), "seen working a case"
             if not live:
+                live, how = self._known_with(now)
+            if not live:
                 live, how = self._glimpsed(now)
             if live:
                 out.update(spot=live, where=live["name"], seen_live=True, doing="working a case" if how.startswith("seen working") else "")
@@ -609,6 +611,25 @@ class Presence:
         if not spot:
             return None, ""
         how = self._SPOTTERS[int(_draw(self.contact.id, "spotter", spell) * len(self._SPOTTERS))]
+        return {"name": spot["name"], "x": spot["x"], "y": spot["y"], "area": spot.get("area", "")}, how
+
+    def _known_with(self, t):
+        """
+        Where they are when it's known for sure without them sharing it: with
+        someone who does (Dick's dot gives Jason away), or at a plan he made
+        with them that they said yes to.
+        """
+        from ..contacts import directory
+        book = directory()
+        where, company = self.whereabouts(t)
+        sharers = [book.get(c).name for c in company if book.get(c) and getattr(book.get(c), "shares_location", True)]
+        kept = plans_made.block(self.contact, t, self._lead)
+        if not sharers and not kept:
+            return None, ""
+        spot = places.resolve(where or "")
+        if not spot:
+            return None, ""
+        how = f"with {' and '.join(sharers)}" if sharers else "at the plan they said yes to"
         return {"name": spot["name"], "x": spot["x"], "y": spot["y"], "area": spot.get("area", "")}, how
 
     def _seen_working(self, t):
