@@ -2262,9 +2262,29 @@ body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-in
 .mx-read__from time { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
 .mx-read__acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .mx-del:hover { color: var(--alert); border-color: rgba(224, 87, 79, 0.45); }
-.mx-read__body { white-space: pre-wrap; font-size: 14px; line-height: 1.65; color: var(--text); max-width: 72ch; }
-/* The night report is a printout, not a letter. */
-.mx-read[data-kind="report"] .mx-read__body { font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--text-dim); max-width: none; }
+.mx-read__body { font-size: 14px; line-height: 1.65; color: var(--text); max-width: 74ch; }
+.mx-read__body p { margin: 0 0 12px; }
+.mx-read__body h3, .mx-read__body h4, .mx-read__body h5, .mx-read__body h6 { margin: 20px 0 8px; font-weight: 500; color: var(--text); }
+.mx-read__body h3 { font-size: 19px; }
+.mx-read__body h4 { font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--primary); }
+.mx-read__body h5 { font-size: 15px; }
+.mx-read__body strong { color: var(--text); font-weight: 600; }
+.mx-read__body em { color: var(--text-dim); }
+.mx-read__body a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+.mx-read__body code { font-family: var(--mono); font-size: 12px; padding: 1px 5px; background: var(--surface-2); border: 1px solid var(--hairline); }
+.mx-read__body ul, .mx-read__body ol { margin: 0 0 12px; padding-left: 20px; }
+.mx-read__body li { margin: 4px 0; }
+.mx-read__body li::marker { color: var(--primary-dim); }
+.mx-read__body blockquote { margin: 6px 0 10px; padding: 4px 12px; border-left: 2px solid var(--primary-dim); color: var(--text-dim);
+  font-style: italic; }
+.mx-read__body hr { border: 0; border-top: 1px solid var(--hairline-2); margin: 18px 0; }
+.mx-read__body table { border-collapse: collapse; margin: 6px 0 14px; font-size: 12.5px; }
+.mx-read__body th { font-family: var(--mono); font-weight: 500; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--text-faint); text-align: left; padding: 6px 14px 6px 0; border-bottom: 1px solid var(--hairline-2); }
+.mx-read__body td { padding: 6px 14px 6px 0; border-bottom: 1px solid var(--hairline); color: var(--text); font-variant-numeric: tabular-nums; }
+/* The night report reads like the Batcomputer prints it: mono, tight. */
+.mx-read[data-kind="report"] .mx-read__body { font-family: var(--mono); font-size: 12.5px; line-height: 1.7; max-width: none; }
+.mx-read[data-kind="report"] .mx-read__body h3 { font-size: 15px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--primary); }
 @media (max-width: 900px) { .mx-body { grid-template-columns: 120px 1fr; } .mx-read { grid-column: 1 / -1; border-top: 1px solid var(--hairline); } }
 
 .toast__mail { display: grid; place-items: center; color: var(--primary); background: var(--surface-2); padding: 7px; }

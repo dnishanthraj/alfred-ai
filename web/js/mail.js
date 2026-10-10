@@ -15,6 +15,70 @@
 
   function $(sel) { return root.querySelector(sel); }
 
+  /* Markdown, safely: everything escaped first, then the few things mail uses —
+     headings, bold, italics, code, links, lists, quotes, rules, tables. */
+  function esc(t) {
+    return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function inline(t) {
+    return esc(t)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+  function md(text) {
+    var out = [], lines = (text || '').replace(/\r/g, '').split('\n'), i = 0;
+    while (i < lines.length) {
+      var line = lines[i];
+      if (!line.trim()) { i++; continue; }
+      var h = /^(#{1,4})\s+(.*)$/.exec(line);
+      if (h) { out.push('<h' + (h[1].length + 2) + '>' + inline(h[2]) + '</h' + (h[1].length + 2) + '>'); i++; continue; }
+      if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) { out.push('<hr>'); i++; continue; }
+      if (/^\s*\|/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
+        var head = line.trim().replace(/^\||\|$/g, '').split('|');
+        var rows = [];
+        i += 2;
+        while (i < lines.length && /^\s*\|/.test(lines[i])) { rows.push(lines[i].trim().replace(/^\||\|$/g, '').split('|')); i++; }
+        out.push('<table><thead><tr>' + head.map(function (c) { return '<th>' + inline(c.trim()) + '</th>'; }).join('') +
+                 '</tr></thead><tbody>' + rows.map(function (r) {
+                   return '<tr>' + r.map(function (c) { return '<td>' + inline(c.trim()) + '</td>'; }).join('') + '</tr>';
+                 }).join('') + '</tbody></table>');
+        continue;
+      }
+      if (/^\s*>/.test(line)) {
+        var quote = [];
+        while (i < lines.length && /^\s*>/.test(lines[i])) { quote.push(lines[i].replace(/^\s*>\s?/, '')); i++; }
+        out.push('<blockquote>' + inline(quote.join(' ')) + '</blockquote>');
+        continue;
+      }
+      if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
+        var ordered = /^\s*\d+\./.test(line), items = [];
+        while (i < lines.length && (/^\s*([-*]|\d+\.)\s+/.test(lines[i]) || (/^\s{2,}\S/.test(lines[i]) && items.length))) {
+          if (/^\s*([-*]|\d+\.)\s+/.test(lines[i])) items.push(lines[i].replace(/^\s*([-*]|\d+\.)\s+/, ''));
+          else items[items.length - 1] += '\n' + lines[i].trim();
+          i++;
+        }
+        out.push('<' + (ordered ? 'ol' : 'ul') + '>' + items.map(function (it) {
+          return '<li>' + it.split('\n').map(function (part) {
+            return /^>\s?/.test(part) ? '<blockquote>' + inline(part.replace(/^>\s?/, '')) + '</blockquote>' : inline(part);
+          }).join('<br>') + '</li>';
+        }).join('') + '</' + (ordered ? 'ol' : 'ul') + '>');
+        continue;
+      }
+      var para = [];
+      while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|\s*>|\s*([-*]|\d+\.)\s+|\s*\||\s*-{3,}\s*$)/.test(lines[i])) {
+        para.push(inline(lines[i].replace(/\s+$/, '')));
+        i++;
+      }
+      out.push('<p>' + para.join('<br>') + '</p>');
+    }
+    return out.join('');
+  }
+  function plain(text) {
+    return (text || '').replace(/[#*>`|]/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/-{3,}/g, ' ').replace(/\s+/g, ' ');
+  }
+
   function when(at) {
     var d = new Date(at * 1000), now = new Date();
     var hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
@@ -57,7 +121,7 @@
       li.querySelector('b').textContent = m.from;
       li.querySelector('time').textContent = when(m.at);
       li.querySelector('.mx-item__subject').textContent = m.subject;
-      li.querySelector('.mx-item__snip').textContent = (m.body || '').replace(/\s+/g, ' ').slice(0, 110);
+      li.querySelector('.mx-item__snip').textContent = plain(m.body).slice(0, 110);
       li.addEventListener('click', function () { show(m.id); });
       li.addEventListener('keydown', function (e) { if (e.key === 'Enter') show(m.id); });
       list.appendChild(li);
@@ -80,7 +144,7 @@
     pane.querySelector('.mx-read__from span').textContent = m.address ? '<' + m.address + '>' : '';
     pane.querySelector('time').textContent = new Date(m.at * 1000).toLocaleString(undefined,
       { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    pane.querySelector('.mx-read__body').textContent = m.body;
+    pane.querySelector('.mx-read__body').innerHTML = md(m.body);
     var acts = pane.querySelector('.mx-read__acts');
     var buttons = [];
     if (m.folder !== 'archive') buttons.push(['Archive', { folder: 'archive' }]);

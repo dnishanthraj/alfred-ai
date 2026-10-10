@@ -157,44 +157,43 @@ def night_report(day=None, now=None):
     book = directory()
     names = {c.id: c.name for c in book} | {"bruce": "you"}
     worked = [c for c in cases.everything() if start <= c.get("opened_at", 0) < end]
-    lines = [f"NIGHT REPORT — {datetime.date.fromtimestamp(start).strftime('%A %-d %B')} into "
-             f"{day.strftime('%A %-d %B %Y')}, 18:00–06:00", ""]
-    lines.append(f"CASES ({len(worked)})")
+    lines = ["# Night report", f"**{datetime.date.fromtimestamp(start).strftime('%A %-d %B')} into "
+             f"{day.strftime('%A %-d %B %Y')}**, 18:00–06:00", ""]
+    lines.append(f"## Cases ({len(worked)})")
     if not worked:
-        lines.append("  None worked.")
+        lines.append("None worked.")
     for c in sorted(worked, key=lambda c: c.get("opened_at", 0)):
         who = ", ".join(names.get(m, m) for m in cases.team(c)) or "—"
         how = (c.get("result") or {}).get("how") or ("still open" if c["status"] != "closed" else "closed")
         when = time.strftime("%H:%M", time.localtime(c.get("opened_at", start)))
-        lines.append(f"  {when}  {c['kind']} — {c['place']} ({c['area']})")
-        lines.append(f"         Team: {who}. Outcome: {how}." + (f" Behind it: {c['suspect']}." if c.get("suspect") else ""))
-        if c.get("outcome"):
-            lines.append(f"         {c['outcome']}")
+        lines.append(f"- **{when} · {c['kind']}** — {c['place']} ({c['area']})  ")
+        lines.append(f"  Team: {who}. Outcome: **{how}**." + (f" Behind it: {c['suspect']}." if c.get("suspect") else "")
+                     + (f"  \n  > {c['outcome']}" if c.get("outcome") else ""))
     hurt = [(m, i) for c in worked for m, i in ((c.get("result") or {}).get("hurt") or {}).items()]
-    lines += ["", "INJURIES"] + ([f"  {names.get(m, m).capitalize()}: {i}." for m, i in hurt] or ["  None reported."])
+    lines += ["", "## Injuries"] + ([f"- {names.get(m, m).capitalize()}: {i}." for m, i in hurt] or ["None reported."])
     seen = {}
     for hours in range(0, 12):
         for r in incidents.at(start + hours * 3600 + 1800):
             seen[r["id"]] = r
     worst = sorted(seen.values(), key=lambda r: (-r["severity"], -(r.get("toll") or {}).get("dead", 0)))[:6]
-    lines += ["", f"THE SCANNER — {len(seen)} calls; the worst:"]
+    lines += ["", "## The scanner", f"{len(seen)} calls; the worst:"]
     for r in worst:
         toll = incidents.toll_text(r.get("toll") or {})
-        lines.append(f"  {time.strftime('%H:%M', time.localtime(r['at']))}  {r['kind']} — {r['place']} ({r['area']})"
+        lines.append(f"- {time.strftime('%H:%M', time.localtime(r['at']))} · **{r['kind']}** — {r['place']} ({r['area']})"
                      + (f", {toll}" if toll else "") + (f" — {r['suspect']}" if r.get("suspect") else ""))
     rogue_lines = []
     for rogue in incidents.rogues():
         where = codex.where(rogue, end)
         if where.get("how") and start <= (where.get("since") or 0) < end:
-            rogue_lines.append(f"  {rogue['name']}: {where['how']}.")
-    rogue_lines += [f"  {line}." for line in arcs.lines(end)]
-    lines += ["", "ROGUES"] + (rogue_lines or ["  No change."])
+            rogue_lines.append(f"- **{rogue['name']}**: {where['how']}.")
+    rogue_lines += [f"- {line}." for line in arcs.lines(end)]
+    lines += ["", "## Rogues"] + (rogue_lines or ["No change."])
     covered = {}
     for watch_t in range(int(start + 3 * 3600), int(end), int(patrols.WATCH)):
         for cid, on in patrols.roster(watch_t).items():
             covered.setdefault(names.get(cid, cid), []).append(on["sector"].split(",")[0])
-    lines += ["", "PATROLS"] + ([f"  {who}: {', '.join(dict.fromkeys(areas))}." for who, areas in covered.items()]
-                                or ["  Nobody out."])
+    lines += ["", "## Patrols"] + ([f"- **{who}**: {', '.join(dict.fromkeys(areas))}." for who, areas in covered.items()]
+                                   or ["Nobody out."])
     good = sum(1 for c in worked if (c.get("result") or {}).get("ok"))
     subject = (f"Night report — {len(worked)} case{'s' if len(worked) != 1 else ''}, {good} closed well"
                + (f", {len(hurt)} hurt" if hurt else ""))
@@ -225,11 +224,13 @@ def write_briefing(now=None):
     items = gazette.today(day)
     if not items:
         return None
-    body = "\n\n".join(f"{i['outlet'].upper()}{' — ' + i['by'] if i['by'] and i['by'] != i['outlet'] else ''}\n"
-                       f"{i['headline']}\n{i['dek']}" for i in items)
+    body = "\n\n".join(f"### {i['headline']}\n*{i['outlet']}{' — ' + i['by'] if i['by'] and i['by'] != i['outlet'] else ''}*"
+                       f"\n\n{i['dek']}" for i in items)
+    # It came at seven, whenever he's reading it.
+    seven = time.mktime((day.year, day.month, day.day, 7, 0, 0, 0, 0, -1))
     return deliver("briefing", f"Your morning briefing — {day.strftime('%A %-d %B')}",
-                   "Good morning. Gotham today, as the papers and the channels have it.\n\n" + body,
-                   kind="briefing", key=f"briefing:{day.isoformat()}")
+                   "Good morning. Gotham today, as the papers and the channels have it.\n\n---\n\n" + body,
+                   kind="briefing", key=f"briefing:{day.isoformat()}", at=min(now, seven) if now >= seven else now)
 
 
 # --- written by the model ------------------------------------------------------------
@@ -250,7 +251,9 @@ def _ask(model, options, instruction, purpose):
 
 
 _MAIL_SHAPE = ('Return JSON only: {"from_name": "...", "from_address": "...", "subject": "...", '
-               '"body": "the email itself, plain text, paragraphs separated by blank lines, signed off as they would"}')
+               '"body": "the email itself, paragraphs separated by blank lines, signed off as they would — light '
+               'markdown where a real email would have it: **bold** for a date or a figure, a short - list, a > quote; '
+               'headings only in a newsletter or a formal notice"}')
 
 
 def _context(now):
@@ -276,7 +279,8 @@ def write_one(model, options, now=None):
     day = datetime.date.fromtimestamp(now).isoformat()
     sent = [m for m in mail() if datetime.date.fromtimestamp(m["at"]).isoformat() == day]
     company = [m for m in sent if m.get("kind") == "company"]
-    if 8 <= hour < 19 and len(company) < 3 and _draw("company", day, len(company)) < 0.5:
+    weekend = datetime.date.fromtimestamp(now).weekday() >= 5
+    if 8 <= hour < 19 and len(company) < (1 if weekend else 3) and _draw("company", day, len(company)) < (0.15 if weekend else 0.5):
         return _company(model, options, now)
     invites = [m for m in mail() if m.get("kind") == "invitation" and now - m["at"] < 2 * 86400]
     if 9 <= hour < 21 and not invites and _draw("invite", day) < 0.6:
