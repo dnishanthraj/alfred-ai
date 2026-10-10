@@ -20,6 +20,7 @@ from ..memory.store import atomic_write, read_text
 from . import places, travel
 
 HOME = "Wayne Manor"
+PILOT = "bruce"
 _lock = threading.Lock()
 
 
@@ -59,7 +60,8 @@ def state(t=None):
     suited = night(t) or bool(data.get("case"))
     if travelling and "suit" in trip:
         suited = trip["suit"]
-    out = {"where": where, "spot": spot, "suit": suited, "case": data.get("case") or "", "follow": follow}
+    out = {"where": where, "spot": spot, "suit": suited, "case": data.get("case") or "", "follow": follow,
+           "on_scene": on_scene(t)}
     if travelling:
         out["route"] = {k: trip[k] for k in ("pts", "start", "end", "by", "from", "pickup") if k in trip}
     return out
@@ -156,6 +158,49 @@ def join(contact_id, t=None):
         data["follow"] = contact_id
         atomic_write(_path(), json.dumps(data, ensure_ascii=False))
     return trip
+
+
+def on_scene(t=None):
+    """Whether he's in the middle of a case — there, working it — and can't walk away from it till it's done."""
+    from . import cases
+    case = cases.active(PILOT)
+    if not case or case["status"] == "closed":
+        return False
+    return ((case.get("members") or {}).get(PILOT) or {}).get("status") == "on scene"
+
+
+def committed(t=None):
+    """'' if he's free to go somewhere else; otherwise what he's in the middle of, in a line."""
+    from . import cases
+    if not on_scene(t):
+        return ""
+    case = cases.active(PILOT)
+    return f"You're in the middle of the {case['kind'].lower()} at {case['place']} — pull out of it first"
+
+
+def leave_case_for(t=None):
+    """On his way to a case and off somewhere else instead: he's changed his mind — off the case."""
+    from . import cases
+    case = cases.active(PILOT)
+    if case and case["status"] != "closed" and not on_scene(t):
+        cases.leave(case["id"], PILOT)
+        return case
+    return None
+
+
+def halt(t=None):
+    """Off the case: he stops where he's got to — on the roofs, in the car — and that's where he is."""
+    t = t or time.time()
+    here = position(t)
+    with _lock:
+        data = _load()
+        if here is not None:
+            data.update({"where": "a stop on the way", "x": round(here[0], 2), "y": round(here[1], 2)})
+            near = places.near(*here)
+            if near:
+                data["where"] = near
+        data.update({"trip": None, "case": "", "follow": ""})
+        atomic_write(_path(), json.dumps(data, ensure_ascii=False))
 
 
 def off_case(case_id):

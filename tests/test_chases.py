@@ -163,3 +163,38 @@ def test_tonights_finished_calls_are_kept_a_while_for_the_map():
     done = incidents.ended(time.time(), hours=3)
     assert done and all(time.time() - 3 * 3600 <= r["done_at"] < time.time() for r in done)
     assert all(r["status"] == "resolved" for r in done)
+
+
+def test_whoever_is_on_it_decides_how_long_it_takes():
+    base = {"id": "t-work", "kind": "Mugging", "severity": 1, "suspect": "", "crew": 1}
+    assert outcomes.work(base, ["bruce"]) < outcomes.work(base, ["robin"])         # Batman on a mugging is quick
+    army = {"id": "t-army", "kind": "Riot", "severity": 3, "suspect": "Bane", "crew": 30}
+    assert outcomes.work(army, ["robin"]) > outcomes.work(army, ["bruce", "orphan", "nightwing"])
+
+
+def test_on_scene_he_is_committed_and_on_the_way_he_can_change_his_mind():
+    t = _at(23)
+    report = {**_report("Armed robbery"), "x": 49.0, "y": 30.2}
+    cases.assign(report, "bruce", by="him", travel=0.01)
+    batman.go(report["place"], 49.0, 30.2, case=report["id"], t=t)
+    cases.advance(time.time() + 5)
+    assert batman.on_scene() and "pull out" in batman.committed()
+    cases.leave(report["id"], "bruce")
+    assert not batman.on_scene() and batman.committed() == ""
+    other = {**_report("Mugging", rid="t-run-2"), "x": 60.0, "y": 50.0}
+    cases.assign(other, "bruce", by="him", travel=30)
+    assert batman.leave_case_for()["id"] == "t-run-2" and cases.for_report("t-run-2") is None
+
+
+def test_an_afterthought_that_doesnt_know_isnt_something_anyone_is_doing(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from wayne.engine import presence
+    monkeypatch.setattr(paths, "contact_dir", lambda cid: tmp_path / cid)
+    presence._registry.clear()
+    cass = SimpleNamespace(id="orphan", name="Cass", full_name="Cassandra Cain", shares_status=True,
+                           shares_location=True, home="Home, Burnside", texting_pace={}, beat=(), routine=())
+    whereabouts = presence.of(cass)
+    whereabouts.set_activity("not specified", presence.BUSY, 60)
+    assert whereabouts.now()["doing"] != "not specified"
+    presence._registry.clear()

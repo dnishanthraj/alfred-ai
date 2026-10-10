@@ -205,6 +205,7 @@
       <!-- On a call with the map or the Codex open: the line itself, small, over it — drag it anywhere. -->
       <div class="gm-call" hidden>
         <div class="gm-call__who"></div>
+        <canvas class="gm-call__viz" aria-hidden="true"></canvas>
         <p class="gm-call__me" hidden><span class="gm-call__me-dot" aria-hidden="true"></span><span class="gm-call__me-text"></span></p>
         <p class="gm-call__line" aria-live="polite"></p>
         <div class="gm-call__tools">
@@ -283,6 +284,7 @@
             </div>
             <p class="gm-info__bio"></p>
             <p class="gm-info__note"></p>
+            <div class="gm-info__progress" hidden></div>
             <button type="button" class="gm-info__go" hidden><span class="gm-info__go-bat"></span><span class="gm-info__go-text">Go here</span></button>
             <div class="gm-info__assign" hidden>
               <p class="gm-info__label">Put someone on it</p>
@@ -308,6 +310,7 @@
               <button type="button" class="gm-btn" data-act="message">Message</button>
               <button type="button" class="gm-btn" data-act="call">Call</button>
               <button type="button" class="gm-btn" data-act="follow">Follow</button>
+              <span class="gm-card__break" aria-hidden="true"></span>
               <button type="button" class="gm-btn gm-btn--bat" data-act="join" data-tip="Go to them, and go with them"><i class="gm-btn__bat"></i><span>Go to</span></button>
               <button type="button" class="gm-btn gm-btn--bat" data-act="lift" data-tip="Pick them up in the Batwing and drop them where they need to be"><i class="gm-btn__bat"></i><span>Give a lift</span></button>
             </div>

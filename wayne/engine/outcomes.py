@@ -115,10 +115,19 @@ def family(kind):
     return _FAMILY.get(kind, "petty" if kind in _PETTY else "street")
 
 
-def work(case):
-    """Minutes on scene before it's over, one way or the other — the same for the same case."""
+def work(case, team=None):
+    """
+    Minutes on scene before it's over, one way or the other: how long this kind of
+    call takes, and how good whoever's on it is at it — Batman on a mugging is a
+    minute's work; Tim alone against a crew is a long night. Fixed for the same
+    case and team.
+    """
+    from . import cases
     lo, hi = WORK[family(case["kind"])]
-    return lo + (hi - lo) * _roll(case, "work") + 4 * max(0, case.get("severity", 2) - 2)
+    base = lo + (hi - lo) * _roll(case, "work") + 4 * max(0, case.get("severity", 2) - 2)
+    crew = team if team is not None else cases.team(case)
+    pace = 1.35 - 0.7 * team_fit(crew, case["kind"]) if crew else 1.0
+    return base * max(0.5, min(1.35, pace)) * (1 + 0.4 * outnumbered({**case, "team": crew}))
 
 
 def arrival(case):

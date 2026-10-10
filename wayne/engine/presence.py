@@ -46,6 +46,9 @@ from . import patrols, places, travel, week
 from . import plans as plans_made
 
 ONLINE, IDLE, BUSY, OFFLINE = "online", "idle", "busy", "offline"
+# What the afterthought writes when it doesn't know — never a thing anyone is doing.
+NOTHING = {"null", "none", "not specified", "unspecified", "unknown", "n/a", "na", "nothing", "not mentioned",
+           "not stated", "no", "false", "unclear"}
 STATUSES = (ONLINE, IDLE, BUSY, OFFLINE)
 
 # How long someone stays online after they last sent or read something of his.
@@ -382,7 +385,7 @@ class Presence:
         t = t or time.time()
         last = self._state["last_active"]
         activity = self._state["activity"]
-        if activity and activity.get("until", 0) > t:
+        if activity and activity.get("until", 0) > t and (activity.get("doing") or "").strip().lower().strip(" .") not in NOTHING:
             return {"status": activity["status"], "doing": activity["doing"],
                     "until": activity["until"], "source": "conversation", "last_active": last,
                     "terminal": activity.get("terminal", False)}
@@ -485,7 +488,8 @@ class Presence:
         and it outranks any plan, theirs or anyone else's.
         """
         activity = self._state.get("activity")
-        if activity and activity.get("since", 0) <= t < activity.get("until", 0):
+        if (activity and activity.get("since", 0) <= t < activity.get("until", 0)
+                and (activity.get("doing") or "").strip().lower().strip(" .") not in NOTHING):
             return activity, list(activity.get("with") or []), True
         block = self._routine(t) or self._whim(t) or {}
         return block, list(block.get("with") or []), False

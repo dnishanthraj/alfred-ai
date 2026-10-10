@@ -1711,6 +1711,43 @@ class Console(GroupChats):
         log.info("bruce on case %s (%s at %s), %.0f min out", report["id"], report["kind"], report["place"], minutes)
         return case
 
+    async def unassign_case(self, report_id, contact_id):
+        """
+        He pulls one of them off a case — on the way there or already in it. They stop
+        where they are and go back to their night; they may well say something about
+        it. Pulled off, the last one on it takes the case with them.
+        """
+        from ..engine import batman, cases
+        case = cases.for_report(report_id)
+        if case is None or case["status"] == "closed" or contact_id not in cases.team(case):
+            return None
+        there = ((case.get("members") or {}).get(contact_id) or {}).get("status") == "on scene"
+        cases.leave(report_id, contact_id)
+        if contact_id == "bruce":
+            batman.halt()
+            await self.broadcast({"type": "bruce", "bruce": batman.state()})
+        else:
+            contact = self.directory.get(contact_id)
+            if contact is not None:
+                whereabouts = presence.of(contact)
+                here = whereabouts.position()
+                whereabouts.clear_activity()
+                back = whereabouts.whereabouts()[0] or ""
+                spot = whereabouts.spot(back)
+                if here is not None and spot:
+                    # Back to their night from where they'd got to, still suited — not from the scene's door.
+                    trip = travel.fastest(contact_id, here, (spot["x"], spot["y"]), spot.get("name"), jet=False)
+                    whereabouts.set_trip(back, {**trip, "left": time.time()})
+                whereabouts.put("case_rest", time.time() + 20 * 60)
+                await self._presence_changed(contact)
+                if contact_id not in self._members() and random.random() < (0.75 if there else 0.4):
+                    about = (f"the {case['kind'].lower()} at {case['place']}"
+                             + (" — you were already there, in it" if there else " — you were on your way"))
+                    self._spawn(self._later(random.uniform(10, 50), self._send_unprompted(contact, about, "case_pulled")))
+        log.info("%s pulled off case %s", contact_id, report_id)
+        await self.broadcast({"type": "cases"})
+        return cases.for_report(report_id) or {"gone": True}
+
     async def give_lift(self, contact_id, to=None):
         """
         He gives one of them a lift in the Batwing: they stay put, he comes down for
@@ -1723,6 +1760,11 @@ class Console(GroupChats):
             return {"error": "Not one for a lift"}
         if not batman.state()["suit"]:
             return {"error": "Not in daylight"}
+        if batman.committed():
+            return {"error": batman.committed()}
+        working = cases.active(contact_id)
+        if working and ((working.get("members") or {}).get(contact_id) or {}).get("status") == "on scene":
+            return {"error": f"{contact.name}'s in the middle of the {working['kind'].lower()}"}
         whereabouts = presence.of(contact)
         them = whereabouts.position()
         mine = batman.position()
@@ -1861,6 +1903,12 @@ class Console(GroupChats):
         from ..engine import cases
         from ..memory import groups as store
         crew = [m for m in cases.team(case) if self.directory.get(m)]
+        if "bruce" in cases.team(case) and not crew:
+            # Him on it alone: Alfred in his ear from the cave — and Barbara, if she's at her screens
+            # and not out on something herself.
+            crew = [m for m in ("alfred", "batgirl") if self.directory.get(m)
+                    and (m == "alfred" or (presence.of(self.directory.get(m)).now()["status"] != presence.OFFLINE
+                                           and not cases.active(m)))]
         if case["status"] == "closed" or not (len(crew) >= 2 or ("bruce" in cases.team(case) and crew)):
             return None
         # Jason and Randy working one between them, him not on it: their own channel, not his to read.
@@ -1943,6 +1991,15 @@ class Console(GroupChats):
                      and self.directory.get(m) and m not in self._members()]
             speaker = fresh[0] if fresh else random.choice(on_it)
             mine = (case.get("members") or {}).get(speaker.id) or {}
+            if speaker.id not in cases.team(case):
+                # In his ear, not on the scene: the feeds, the scanner, GCPD's cars — and a word, dry or worried.
+                watching = "the cave's screens" if speaker.id == "alfred" else "your screens at the clock tower"
+                self._spawn(self._post_as(group, speaker, opening=(
+                    f"you're on comms with him from {watching} — he's on the {case['kind'].lower()} at {case['place']}, "
+                    f"{cases.phase_of_him(case, now)}. A quick line in his ear, "
+                    "the way you'd say it: what the feeds or the scanner show, where GCPD are, a warning, a dry word — "
+                    "short, no greetings")))
+                continue
             if mine.get("status") == "assigned" and case["status"] == "on scene":
                 how = "on your way to join them"
             from ..engine import outcomes
@@ -2926,17 +2983,33 @@ async def map_incidents():
         case = by_id.get(r["id"])
         if not case:
             return r
-        return {**r, "assignee": case["assignee"], "team": cases.team(case), "case": case["status"],
-                "outcome": case.get("outcome", ""), "result": (case.get("result") or {}).get("how", ""),
-                "ok": (case.get("result") or {}).get("ok"),
-                **({"done": True, "done_at": case.get("closed_at", now)} if case["status"] == "closed" else {})}
+        out = {**r, "assignee": case["assignee"], "team": cases.team(case), "case": case["status"],
+               "outcome": case.get("outcome", ""), "result": (case.get("result") or {}).get("how", ""),
+               "ok": (case.get("result") or {}).get("ok"),
+               **({"done": True, "done_at": case.get("closed_at", now)} if case["status"] == "closed" else {})}
+        if case["status"] != "closed":
+            # How far along it is, and each of them: on scene, or how far out.
+            began = case.get("opened_at", now)
+            out["phase"] = cases.phase(case, now)[0]
+            out["progress"] = round(max(0.0, min(1.0, (now - began) / max(60, case.get("due", now) - began))), 3)
+            out["due"] = case.get("due")
+            out["members"] = {m: {"status": v.get("status"),
+                                  "eta": max(0, round(v.get("joined", now) + v.get("travel", 9) * 60 - now))}
+                              for m, v in (case.get("members") or {}).items()}
+        return out
     for r in incidents.at(now):
         reports.append(with_case(r))
     # Tonight's that are over stay on the map a while, faded: cleared by GCPD, or the family's, closed.
     shown = {r["id"] for r in reports}
     for r in incidents.ended(now, hours=3):
-        if r["id"] not in shown:
-            reports.append({**with_case(r), "done": True})
+        if r["id"] in shown:
+            continue
+        item = with_case(r)
+        if item.get("case") and item["case"] != "closed":
+            # GCPD have cleared off, but the family are still on it: it isn't over till they are.
+            reports.append({**item, "status": "contained"})
+        else:
+            reports.append({**item, "done": True})
     return JSONResponse({"incidents": reports, "jet": jet.state()})
 
 
@@ -2956,6 +3029,16 @@ async def assign_case(request: Request):
     return JSONResponse(result if ("texted" in result or "declined" in result) else {"case": result})
 
 
+@app.post("/api/cases/unassign")
+async def unassign_case(request: Request):
+    """He pulls someone off a case, from the map."""
+    body = await request.json()
+    result = await console.unassign_case(str(body.get("report", "")), str(body.get("contact", "")))
+    if result is None:
+        return JSONResponse({"error": "they're not on it"}, status_code=400)
+    return JSONResponse({"case": result})
+
+
 @app.get("/api/bruce")
 async def bruce_state():
     """Where he is — and where he's going, if he's on his way."""
@@ -2973,8 +3056,16 @@ async def bruce_go(request: Request):
         report = incidents.get(report_id) or cases.for_report(report_id)
         if report is None:
             return JSONResponse({"error": "no such report"}, status_code=404)
+        held = batman.committed()
+        if held:
+            return JSONResponse({"error": held}, status_code=200)
+        batman.leave_case_for()
         await console._bruce_takes(report)
         return JSONResponse(batman.state())
+    held = batman.committed()
+    if held:
+        return JSONResponse({"error": held}, status_code=200)
+    batman.leave_case_for()                 # on the way to one, off to somewhere else: he's not on it now
     person = str(body.get("person") or "")
     if person:
         # To one of them, and with them from then on.

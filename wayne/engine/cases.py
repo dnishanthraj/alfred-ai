@@ -120,13 +120,16 @@ def assign(report, contact_id, by="him", travel=0):
         first = not case["team"]
         case["team"].append(contact_id)
         case["members"][contact_id] = {"by": by, "travel": round(travel, 1), "joined": now, "status": "assigned"}
+        from . import outcomes
         if first:
-            from . import outcomes
             case.update({"assignee": contact_id, "by": by, "status": "assigned", "updated_at": now,
-                         "travel": round(travel, 1), "due": now + (travel + outcomes.work(case)) * 60})
+                         "travel": round(travel, 1), "due": now + (travel + outcomes.work(case, [contact_id])) * 60})
         else:
-            # A second pair of hands gets it done sooner, and no later than they can get there.
-            case["due"] = max(now + (travel + 6) * 60, case.get("due", now) - 5 * 60)
+            # Another pair of hands — a better one, faster: the work left is as long as it takes this
+            # team, and no sooner than they can get there.
+            began = case.get("updated_at", now) if case["status"] == "on scene" else now
+            left = outcomes.work(case, case["team"]) - (now - began) / 60
+            case["due"] = max(now + (travel + 4) * 60, min(case.get("due", now), now + max(3, left) * 60))
         case["log"].append({"at": now, "text": f"{'assigned to' if first else 'joined by'} {contact_id} "
                                                f"({'by him' if by == 'him' else 'took it'})"})
         _save(cases)
@@ -297,6 +300,14 @@ def phase(case, now=None):
         return ("in it", "in the thick of it — fighting" if violent else
                 "in the thick of it — searching, asking, piecing it together")
     return "wrapping up", "it's settling — cuffs on or the scene secured, GCPD on the way, catching your breath"
+
+
+def phase_of_him(case, now=None):
+    """Where it's got to, said of him rather than to them: 'on his way there', 'catching his breath'."""
+    _key, how = phase(case, now)
+    for mine, his in (("you're", "he's"), ("your", "his"), ("you", "him")):
+        how = re.sub(rf"\b{mine}\b", his, how)
+    return how
 
 
 def brief(contact_id, now=None):

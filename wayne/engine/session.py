@@ -1490,6 +1490,13 @@ class ContactSession:
         crew = cases.team(case)
         others = [book.get(m).name for m in crew if m != self.contact.id and book.get(m)]
         now = time.time()
+        if self.contact.id not in crew:
+            # In his ear from the screens — Alfred in the cave, Barbara at the clock tower — not on the scene.
+            how = cases.phase_of_him(case, now)
+            return (f"This is the comms channel for the {case['kind'].lower()} at {case['place']} ({case['area']}). "
+                    f"You're not on the scene: you're on comms, watching from your screens — the feeds, the scanner, "
+                    f"GCPD's cars. {operator_name()} is on it" + (f" with {', '.join(others)}" if others else " alone")
+                    + (f" — it's over: {case.get('outcome') or 'done'}." if case["status"] == "closed" else f", {how}."))
         if case["status"] == "closed":
             state = f"It's over — {case.get('outcome') or 'done'}."
         else:
@@ -1549,6 +1556,10 @@ class ContactSession:
         elif why == "case_declined":
             ask = (f"He's just put you on a case: {about}. You're not taking it — tonight, or from him, or "
                    "at all; tell him so your way, or don't answer: if you'd leave it, reply with exactly SKIP.")
+        elif why == "case_pulled":
+            ask = (f"He's just pulled you off a case: {about}. Say something about it if you would — fine by you, "
+                   "a question why, a complaint if you were in the middle of it — your way, a word or two. If "
+                   "you'd just let it go, reply with exactly SKIP.")
         elif why == "case_taken":
             ask = (f"You've just taken a case yourself: {about}. Tell him, briefly, your way — or if you "
                    "wouldn't bother him with it, reply with exactly SKIP.")
@@ -1607,7 +1618,8 @@ class ContactSession:
         # A text, not a letter: told "a line or two", a model writes a paragraph.
         lines = [guards.cap_length(line, 3) for line in text.splitlines() if line.strip()][:4]
         text = "\n".join(lines)
-        if why in ("second_thought", "chase", "worry", "case_taken", "case_closed", "tapback", "case_declined") \
+        if why in ("second_thought", "chase", "worry", "case_taken", "case_closed", "tapback", "case_declined",
+                   "case_pulled") \
                 and re.match(r"\W*skip\b", text, re.I):
             return ""
         if text:

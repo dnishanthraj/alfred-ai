@@ -35,6 +35,8 @@
      person's colour rather than following whoever's on the line. */
   function Visualizer(canvas, options) {
     this.fixedAccent = options && options.accent ? hexToRgb(options.accent, null) : null;
+    // 'ring' (the stage's instrument) or 'line': a strip for the call overlay, the voice spreading from the middle.
+    this.shape = (options && options.shape) || 'ring';
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.values = new Float32Array(BARS);
@@ -70,6 +72,8 @@
 
   Visualizer.prototype.setMode = function (mode) { this.mode = mode; };
   Visualizer.prototype.setLevel = function (level) { this.level = level; };
+  // Whoever's talking: the strip takes their colour.
+  Visualizer.prototype.setAccent = function (hex) { this.fixedAccent = hexToRgb(hex, this.fixedAccent); };
 
   Visualizer.prototype._resize = function () {
     var rect = this.canvas.getBoundingClientRect();
@@ -179,8 +183,17 @@
     if (!this.canvas.isConnected) { this.destroy(); return; }
     this._raf = requestAnimationFrame(this._frame);
     // Nothing to draw for while nobody can see it: the window's in the
-    // background, or the map is over the stage.
-    if (document.hidden || document.documentElement.dataset.map === 'open') { this.lastFrame = 0; return; }
+    // background, or the map is over the stage — the overlay's strip is the
+    // other way round, and is seen exactly when its card is up.
+    if (document.hidden || (this.shape === 'line' ? !this.canvas.offsetParent
+                                                  : document.documentElement.dataset.map === 'open')) {
+      this.lastFrame = 0;
+      return;
+    }
+    if (this.shape === 'line' && this._accentTick % 30 === 0) {
+      var rect = this.canvas.getBoundingClientRect();
+      if (Math.round(rect.width * this.dpr) !== this.canvas.width) this._resize();    // shown after it was made
+    }
 
     var now = performance.now();
     // Frames since the last one at 60 Hz; capped so a backgrounded tab does
@@ -212,7 +225,31 @@
     this._draw();
   };
 
+  /* The overlay's strip: bars mirrored out from the centre — the voice's body in
+     the middle, its edges toward the ends — tall as it is loud. */
+  Visualizer.prototype._drawLine = function () {
+    var ctx = this.ctx, w = this.canvas.width, h = this.canvas.height, mid = h / 2;
+    ctx.clearRect(0, 0, w, h);
+    var colour = this.mode === 'listening' ? this.alert : this.accent;
+    var rgb = colour[0] + ',' + colour[1] + ',' + colour[2];
+    var n = Math.max(24, Math.min(72, Math.round(w / (5 * this.dpr)))), gap = w / n;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(1, gap * 0.48);
+    for (var i = 0; i < n; i++) {
+      var k = Math.abs(i - (n - 1) / 2) / ((n - 1) / 2);
+      var v = this.values[Math.min(BARS - 1, Math.floor(k * (BARS - 1) * 0.6))];
+      var half = Math.max(this.dpr, v * h * 0.46);
+      ctx.strokeStyle = 'rgba(' + rgb + ',' + (0.22 + Math.min(v * 1.8, 1) * 0.72) + ')';
+      var x = gap * (i + 0.5);
+      ctx.beginPath();
+      ctx.moveTo(x, mid - half);
+      ctx.lineTo(x, mid + half);
+      ctx.stroke();
+    }
+  };
+
   Visualizer.prototype._draw = function () {
+    if (this.shape === 'line') return this._drawLine();
     var ctx = this.ctx;
     var w = this.canvas.width;
     var h = this.canvas.height;

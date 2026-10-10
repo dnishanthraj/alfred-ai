@@ -429,6 +429,7 @@
     if (value === 'listening') callbarMe('Speaking\u2026', true);
     else if (value === 'transcribing') callbarMe('\u2026', true);
     if (state.viz) state.viz.setMode(value);
+    if (callbar && callbar.viz) callbar.viz.setMode(value);
     // On a call with company, speaking belongs to one seat (see seatSpeaking);
     // the rest breathe — or all of them think, while a reply is coming.
     Object.keys(state.seats).forEach(function (id) {
@@ -3025,7 +3026,9 @@
     var root = document.querySelector('.gm-call');
     if (!root) return null;
     callbar = { root: root, who: root.querySelector('.gm-call__who'), line: root.querySelector('.gm-call__line'),
-                talk: root.querySelector('.gm-call__talk'), faces: {} };
+                talk: root.querySelector('.gm-call__talk'), faces: {},
+                viz: new Visualizer(root.querySelector('.gm-call__viz'), { shape: 'line' }) };
+    callbar.viz.setMode(document.documentElement.dataset.state || 'idle');
     root.querySelector('.gm-call__end').innerHTML = ICONS.end;
     root.querySelector('.gm-call__end').addEventListener('click', function () { if (state.connectedId) hangUp(); });
     root.querySelector('.gm-call__back').addEventListener('click', function () { GothamMap.close(); });
@@ -3115,6 +3118,7 @@
     if (!bar || bar.root.hidden) return;
     var contact = state.contacts[speaker || state.connectedId];
     bar.line.textContent = '';
+    if (contact && bar.viz) bar.viz.setAccent(contact.accent);
     if (contact && state.party.length > 1) {
       var who = document.createElement('b');
       who.textContent = contact.name;
@@ -3308,7 +3312,10 @@
   }
 
   function wireMic() {
-    ConsoleMic.on('onLevel', function (level) { if (state.viz) state.viz.setLevel(level); });
+    ConsoleMic.on('onLevel', function (level) {
+      if (state.viz) state.viz.setLevel(level);
+      if (callbar && callbar.viz) callbar.viz.setLevel(level);
+    });
     ConsoleMic.on('onUtterance', submitAudio);
     // Hands-free: he's started speaking — listen, and read ahead while he does.
     ConsoleMic.on('onSpeechStart', function () { setState('listening'); readAhead(); });
@@ -3492,7 +3499,7 @@
     state.bruce = state.bruce || { id: 'bruce', name: 'You', full_name: 'Bruce Wayne', accent: '#e8c86a', bruce: true };
     state.bruce.presence = { status: 'online', where: where.where, spot: where.spot, route: where.route || null,
                              doing: where.route ? (where.route.by || 'on the way') : '', suit: where.suit,
-                             follow: where.follow || '' };
+                             follow: where.follow || '', case: where.case || '', on_scene: !!where.on_scene };
     if (window.GothamMap && GothamMap.isOpen()) GothamMap.refreshPeople();
   }
   function loadBruce() {

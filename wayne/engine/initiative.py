@@ -98,6 +98,9 @@ def afterthought(session, exchanges, by="text"):
     return found
 
 
+_NOTHING = presence.NOTHING
+
+
 def apply(session, found):
     """Record what the afterthought found."""
     if not isinstance(found, dict):
@@ -106,7 +109,7 @@ def apply(session, found):
     if found.get("free"):
         state.clear_activity()     # done with the last thing — maybe on to the next
     doing = found.get("doing")
-    if isinstance(doing, str) and doing.strip() and doing.strip().lower() not in ("null", "none"):
+    if isinstance(doing, str) and doing.strip() and doing.strip().lower().strip(" .") not in _NOTHING:
         status = found.get("status") if found.get("status") in (presence.BUSY, presence.OFFLINE) \
             else presence.BUSY
         minutes = _number(found.get("minutes"), None)
@@ -115,7 +118,7 @@ def apply(session, found):
             minutes = _until_morning() if status == presence.OFFLINE else 60
         where = found.get("where") if isinstance(found.get("where"), str) else ""
         state.set_activity(doing, status, minutes,
-                           where="" if where.strip().lower() in ("null", "none") else where,
+                           where="" if where.strip().lower().strip(" .") in _NOTHING else where,
                            company=_people(found.get("with"), session.contact))
     reach = found.get("contact")
     if isinstance(reach, dict) and isinstance(reach.get("about"), str) and reach["about"].strip():

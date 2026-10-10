@@ -1064,7 +1064,11 @@
       group.forEach(function (c, i) {
         var s = c.presence.spot;
         var angle = (i / group.length) * Math.PI * 2, r = group.length > 1 ? 0.55 : 0;
-        var marker = personMarker(c, ll(s.x + Math.cos(angle) * r, s.y + Math.sin(angle) * r));
+        var base = ll(s.x + Math.cos(angle) * r, s.y + Math.sin(angle) * r);
+        var marker = personMarker(c, base);
+        // Working a scene: about it, not pinned to it (see sceneOffset).
+        marker._base = base;
+        marker._scene = onScene(c);
         if (marker._trip) { marker._trip = null; marker.getElement().classList.remove('is-moving'); }
         finish(c, marker, c.name + ' · ' + (c.presence.where || ''));
       });
@@ -1091,6 +1095,29 @@
     if (following && people[following]) map.easeTo({ center: people[following].getLngLat(), duration: 1200 });
   }
 
+  // On a scene — working it, or him there on a case — rather than parked on the spot.
+  function onScene(c) {
+    var p = c.presence || {};
+    return /^(working the |after the )/i.test(p.doing || '') || (c.id === 'bruce' && !!p.on_scene);
+  }
+  function hash01(text) {
+    var h = 2166136261;
+    for (var i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return ((h >>> 0) % 100000) / 100000;
+  }
+  // Where about the scene they are: a dash to somewhere new, a while there, sometimes a
+  // turn around it, sometimes standing stock still — the same for the same moment.
+  function sceneOffset(id, t) {
+    var seg = 7, k = Math.floor(t / seg), f = (t - k * seg) / seg;
+    function spot(n) {
+      for (var back = 0; back < 4 && hash01(id + '!' + (n - back)) < 0.32; back++) { /* standing still: as before */ }
+      var m = n - back, a = hash01(id + ':' + m) * Math.PI * 2, r = (0.12 + 0.3 * hash01(id + '#' + m)) * K;
+      return [Math.cos(a) * r, Math.sin(a) * r];
+    }
+    var from = spot(k - 1), to = spot(k), move = Math.min(1, f / 0.35), e = move < 0.5 ? 2 * move * move : 1 - Math.pow(-2 * move + 2, 2) / 2;
+    return [from[0] + (to[0] - from[0]) * e, from[1] + (to[1] - from[1]) * e];
+  }
+
   // Each tick: anyone on the road moves along it — and the camera with them, if he's following.
   function moveTravellers() {
     var now = Date.now() / 1000, arrived = false;
@@ -1101,6 +1128,12 @@
       var here = onJourney(trip, now).at;
       marker.setLngLat(here);
       if (following === id && !moving) map.jumpTo({ center: here });
+    });
+    Object.keys(people).forEach(function (id) {
+      var marker = people[id];
+      if (marker._trip || !marker._scene || !marker._base || marker._gliding) return;
+      var off = sceneOffset(id, now);
+      marker.setLngLat([marker._base[0] + off[0], marker._base[1] + off[1]]);
     });
     // With one of them: his marker at their shoulder, wherever they go.
     var me = opts.bruce && opts.bruce(), mine = people.bruce;
@@ -1195,12 +1228,21 @@
     if (lift) {
       // A lift in the Batwing: only his to give, after dark, to the ones who work the streets.
       lift.hidden = !opts.lift || !p.spot || !!p.seen_live || FIELD.indexOf(id) === -1 || !(me && me.presence && me.presence.suit);
+      var theirs = busyOn()[id], inIt = theirs && (theirs.members || {})[id] && theirs.members[id].status === 'on scene';
+      var held = me && me.presence && me.presence.on_scene;
+      lift.disabled = !!(held || inIt);
+      lift.setAttribute('data-tip', held ? 'You\u2019re in the middle of a case — pull out of it first'
+        : inIt ? c.name + '\u2019s in the middle of the ' + theirs.kind.toLowerCase()
+        : 'Pick them up in the Batwing and drop them where they need to be');
       lift.querySelector('.gm-btn__bat').innerHTML = ARKHAM_BAT;
       if (!lift.disabled) lift.querySelector('span').textContent = 'Give a lift';
     }
     if (join) {
       var withThem = !!(me && me.presence && me.presence.follow === id);
       join.hidden = !opts.go || !p.spot || !!p.seen_live;
+      join.disabled = !!(me && me.presence && me.presence.on_scene);
+      join.setAttribute('data-tip', join.disabled ? 'You\u2019re in the middle of a case — pull out of it first'
+                                                  : 'Go to them, and go with them');
       join.classList.toggle('is-on', withThem);
       join.querySelector('span').textContent = withThem ? 'With ' + c.name : 'Go to';
       join.querySelector('.gm-btn__bat').innerHTML = ARKHAM_BAT;
@@ -1291,7 +1333,7 @@
     go.onclick = function () {
       go.disabled = true;
       opts.go({ place: name }).then(function (where) {
-        go.querySelector('.gm-info__go-text').textContent = where && where.route
+        go.querySelector('.gm-info__go-text').textContent = where && where.error ? where.error : where && where.route
           ? 'On your way — ' + Math.max(1, Math.round((where.route.end - Date.now() / 1000) / 60)) + ' min' : 'You\u2019re here';
       }).catch(function () {}).then(function () { go.disabled = false; });
     };
@@ -1343,6 +1385,58 @@
     if (!(body.log || []).length) list.innerHTML = '<li class="gm-log__wait">No log yet.</li>';
   }
 
+  // Who's on which open case right now: id -> the report they're on.
+  function busyOn() {
+    var out = {};
+    reports.forEach(function (r) {
+      if (r.done || r.case === 'closed') return;
+      (r.team || (r.assignee ? [r.assignee] : [])).forEach(function (id) { out[id] = r; });
+    });
+    return out;
+  }
+
+  var PHASES = { 'en route': 'On the way', arriving: 'Just there — taking it in', 'in it': 'In the thick of it',
+                 'gone wrong': 'Gone wrong — backup needed', 'wrapping up': 'Wrapping up' };
+  function caseProgress(report) {
+    var box = $('.gm-info__progress');
+    if (!box) return;
+    var live = report.team && report.team.length && report.case && report.case !== 'closed' && report.phase;
+    box.hidden = !live;
+    if (!live) return;
+    var book = everyone();
+    box.innerHTML = '<div class="gm-progress__head"><b></b><span></span></div><div class="gm-progress__bar"><i></i></div>' +
+                    '<ul class="gm-progress__who"></ul>';
+    box.dataset.phase = report.phase;
+    box.querySelector('b').textContent = PHASES[report.phase] || report.phase;
+    var left = report.due ? Math.max(0, Math.round((report.due - Date.now() / 1000) / 60)) : null;
+    box.querySelector('span').textContent = left !== null ? (left ? 'about ' + left + ' min left' : 'any moment') : '';
+    box.querySelector('i').style.width = Math.round((report.progress || 0) * 100) + '%';
+    var list = box.querySelector('ul');
+    Object.keys(report.members || {}).forEach(function (id) {
+      var m = report.members[id], c = book[id] || (id === 'bruce' && opts.bruce && opts.bruce());
+      if (!c) return;
+      var li = document.createElement('li');
+      li.style.setProperty('--accent', c.accent || '#e8c86a');
+      var face = document.createElement('span');
+      opts.portrait(face, c);
+      li.appendChild(face);
+      li.appendChild(document.createTextNode((id === 'bruce' ? 'You' : c.name) + ' · ' +
+        (m.status === 'on scene' ? 'there' : Math.max(1, Math.round(m.eta / 60)) + ' min out')));
+      list.appendChild(li);
+    });
+  }
+
+  function pullOff(report, id, said) {
+    fetch('/api/cases/unassign', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                   body: JSON.stringify({ report: report.id, contact: id }) })
+      .then(function (r) { return r.json(); }).then(function () {
+        var c = id === 'bruce' ? null : opts.contacts()[id];
+        said.textContent = id === 'bruce' ? 'You\u2019re off it.' : (c ? c.name : 'They') + '\u2019s off it.';
+        said.hidden = false;
+        loadIncidents();
+      }).catch(function () {});
+  }
+
   function incidentCard(report) {
     var contacts = opts.contacts();
     var who = report.assignee && contacts[report.assignee];
@@ -1367,6 +1461,7 @@
              (report.dispatch ? 'Dispatch: \u201c' + report.dispatch + '\u201d' : 'Dispatch is still coming through.'),
              '', canvas.toDataURL(), SEVERITY[report.severity]);
     openReport = report.id;          // after showInfo, which clears it for any other card
+    caseProgress(report);
     reportLog(report);
     $('.gm-info__note').hidden = false;
     $('.gm-info__note').textContent = state;
@@ -1379,18 +1474,20 @@
       // Him: he goes himself — the Batmobile by night — and it's his case too.
       var me = document.createElement('button');
       me.type = 'button';
-      var mine = team.indexOf('bruce') !== -1;
+      var mine = team.indexOf('bruce') !== -1, elsewhere = !mine && busyOn().bruce;
       me.className = 'gm-assign gm-assign--bruce' + (mine ? ' is-on' : '');
-      me.disabled = mine;
+      me.disabled = !!elsewhere;
       me.style.setProperty('--accent', '#e8c86a');
-      me.setAttribute('data-tip', mine ? 'You\u2019re on it' : 'Go yourself');
+      me.setAttribute('data-tip', mine ? 'You\u2019re on it — click to pull out' : elsewhere
+        ? 'You\u2019re on the ' + elsewhere.kind.toLowerCase() + ' at ' + elsewhere.place + ' — pull out of it first' : 'Go yourself');
       var myFace = document.createElement('span');
       if (opts.bruce && opts.bruce()) opts.portrait(myFace, opts.bruce());
       me.appendChild(myFace);
       me.appendChild(document.createTextNode('You'));
       me.addEventListener('click', function () {
+        if (mine) return pullOff(report, 'bruce', said);
         opts.go({ report: report.id }).then(function (where) {
-          said.textContent = where && where.route ? 'On your way — ' + (where.route.by || '') + ', ' +
+          said.textContent = where && where.error ? where.error + '.' : where && where.route ? 'On your way — ' + (where.route.by || '') + ', ' +
             Math.max(1, Math.round((where.route.end - Date.now() / 1000) / 60)) + ' min.' : 'You\u2019re on it.';
           said.hidden = false;
           loadIncidents();
@@ -1407,19 +1504,24 @@
         var b = document.createElement('button');
         b.type = 'button';
         var onIt = (report.team || (report.assignee ? [report.assignee] : [])).indexOf(c.id) !== -1;
-        b.className = 'gm-assign' + (onIt ? ' is-on' : '');
-        b.disabled = onIt;
+        var other = !onIt && busyOn()[c.id];
+        b.className = 'gm-assign' + (onIt ? ' is-on' : '') + (other ? ' is-busy' : '');
+        b.disabled = !!other;
         b.style.setProperty('--accent', c.accent);
         var p = c.presence || {};
         var state = p.status === 'offline' ? 'asleep or out of reach' : p.doing || p.status || '';
-        b.setAttribute('data-tip', onIt ? c.name + '\u2019s on it' : (report.assignee ? 'Send ' + c.name + ' too' : 'Put ' + c.name + ' on it')
-                                   + (state && !onIt ? ' — ' + state : ''));
+        var where = (report.members || {})[c.id];
+        b.setAttribute('data-tip', onIt ? c.name + (where && where.status === 'on scene' ? ' is there' : ' is on the way')
+                                          + ' — click to pull them off'
+          : other ? c.name + '\u2019s on the ' + other.kind.toLowerCase() + ' at ' + other.place + ' — pull them off it first'
+          : (report.assignee ? 'Send ' + c.name + ' too' : 'Put ' + c.name + ' on it') + (state ? ' — ' + state : ''));
         b.dataset.status = p.status || '';
         var face = document.createElement('span');
         opts.portrait(face, c);
         b.appendChild(face);
         b.appendChild(document.createTextNode(c.name));
         b.addEventListener('click', function () {
+          if (onIt) return pullOff(report, c.id, said);
           fetch('/api/cases/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                        body: JSON.stringify({ report: report.id, contact: c.id }) })
             .then(function (r) { return r.json(); })
@@ -1586,17 +1688,53 @@
     return li;
   }
 
+  // A fold at the foot of a list: its count, open or shut as he left it.
+  function folded(pane, key, title, items) {
+    if (!items.length) return;
+    var open = recall(key, false);
+    var head = document.createElement('li');
+    head.className = 'gm-list__fold';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.innerHTML = '<span></span><b></b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+                    'stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+    btn.querySelector('span').textContent = title;
+    btn.querySelector('b').textContent = items.length;
+    head.appendChild(btn);
+    pane.appendChild(head);
+    var rows = items.map(function (r) {
+      var li = reportItem(r, true);
+      li.classList.add('is-done');
+      li.hidden = !open;
+      pane.appendChild(li);
+      return li;
+    });
+    btn.addEventListener('click', function () {
+      open = !open;
+      remember(key, open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      rows.forEach(function (li) { li.hidden = !open; });
+    });
+  }
+
   function renderLists() {
     var casesPane = $('[data-pane="cases"]'), scannerPane = $('[data-pane="scanner"]');
     casesPane.innerHTML = '';
     scannerPane.innerHTML = '';
-    var worked = reports.filter(function (r) { return r.assignee; });
+    // Open cases first; tonight's finished ones folded away below — and the scanner the same.
+    var worked = reports.filter(function (r) { return r.assignee && !r.done; });
+    var finished = reports.filter(function (r) { return r.assignee && r.done; })
+      .sort(function (a, b) { return (b.done_at || 0) - (a.done_at || 0); });
     if (!worked.length) casesPane.innerHTML = '<li class="gm-list__empty">Nobody\u2019s on a case.</li>';
     worked.forEach(function (r) { casesPane.appendChild(reportItem(r, true)); });
+    folded(casesPane, 'gm-fold-cases', 'Completed tonight', finished);
     var live = reports.filter(function (r) { return !r.done; });
     live.slice().sort(function (a, b) { return b.severity - a.severity || b.at - a.at; })
       .forEach(function (r) { scannerPane.appendChild(reportItem(r, true)); });
     if (!live.length) scannerPane.innerHTML = '<li class="gm-list__empty">The scanner\u2019s quiet.</li>';
+    folded(scannerPane, 'gm-fold-cleared', 'Cleared tonight', reports.filter(function (r) { return r.done && !r.assignee; })
+      .sort(function (a, b) { return (b.done_at || 0) - (a.done_at || 0); }));
     var count = $('.gm-tab__count');
     var open = worked.filter(function (r) { return r.case !== 'closed'; }).length;
     count.textContent = open;
@@ -1823,6 +1961,7 @@
       goBtn.addEventListener('click', function () {
         goBtn.disabled = true;
         opts.go({ place: input.value.trim() || pin.label || 'Pin', x: pin.x, y: pin.y }).then(function (where) {
+          if (where && where.error) { goBtn.lastChild.textContent = 'On a case'; goBtn.title = where.error; return; }
           goBtn.lastChild.textContent = where && where.route
             ? Math.max(1, Math.round((where.route.end - Date.now() / 1000) / 60)) + ' min' : 'Here';
           setTimeout(function () { popup.remove(); }, 900);
@@ -2051,8 +2190,9 @@
       var btn = this, who = selected;
       btn.disabled = true;
       opts.go({ person: who }).then(function (where) {
-        btn.querySelector('span').textContent = where && where.route
+        btn.querySelector('span').textContent = where && where.error ? 'On a case' : where && where.route
           ? Math.max(1, Math.round((where.route.end - Date.now() / 1000) / 60)) + ' min' : 'With them';
+        if (where && where.error) btn.setAttribute('data-tip', where.error);
       }).catch(function () {}).then(function () { btn.disabled = false; });
     });
     $('.gm-info__x').addEventListener('click', function () { $('.gm-info').hidden = true; openReport = null; });

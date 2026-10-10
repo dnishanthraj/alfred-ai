@@ -1647,7 +1647,13 @@ html[data-seats="5"] .seat__name, html[data-seats="6"] .seat__name, html[data-se
 .gm-card__where { margin: 10px 0 0; font-size: 12px; color: var(--text-dim); display: flex; gap: 6px; align-items: center; }
 .gm-card__where::before { content: ""; width: 8px; height: 8px; flex: none; border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg); border: 1.5px solid var(--accent); }
-.gm-card__actions { display: flex; gap: 6px; margin-top: 12px; }
+/* Message, call, follow on the first row; his own moves — go to them, a lift — on their own row in his gold. */
+.gm-card__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.gm-card__actions .gm-btn { white-space: nowrap; }
+.gm-card__actions .gm-btn:not(.gm-btn--bat) { flex: 1 1 0; }
+.gm-card__actions .gm-btn--bat { flex: 1 1 calc(50% - 3px); justify-content: center; }
+.gm-card__actions .gm-btn[hidden] { display: none; }
+.gm-card__break { flex-basis: 100%; height: 0; }
 
 #map-open.is-on { color: var(--primary); }
 
@@ -1902,8 +1908,10 @@ input[type="text"], input[type="search"], input[type="password"], input:not([typ
   cursor: var(--cursor-grab); touch-action: none;
   min-width: 260px; padding: 12px 14px 12px; background: rgba(8, 12, 19, 0.9); border: 1px solid var(--hairline-2);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(79, 168, 224, 0.06);
-  backdrop-filter: blur(6px); display: grid; grid-template-columns: 1fr auto; grid-template-areas: "who tools" "line line";
-  row-gap: 8px; column-gap: 10px; }
+  backdrop-filter: blur(6px); display: grid; grid-template-columns: 1fr auto;
+  grid-template-areas: "who tools" "viz viz" "me me" "line line"; row-gap: 8px; column-gap: 10px; }
+/* The voice on the line, as a strip across the card: theirs in their colour, his in red while he holds Space. */
+.gm-call__viz { grid-area: viz; display: block; width: 100%; height: 26px; margin: -2px 0; }
 .gm-call[hidden] { display: none; }
 .gm-call.is-dragging { cursor: var(--cursor-grabbing); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--primary-dim); }
 .gm-call button, .gm-call__line { cursor: var(--cursor-pointer); }
@@ -1935,7 +1943,7 @@ input[type="text"], input[type="search"], input[type="password"], input:not([typ
 .gm-call__talk.is-on { color: #02050a; background: var(--primary); border-color: var(--primary); }
 .gm-call__end { border-color: rgba(224, 87, 79, 0.45) !important; }
 /* His own line: a live dot while he talks, then what he said. */
-.gm-call__me { display: flex; align-items: center; gap: 8px; margin: 2px 0 0; font-size: 12px; color: var(--text-dim);
+.gm-call__me { grid-area: me; display: flex; align-items: center; gap: 8px; margin: 2px 0 0; font-size: 12px; color: var(--text-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gm-call__me[hidden] { display: none; }
 .gm-call__me-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
@@ -2153,3 +2161,35 @@ body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-in
 .book__muted { display: inline-block; width: 13px; height: 13px; margin-left: 7px; vertical-align: -2px; color: var(--text-dim); }
 .book__muted svg { width: 100%; height: 100%; display: block; }
 .messages__name .book__muted { width: 14px; height: 14px; margin-left: 8px; }
+
+/* A case under way: where it's got to, a bar for how far, and each of them — there, or how far out. */
+.gm-info__progress { margin: 10px 0 2px; }
+.gm-info__progress[hidden] { display: none; }
+.gm-progress__head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.gm-progress__head b { font-family: var(--mono); font-weight: 500; font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--primary); }
+.gm-info__progress[data-phase="gone wrong"] .gm-progress__head b { color: var(--alert); }
+.gm-progress__head span { font-size: 11px; color: var(--text-faint); }
+.gm-progress__bar { height: 3px; margin-top: 6px; background: var(--hairline-2); overflow: hidden; }
+.gm-progress__bar i { display: block; height: 100%; width: 0; background: var(--primary);
+  box-shadow: 0 0 8px var(--primary-dim); transition: width 0.6s var(--ease); }
+.gm-info__progress[data-phase="gone wrong"] .gm-progress__bar i { background: var(--alert); box-shadow: 0 0 8px var(--alert); }
+.gm-progress__who { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.gm-progress__who li { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-dim); }
+.gm-progress__who span { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--accent);
+  background-size: cover; background-color: var(--surface-2); }
+/* Busy on another case: not to be had till they're off it. */
+.gm-assign.is-busy { opacity: 0.45; cursor: not-allowed; }
+
+/* Tonight's finished cases and cleared calls: folded at the foot of their tab, faded when open. */
+.gm-list__fold { margin-top: 6px; border-top: 1px solid var(--hairline); }
+.gm-list__fold button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 14px; background: none;
+  border: 0; color: var(--text-faint); font-family: var(--mono); font-size: 9px; letter-spacing: 0.18em;
+  text-transform: uppercase; cursor: var(--cursor-pointer); text-align: left; }
+.gm-list__fold button:hover { color: var(--text-dim); }
+.gm-list__fold b { font-weight: 500; color: var(--text-dim); }
+.gm-list__fold svg { width: 12px; height: 12px; margin-left: auto; transition: transform 0.2s var(--ease); }
+.gm-list__fold button[aria-expanded="true"] svg { transform: rotate(180deg); }
+.gm-list__item.is-done { opacity: 0.6; }
+.gm-list__item.is-done:hover { opacity: 0.9; }
+.gm-list__item[hidden] { display: none; }
