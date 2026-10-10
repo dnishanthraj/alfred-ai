@@ -120,11 +120,12 @@ def assign(report, contact_id, by="him", travel=0):
         case["team"].append(contact_id)
         case["members"][contact_id] = {"by": by, "travel": round(travel, 1), "joined": now, "status": "assigned"}
         if first:
+            from . import outcomes
             case.update({"assignee": contact_id, "by": by, "status": "assigned", "updated_at": now,
-                         "travel": round(travel, 1), "due": now + (travel + 35 + 12 * report["severity"]) * 60})
+                         "travel": round(travel, 1), "due": now + (travel + outcomes.work(case)) * 60})
         else:
             # A second pair of hands gets it done sooner, and no later than they can get there.
-            case["due"] = max(now + (travel + 15) * 60, case.get("due", now) - 8 * 60)
+            case["due"] = max(now + (travel + 6) * 60, case.get("due", now) - 5 * 60)
         case["log"].append({"at": now, "text": f"{'assigned to' if first else 'joined by'} {contact_id} "
                                                f"({'by him' if by == 'him' else 'took it'})"})
         _save(cases)
@@ -298,13 +299,20 @@ def brief(contact_id, now=None):
         book = directory()
         others = [book.get(c).name if book.get(c) else "Bruce — Batman himself" if c == "bruce" else c
                   for c in team(case) if c != contact_id]
-        from . import outcomes
+        from . import batman, outcomes
         bring = " and ".join(outcomes.strengths(contact_id, case["kind"]))
         lacking = outcomes.weakest(contact_id, case["kind"])
+        if "bruce" in team(case):
+            him = ""
+        else:
+            # Never told, they took it he was out there with them: "you're late", "get out of there".
+            bruce = batman.state(now)
+            where = f"on his way to {bruce['where']}" if bruce.get("route") else f"at {bruce['where']}"
+            him = f" He isn't on this one — he's {where}, not on the scene."
         return (f"You're working a case: {case['kind'].lower()} at {case['place']} ({case['area']})"
                 + (f" — dispatch said: \"{case['dispatch']}\"" if case.get("dispatch") else "")
                 + f". {who} {minutes} minutes ago" + (f", with {' and '.join(others)} on it too" if others else "")
-                + f". Right now you're {how}. On this one you'd play to what you're good at — {bring}"
+                + f". Right now you're {how}.{him} On this one you'd play to what you're good at — {bring}"
                 + (f"; {lacking} is where you'd lean on someone" if lacking and others else "")
                 + ". It's yours to talk about, your way — what you've found, what you think, how it's going.")
     done = recent(contact_id, now)

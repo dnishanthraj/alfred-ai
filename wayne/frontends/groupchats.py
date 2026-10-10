@@ -28,6 +28,8 @@ CHASE_AFTER = (6 * 60, 50 * 60)
 CHASE_ODDS = 0.04
 # After a group call, the chance it carries on in a group they share.
 AFTER_CALL = 0.3
+# A private word to him from a group chat: at most one every so often from each of them (seconds).
+DM_ASIDE_GAP = 20 * 60
 
 
 class GroupChats:
@@ -39,6 +41,7 @@ class GroupChats:
         self._group_readers = {}
         self._group_writing = set()     # (group, member) whose post the model is writing right now
         self._drafts = {}               # group -> {member: what they've written and are typing out}
+        self._dm_asides = {}            # member -> when they last took something from a group to his DMs
 
     # --- what the page asks for ---------------------------------------------
 
@@ -194,7 +197,10 @@ class GroupChats:
         # Owed an answer when he asks; one of them asking is likely, not owed.
         must = (any(groupchat.addressed(m["text"], contact) for m in unread if m["from"] == "me")
                 or groupchat.follows_notice(group, contact, unread))
-        lively = groupchat.liveliness(group, self.directory)
+        meta = group.meta() or {}
+        if meta.get("comms") and not must and (meta.get("signed_off") or meta.get("archived")):
+            return              # signed off: it's over, and nobody keeps it going unless he does
+        lively = groupchat.liveliness(group, self.directory) * (0.55 if meta.get("comms") else 1.0)
         if not must and random.random() >= groupchat.reply_odds(contact, group, unread,
                                                                 groupchat.energy(group), lively):
             return
@@ -311,30 +317,12 @@ class GroupChats:
             await self._group_actions(group, contact, actions)
             return
         parts = initiative.bubbles(contact, initiative.untic(contact, text, mine))
-        for i, part in enumerate(parts):
-            current = store.of(group.id)
-            if current is None or contact.id not in current.members:
-                # Removed while writing: it doesn't get sent.
-                await self.broadcast({"type": "group_idle", "group": group.id, "speaker": contact.id})
-                return
-            await self.broadcast({"type": "group_typing", "group": group.id, "speaker": contact.id})
-            await self._type_out(contact.id, part, per_second, group=group.id, cap=15,
-                                 already=(loop.time() - started) if i == 0 else 0)
-            current = store.of(group.id)
-            answering = None
-            if i == 0 and current:
-                answering = (groupchat.quoting(current, actions["reply"], self.directory, contact.id)
-                             if actions.get("reply") else self._answering(current, contact, unread))
-            message = (current.add(contact.id, part, reply_to=answering)
-                       if current and contact.id in current.members else None)
-            if message is None:
-                # Deleted, or shown the door, while they typed: it never lands.
-                await self.broadcast({"type": "group_idle", "group": group.id, "speaker": contact.id})
-                return
-            await self.broadcast({"type": "group_message", "group": group.id, "message": message})
-            await self._ping(group, part, contact.id)
-            if i < len(parts) - 1:
-                await asyncio.sleep(random.uniform(0.4, 1.2))
+        async with self._hands(contact.id) as waited:
+            if waited:
+                started = loop.time()           # what they wrote waited on another thread: typed from now
+            sent = await self._type_parts(group, contact, parts, actions, unread, per_second, started)
+        if not sent:
+            return
         presence.of(contact).touch()
         await self._presence_changed(contact)
         log.info("%s posted in group %s, %d messages", contact.id, group.id, len(parts))
@@ -348,6 +336,35 @@ class GroupChats:
         for member in group.members:
             if member != contact.id:
                 self._read_later(group, member)
+
+    async def _type_parts(self, group, contact, parts, actions, unread, per_second, started):
+        """Each part typed and sent in turn — or not, if the group or their place in it goes while they type."""
+        loop = asyncio.get_running_loop()
+        for i, part in enumerate(parts):
+            current = store.of(group.id)
+            if current is None or contact.id not in current.members:
+                # Removed while writing: it doesn't get sent.
+                await self.broadcast({"type": "group_idle", "group": group.id, "speaker": contact.id})
+                return False
+            await self.broadcast({"type": "group_typing", "group": group.id, "speaker": contact.id})
+            await self._type_out(contact.id, part, per_second, group=group.id, cap=15,
+                                 already=(loop.time() - started) if i == 0 else 0)
+            current = store.of(group.id)
+            answering = None
+            if i == 0 and current:
+                answering = (groupchat.quoting(current, actions["reply"], self.directory, contact.id)
+                             if actions.get("reply") else self._answering(current, contact, unread))
+            message = (current.add(contact.id, part, reply_to=answering)
+                       if current and contact.id in current.members else None)
+            if message is None:
+                # Deleted, or shown the door, while they typed: it never lands.
+                await self.broadcast({"type": "group_idle", "group": group.id, "speaker": contact.id})
+                return False
+            await self.broadcast({"type": "group_message", "group": group.id, "message": message})
+            await self._ping(group, part, contact.id)
+            if i < len(parts) - 1:
+                await asyncio.sleep(random.uniform(0.4, 1.2))
+        return True
 
     @staticmethod
     def _answering(group, contact, unread):
@@ -388,12 +405,17 @@ class GroupChats:
     async def _group_actions(self, group, contact, actions):
         """They add someone to the group, or walk out of it — their call, in context."""
         if actions.get("dm"):
-            if self._ABOUT_HIM.search(actions["dm"]):
+            comms = (group.meta() or {}).get("comms")
+            if self._ABOUT_HIM.search(actions["dm"]) or comms:
                 # Jason's "tell the old man to watch Janus's shell companies" landed in his
                 # own thread with Bruce. It's said about him, to the others: it goes in the chat.
+                # On comms there's no private line at all — Barbara's "get out of there before
+                # that hatch seals" was for Jason, on the scene, not Bruce at home.
                 self._spawn(self._post_as(group, contact, given=actions["dm"]))
-            else:
-                # Taken private: a text to him, in their thread, as they'd send it.
+            elif time.time() - self._dm_asides.get(contact.id, 0) > DM_ASIDE_GAP:
+                # Taken private: a text to him, in their thread, as they'd send it — now and
+                # then, not with every message they post.
+                self._dm_asides[contact.id] = time.time()
                 self._spawn(self._dm_from_group(contact, actions["dm"]))
         for name in actions.get("add", [])[:1]:
             newcomer = self.directory.find(name)
@@ -499,6 +521,8 @@ class GroupChats:
         if not self._may_reach_out(now):
             return
         for group in store.all_groups():
+            if (group.meta() or {}).get("comms"):
+                continue        # a case's channel talks about the case, and is put away after
             last = group.summary()["last"]
             if last and now - last["at"] < 6 * 3600:
                 continue        # it's had something lately
@@ -522,6 +546,8 @@ class GroupChats:
         covering for them — and a tag pings. Once per question.
         """
         for group in store.all_groups():
+            if (group.meta() or {}).get("archived"):
+                continue
             chased = group.meta().get("chased", [])
             pending = []
             for asked in (m for m in group.messages()[-12:] if m["from"] == "me"):

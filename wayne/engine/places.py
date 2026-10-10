@@ -20,8 +20,6 @@ from pathlib import Path
 _PATROL = re.compile(r"(?i)\b(patrol\w*|stake ?outs?|staking (it )?out|prowl\w*|on the streets|"
                      r"(out )?on the rooftops|(swinging|flying|running) (the )?(rooftops|city|beat|over|across)|"
                      r"on the beat|night rounds)\b")
-# How long they stay in one part of their beat before moving on.
-BEAT_STEP = 15 * 60
 
 
 @lru_cache(maxsize=1)
@@ -257,38 +255,3 @@ def names():
 
 def is_patrol(doing):
     return bool(_PATROL.search(doing or ""))
-
-
-def on_beat(contact, t):
-    """Where on their beat they are right now: moving on every quarter hour or so."""
-    beat = list(getattr(contact, "beat", ()) or ())
-    if not beat:
-        return None
-    slot = int(t // BEAT_STEP)
-    digest = hashlib.sha1(f"{contact.id}:{slot}".encode()).digest()
-    return beat[digest[0] % len(beat)]
-
-
-def patrol_spot(contact, planned, t):
-    """
-    Where a patrol has them now: at an open report on their beat, if there is
-    one and they'd answer it; otherwise a stop on their beat within the area
-    the plan named (all of it if the plan was vague), else the plan's own place.
-    """
-    from . import incidents
-    beat = list(getattr(contact, "beat", ()) or ())
-    there = resolve(planned) if planned and "/" not in planned else None
-    if there:
-        beat = [b for b in beat if (resolve(b) or {}).get("area") == there["area"]] or []
-        if not beat:
-            return planned
-    if not beat:
-        return planned or None
-    areas = {(resolve(b) or {}).get("area") for b in beat}
-    report = incidents.near(areas, t)
-    slot = int(t // BEAT_STEP)
-    digest = hashlib.sha1(f"{contact.id}:{slot}".encode()).digest()
-    if report and digest[1] % 3:
-        # Two times in three, they go where the trouble is.
-        return report["place"]
-    return beat[digest[0] % len(beat)]

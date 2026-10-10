@@ -15,6 +15,7 @@ model finishes writing it, several in flight at once, but the resulting clips
 are released to the page strictly in order.
 """
 import asyncio
+import contextlib
 import json
 import logging
 import logging.handlers
@@ -111,6 +112,10 @@ _URGENT = re.compile(r"(?i)\b(help|emergency|hurt|hospital|bleeding|urgent|now|p
 
 # How often the console's clock ticks: presence, promises, the odd text.
 PULSE_SECONDS = 30
+# On a case's comms: the quiet lines between events, at most, and how long the
+# channel stays up after the sign-off before it's put away (seconds).
+COMMS_LINES = 4
+COMMS_LINGER = 8 * 60
 # Nobody texts out of the blue twice within this long, across everyone.
 # The least time between unprompted texts from anyone: often enough to feel
 # like a life going on around him, not so often it's a feed.
@@ -1316,14 +1321,30 @@ class Console(GroupChats):
         thread = TextLog(contact.id)
         recent = [m["text"] for m in thread.page(limit=8) if m["from"] == "them"][-3:]
         parts = initiative.bubbles(contact, initiative.untic(contact, reply, recent))
-        for i, part in enumerate(parts):
-            await self.broadcast({"type": "text_typing", "speaker": contact.id})
-            await self._type_out(contact.id, part, per_second,
-                                 already=(loop.time() - started) if i == 0 else 0)
-            sent = thread.add("them", part, origin=origin, reply_to=reply_to if i == 0 else None)
-            await self.broadcast({"type": "text_reply", "speaker": contact.id, "message": sent})
-            if i < len(parts) - 1:
-                await asyncio.sleep(random.uniform(0.4, 1.4))
+        async with self._hands(contact.id) as waited:
+            for i, part in enumerate(parts):
+                await self.broadcast({"type": "text_typing", "speaker": contact.id})
+                await self._type_out(contact.id, part, per_second,
+                                     already=(loop.time() - started) if i == 0 and not waited else 0)
+                sent = thread.add("them", part, origin=origin, reply_to=reply_to if i == 0 else None)
+                await self.broadcast({"type": "text_reply", "speaker": contact.id, "message": sent})
+                if i < len(parts) - 1:
+                    await asyncio.sleep(random.uniform(0.4, 1.4))
+
+    @contextlib.asynccontextmanager
+    async def _hands(self, contact_id):
+        """
+        One pair of thumbs: they type in one thread at a time — his DM or a group
+        chat, never both at once. Busy in one, the other waits till they're done,
+        and a moment more to switch over. Yields whether they had to wait.
+        """
+        locks = self.__dict__.setdefault("_thumbs", {})
+        lock = locks.setdefault(contact_id, asyncio.Lock())
+        waited = lock.locked()
+        async with lock:
+            if waited:
+                await asyncio.sleep(random.uniform(1.5, 5.0))
+            yield waited
 
     async def _type_out(self, contact_id, text, per_second, already=0, group=None, cap=20):
         """
@@ -1722,26 +1743,46 @@ class Console(GroupChats):
             case = cases.for_report(meta["case"])
             if case is None or (case["status"] == "closed" and now > meta.get("close_at", now + 1)):
                 group.update_meta(lambda m: m.update({"archived": True, "archived_at": now}))
+                for key, task in list(self._group_readers.items()):
+                    if key[0] == group.id and key not in self._group_writing:
+                        task.cancel()       # put away: nobody's still reading it to answer
                 await self.broadcast({"type": "group_updated", "group": self.group_payload(group)})
                 continue
             if case["status"] == "closed":
                 if not meta.get("signed_off"):
-                    group.update_meta(lambda m: m.update({"signed_off": True, "close_at": now + 20 * 60}))
+                    # The end of it, said once: the case line, a sign-off from whoever led
+                    # it — and a few minutes on, the channel's put away as they go their ways.
+                    group.update_meta(lambda m: m.update({"signed_off": True, "close_at": now + COMMS_LINGER}))
                     result = (case.get("result") or {}).get("how", "")
-                    group.system(f"Case closed{': ' + result if result else ''}")
-                    speaker = next((self.directory.get(m) for m in group.members if self.directory.get(m)), None)
+                    line = group.system(f"Case closed{': ' + result if result else ''}")
+                    await self.broadcast({"type": "group_message", "group": group.id, "message": line})
+                    speaker = next((self.directory.get(m) for m in cases.team(case) if self.directory.get(m)
+                                    and m in group.members), None)
                     if speaker is not None and speaker.id not in self._members():
                         self._spawn(self._post_as(group, speaker, opening=f"it's over: {case.get('outcome', 'done')} — "
-                                                  "sign off on comms your way, a few words"))
+                                                  "sign off on comms your way, a few words; nothing more to sort out"))
                 continue
-            if now < meta.get("next_post", 0) or self.current_id or self.turn_lock.locked():
+            # Comms is bursts, not a feed: a line when something changes — someone gets
+            # there, it goes bad, it's settling — and only now and then between. A line
+            # every minute or two for an hour and a half was a chat that never ended.
+            phase, how = cases.phase(case, now)
+            landed = sorted(m for m, v in (case.get("members") or {}).items() if v.get("status") == "on scene")
+            heard = f"{phase}|{','.join(landed)}"
+            changed = heard != meta.get("heard")
+            if not changed and (now < meta.get("next_post", 0) or meta.get("lines", 0) >= COMMS_LINES):
                 continue
-            group.update_meta(lambda m: m.update({"next_post": now + random.uniform(60, 150)}))
+            if self.current_id or self.turn_lock.locked():
+                continue
             on_it = [self.directory.get(m) for m in group.members if self.directory.get(m) and m not in self._members()]
             if not on_it:
                 continue
-            speaker = random.choice(on_it)
-            _phase, how = cases.phase(case, now)
+            spoken = meta.get("lines", 0) + (0 if changed else 1)
+            group.update_meta(lambda m, heard=heard, spoken=spoken: m.update(
+                {"heard": heard, "lines": spoken, "next_post": now + random.uniform(4, 9) * 60}))
+            # Whoever just got there says so; otherwise whoever's on it.
+            fresh = [self.directory.get(m) for m in landed if m not in (meta.get("heard") or "").split("|")[-1].split(",")
+                     and self.directory.get(m) and m not in self._members()]
+            speaker = fresh[0] if fresh else random.choice(on_it)
             mine = (case.get("members") or {}).get(speaker.id) or {}
             if mine.get("status") == "assigned" and case["status"] == "on scene":
                 how = "on your way to join them"
@@ -1782,30 +1823,44 @@ class Console(GroupChats):
             if state["status"] == presence.OFFLINE or now < (whereabouts.get("case_rest") or 0):
                 continue        # asleep, out of reach, or just back from one
             patrolling = places.is_patrol(state["doing"])
-            spot = places.resolve(whereabouts.whereabouts(now)[0] or "")
-            areas = {(places.resolve(b) or {}).get("area") for b in contact.beat}
+            # From exactly where they are — the roof they're watching from, the road they're on.
+            here = whereabouts.position(now)
+            sector = whereabouts.whereabouts(now)[0] or ""
+            areas = {(places.resolve(b) or {}).get("area") for b in contact.beat} | {
+                (places.resolve(sector) or {}).get("area")}
+            # Trouble like a case they worked lately — the same crew, the same rogue — is
+            # theirs before anyone's: that's a lead, and they'd cross town for it.
+            worked = [c for c in cases.everything() if cid in cases.team(c) and now - c.get("opened_at", 0) < 48 * 3600]
+            leads = {c.get("suspect") for c in worked if c.get("suspect")} | {c.get("gang") for c in worked if c.get("gang")}
+            leads.discard(None)
 
-            def near(x, y, spot=spot):
-                return math.dist((spot["x"], spot["y"]), (x, y)) if spot else 99.0
+            def near(x, y, here=here):
+                return math.dist(here, (x, y)) if here else 99.0
 
             choices = []
             for r in open_:
                 far = near(r["x"], r["y"])
+                lead = bool(leads & {r.get("suspect"), r.get("gang")})
                 if patrolling:
-                    if r["area"] not in areas and far > 6:
+                    if r["area"] not in areas and far > (12 if lead else 6):
                         continue
-                elif far > (3.5 if dark else 2.5) or r["severity"] < (3 if dark else 4):
+                elif far > (8 if lead else 3.5 if dark else 2.5) or (r["severity"] < (3 if dark else 4) and not lead):
                     continue        # off duty: only something bad, and close — then the game can wait
                 if cid == "redhood" and not any(v in r["kind"].lower() for v in violent):
                     continue        # Jason doesn't do break-ins
                 # A tick is half a minute: the worst on their doorstep in a minute or two, a
                 # minor one across the district maybe never.
                 duty = 1.0 if patrolling else 0.6 if dark else 0.35
-                choices.append((0.05 * r["severity"] * duty * (1.4 if far < 2.5 else 1.0 if far < 6 else 0.5), r, "take"))
+                choices.append((0.05 * r["severity"] * duty * (1.4 if far < 2.5 else 1.0 if far < 6 else 0.5)
+                                * (2.5 if lead else 1.0), r, "take"))
             for c in openly:
                 kind, _how = cases.phase(c, now)
-                if (kind == "gone wrong" or c["severity"] >= 4) and near(c["x"], c["y"]) <= 8:
+                far = near(c["x"], c["y"])
+                if (kind == "gone wrong" or c["severity"] >= 4) and far <= 8:
                     choices.append((0.12 if kind == "gone wrong" else 0.05, c, "join"))
+                elif patrolling and c["severity"] >= 3 and far <= 4.5 and len(cases.team(c)) < 3:
+                    # Someone's already on it, round the corner from them: they back them up.
+                    choices.append((0.03, c, "join"))
             if not choices:
                 continue
             odds, what, _how = max(choices, key=lambda ch: ch[0])
@@ -2692,8 +2747,10 @@ async def map_trail(contact_id: str, hours: float = 2.0):
     hours = max(0.25, min(hours, 12))
     whereabouts = presence.of(contact)
     trail = await asyncio.to_thread(whereabouts.trail, hours)
-    # And the roads they took between those places, as they took them.
-    return JSONResponse({"trail": trail, "trips": whereabouts.trips(time.time() - hours * 3600)})
+    # And the roads they took between those places, as they took them — and the roofs, on patrol.
+    since = time.time() - hours * 3600
+    legs = await asyncio.to_thread(whereabouts.patrol_legs, since)
+    return JSONResponse({"trail": trail, "trips": whereabouts.trips(since) + legs})
 
 
 @app.get("/api/codex")

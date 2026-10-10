@@ -614,6 +614,19 @@
           paint: { 'line-color': ['get', 'color'], 'line-width': 2.4, 'line-dasharray': [1.5, 1.8], 'line-opacity': 0.9 } },
         { id: 'trail-stop', type: 'circle', source: 'trail', filter: ['==', ['geometry-type'], 'Point'],
           paint: { 'circle-radius': 4, 'circle-color': C.void, 'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 1.8 } },
+        // The same way, drawn over the buildings: a line is laid on the ground, and in 3D a block
+        // hid every street of it. Dashes along it are drawn after the city, so it reads across the roofs.
+        { id: 'trail-over', type: 'symbol', source: 'trail', minzoom: 12.6,
+          filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get', 'k'], 'ahead']],
+          layout: { 'symbol-placement': 'line', 'symbol-spacing': 9, 'icon-image': 'gm-dash', 'icon-size': 0.9,
+                    'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'viewport', 'icon-allow-overlap': true,
+                    'icon-ignore-placement': true, 'icon-keep-upright': false },
+          paint: { 'icon-color': ['get', 'color'], 'icon-opacity': 0.95 } },
+        { id: 'trail-over-ahead', type: 'symbol', source: 'trail', minzoom: 12.6,
+          filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'k'], 'ahead']],
+          layout: { 'symbol-placement': 'line', 'symbol-spacing': 12, 'icon-image': 'gm-dot', 'icon-size': 0.8,
+                    'icon-pitch-alignment': 'viewport', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
+          paint: { 'icon-color': ['get', 'color'], 'icon-opacity': 0.8 } },
         // The city's life: neon pooled under the clubs and bars, then the places themselves.
         { id: 'venue-glow', type: 'circle', source: 'city', minzoom: 12.6,
           filter: ['all', is('venue'), ['in', ['get', 'k'], ['literal', ['club', 'bar']]]],
@@ -942,6 +955,17 @@
 
   function minutesLeft(route) { return Math.max(1, Math.round((route.end - Date.now() / 1000) / 60)); }
 
+  // What a journey is, in a line: a patrol's run over the roofs, waiting on the Batwing, or on the way.
+  function routeText(c, route, short) {
+    var where = c.presence.where || c.presence.spot.name, now = Date.now() / 1000;
+    if (route.patrol) return (short ? '' : 'On patrol · ') + where + (short ? ' · on patrol' : ' · over the rooftops');
+    if (now < route.start) {
+      return (short ? '→ ' : 'Waiting for the ') + (short ? where + ' · ' : '') + (route.by || 'pickup') + ' · ' +
+             Math.max(1, Math.round((route.start - now) / 60)) + ' min to pickup';
+    }
+    return (short ? '→ ' : 'On the way to ') + where + (route.by ? ' · ' + route.by : '') + ' · ' + minutesLeft(route) + ' min';
+  }
+
   function personMarker(c, at, ghost) {
     var marker = people[c.id];
     if (!marker) {
@@ -1021,8 +1045,7 @@
       var marker = personMarker(c, onJourney(journey(route), Date.now() / 1000).at);
       if (!marker._trip || marker._trip.start !== route.start) marker._trip = journey(route);
       marker.getElement().classList.add('is-moving');
-      finish(c, marker, c.name + ' · on the way to ' + (c.presence.where || c.presence.spot.name) +
-             (route.by ? ' · ' + route.by : '') + ' · ' + minutesLeft(route) + ' min');
+      finish(c, marker, c.name + ' · ' + routeText(c, route));
     });
     // Those who keep where they are to themselves: where he last knew them to be, faded.
     ghosts.forEach(function (c) {
@@ -1073,8 +1096,7 @@
       var company = (p['with'] || []).map(function (cid) { return (contacts[cid] || {}).name; }).filter(Boolean);
       var route = travelling(c);
       text.querySelector('small').textContent = p.spot
-        ? (route ? '→ ' + (p.where || p.spot.name) + (route.by ? ' · ' + route.by : '') + ' · ' + minutesLeft(route) + ' min'
-                 : (p.where || p.spot.name))
+        ? (route ? routeText(c, route, true) : (p.where || p.spot.name))
           + (company.length ? ' · with ' + company.join(', ') : '')
         : p.last_seen ? 'Last seen ' + ago(Date.now() / 1000 - p.last_seen.at) + ' · ' + p.last_seen.where : 'Location hidden';
       li.appendChild(face);
@@ -1126,9 +1148,8 @@
     var route = travelling(c);
     card.querySelector('.gm-card__where').textContent = !p.spot
       ? 'Last seen ' + ago(Date.now() / 1000 - p.last_seen.at) + ' · ' + p.last_seen.where + ' — ' + p.last_seen.how
-      : (route ? 'On the way to ' : '') + (p.where || p.spot.name) +
-        (p.spot.area && p.spot.area !== p.where && p.spot.area !== p.spot.name ? ' · ' + p.spot.area : '') +
-        (route ? (route.by ? ' · ' + route.by : '') + ' · ' + minutesLeft(route) + ' min' : '') +
+      : (route ? routeText(c, route) : (p.where || p.spot.name) +
+         (p.spot.area && p.spot.area !== p.where && p.spot.area !== p.spot.name ? ' · ' + p.spot.area : '')) +
         (company.length ? ' · with ' + company.join(', ') : '');
     card.querySelector('[data-act="follow"]').hidden = !p.spot;
     card.querySelector('[data-act="follow"]').classList.toggle('is-on', following === id);
@@ -1789,7 +1810,7 @@
     crime: ['incident', 'incident-pulse', 'smoke', 'case-ring', 'heli', 'heli-light', 'heli-spot'],
     life: ['venue', 'venue-glow', 'lantern'],
     safety: ['safety'],
-    trails: ['trail', 'trail-ahead', 'trail-stop']
+    trails: ['trail', 'trail-ahead', 'trail-stop', 'trail-over', 'trail-over-ahead']
   };
 
   var shownLayers = null;
@@ -1932,6 +1953,12 @@
           if (!map.hasImage('gm-' + kind)) map.addImage('gm-' + kind, icon(kind), { pixelRatio: 2 });
         });
         [1, 2, 3, 4].forEach(function (s) { map.addImage('gm-warn-' + s, warning(s), { pixelRatio: 2 }); });
+        map.addImage('gm-dash', sprite(10, function (ctx) {
+          ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(-3.6, -1.1, 7.2, 2.2, 1.1); ctx.fill();
+        }), { pixelRatio: 2, sdf: true });
+        map.addImage('gm-dot', sprite(8, function (ctx) {
+          ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, 1.4, 0, Math.PI * 2); ctx.fill();
+        }), { pixelRatio: 2, sdf: true });
         map.addImage('gm-boat', sprite(30, boat), { pixelRatio: 2 });
         map.addImage('gm-heli', sprite(30, heli), { pixelRatio: 2 });
         map.addImage('gm-train', sprite(46, train), { pixelRatio: 2 });

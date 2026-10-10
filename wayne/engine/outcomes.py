@@ -102,6 +102,22 @@ WINDOW = {
 }
 
 
+# How long it takes once they're there, in minutes: a mugging is a chase round the block
+# and a word with GCPD; a standoff, a hunt or a fire is a long night.
+WORK = {"petty": (8, 16), "street": (12, 26), "hunt": (25, 50), "hostage": (30, 70), "disaster": (25, 55)}
+
+
+def family(kind):
+    """What sort of call it is: hostage, hunt, disaster, petty or street."""
+    return _FAMILY.get(kind, "petty" if kind in _PETTY else "street")
+
+
+def work(case):
+    """Minutes on scene before it's over, one way or the other — the same for the same case."""
+    lo, hi = WORK[family(case["kind"])]
+    return lo + (hi - lo) * _roll(case, "work") + 4 * max(0, case.get("severity", 2) - 2)
+
+
 def arrival(case):
     """When the first of them got there (or will)."""
     members = case.get("members") or {}
@@ -225,13 +241,13 @@ def decide(case, now=None):
     """
     from . import cases
     members = cases.team(case)
-    family = _FAMILY.get(case["kind"], "petty" if case["kind"] in _PETTY else "street")
+    sort = family(case["kind"])
     gone_wrong = cases.goes_wrong(case)
     joined_late = len(members) > 1
     late = too_late(case)
     suspect = case.get("suspect") or ""
     who = suspect or "whoever did it"
-    if late and family in ("street", "petty"):
+    if late and sort in ("street", "petty"):
         # Over before anyone got there: geography decides some of these.
         return {"ok": False, "how": "too late", "caught": "", "hurt": {}, "chance": 0.0,
                 "line": f"by the time they got there it was over — {who} long gone"}
@@ -243,29 +259,29 @@ def decide(case, now=None):
     good = r < p
     middling = not good and r < p + (1 - p) * 0.55
     if good:
-        how = {"hostage": "saved", "hunt": "solved", "disaster": "contained"}.get(family, "caught")
-        caught = bool(suspect) and (family not in ("hostage", "disaster") or _roll(case, "caught") < 0.75)
-        if family in ("street", "petty") and not suspect:
+        how = {"hostage": "saved", "hunt": "solved", "disaster": "contained"}.get(sort, "caught")
+        caught = bool(suspect) and (sort not in ("hostage", "disaster") or _roll(case, "caught") < 0.75)
+        if sort in ("street", "petty") and not suspect:
             caught = True
         line = {"saved": "everyone got out alive" + (f", and {who} was taken down" if caught else f" — {who} got away"),
                 "solved": f"it was worked out — {who} identified" + (" and brought in" if caught else ", still out there"),
                 "contained": "it was contained before it got worse" + (f"; {who} was brought in" if caught else ""),
                 "caught": f"{who} was caught and handed to GCPD"}[how]
-        if "redhood" in members and family == "street" and not suspect and _roll(case, "jason") < 0.3:
+        if "redhood" in members and sort == "street" and not suspect and _roll(case, "jason") < 0.3:
             how, line = "killed", "the man responsible didn't survive Jason — GCPD found what was left"
     elif middling:
-        how, caught = ("got away", False) if family != "hunt" else ("cold", False)
+        how, caught = ("got away", False) if sort != "hunt" else ("cold", False)
         line = {"got away": f"nobody else was hurt, but {who} got away",
                 "cold": f"it went nowhere — no one for it yet, {who} still out there"}[how]
     else:
         caught = False
-        how = {"hostage": "lost", "hunt": "cold", "disaster": "worse"}.get(family, "worse" if family == "street" else "got away")
+        how = {"hostage": "lost", "hunt": "cold", "disaster": "worse"}.get(sort, "worse" if sort == "street" else "got away")
         line = {"lost": "it went wrong — someone they were there to save didn't make it, and " + who + " got away",
                 "cold": f"it went cold — no one for it, {who} gone",
                 "worse": f"it went bad — more people hurt before it was over, and {who} got away",
                 "got away": f"{who} got away"}[how]
     hurt = {}
-    if not good and family in ("street", "hostage", "disaster") and _roll(case, "hurt") < 0.4:
+    if not good and sort in ("street", "hostage", "disaster") and _roll(case, "hurt") < 0.4:
         crew = [m for m in members if m != "bruce"] or members
         if crew:
             m = crew[int(_roll(case, "who") * len(crew))]

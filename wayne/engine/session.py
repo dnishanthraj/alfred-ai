@@ -1358,6 +1358,9 @@ class ContactSession:
         planned = self._plans_note("")
         if planned:
             context.append(planned)
+        comms = self._comms_note(group)
+        if comms:
+            context.append(comms)
         heard = " ".join(m["text"] for m in (unread or [])[-4:]) or (opening or "")
         for line in (gazette.note(self.contact, heard), gazette.who(heard)):
             if line:
@@ -1398,10 +1401,16 @@ class ContactSession:
                     "hasn't said to keep it small — end with [add: their first name]"
                     + (f" (could be {', '.join(c.name for c in others)})" if others else "") + ".")
         tags = ", ".join("@" + n for n in groupchat.handles(group, book, self.contact.id).values())
-        ask += (" If he asks you to take it to a private message, or there's something you'd only say to "
-                "him privately, end with [dm: what you'd text him — to him, in the second person, never about him] "
-                "— that goes to your thread with him, not "
-                "here.")
+        if comms:
+            # On comms everyone hears everything — him included, wherever he is. A
+            # "private word" from here was Barbara telling Jason off in Bruce's thread.
+            ask += (" Everything on this channel is heard by everyone on it, him included: there's no private "
+                    "line from here, so whatever you'd say to one of them, say it here, to them by name.")
+        else:
+            ask += (f" If he asks you to take it to a private message, or there's something you'd only say to "
+                    f"{operator_name()} privately, end with [dm: what you'd text him — to him, in the second person, "
+                    "never about him] — that goes to your thread with him alone, not here. It's never a way to say "
+                    "something privately to anyone else in the chat.")
         ask += (" Most messages tag nobody; tag someone only to pull in someone who isn't already "
                 f"talking — never the person you're replying to — and only as {tags}, exactly; "
                 "@everyone pings the whole chat, for the rare thing all of them need.")
@@ -1416,6 +1425,9 @@ class ContactSession:
             text = self._chat_once(payload, temperature=0.9, num_predict=110)
         except Exception:
             return ""
+        # Cut off mid-marker by the length limit — "[dm: you're late. gordon better be" — it's
+        # half a thought: never posted in the chat, and never sent anywhere else.
+        text = re.sub(r"\[\s*(dm|add|remove|react|reply|leave|rsvp)\b[^\]]*$", "", text, flags=re.I).rstrip()
         quoting = _QUOTE.search(text)
         text = _QUOTE.sub("", text)
         # What they do to the group, not what they say in it.
@@ -1459,6 +1471,49 @@ class ContactSession:
         text = "\n".join(guards.cap_length(line, 3) for line in lines[:4])
         text = guards.strip_forbidden_address(delivery.clean(text), self.contact.forbidden_address)
         return text.strip()
+
+    def _comms_note(self, group):
+        """
+        On a case's comms channel: what the op is, who's on it — and where he is.
+        Told nothing, they took it he was there: "you're late", "get out of
+        there before that hatch seals", to a man at home in the Manor.
+        """
+        meta = group.meta() or {}
+        if not meta.get("comms"):
+            return ""
+        from ..contacts import directory
+        from . import batman, cases
+        case = cases.for_report(meta.get("case", ""))
+        if case is None:
+            return ""
+        book = directory()
+        crew = cases.team(case)
+        others = [book.get(m).name for m in crew if m != self.contact.id and book.get(m)]
+        now = time.time()
+        if case["status"] == "closed":
+            state = f"It's over — {case.get('outcome') or 'done'}."
+        else:
+            _phase, how = cases.phase(case, now)
+            mine = (case.get("members") or {}).get(self.contact.id) or {}
+            if mine.get("status") == "assigned" and case["status"] == "on scene":
+                left = max(1, round((mine.get("joined", now) + mine.get("travel", 9) * 60 - now) / 60))
+                how = f"on your way to join them, about {left} min out"
+            state = f"Right now you're {how}."
+        bruce = batman.state(now)
+        if "bruce" in crew:
+            if bruce.get("route"):
+                left = max(1, round((bruce["route"]["end"] - now) / 60))
+                him = (f"{operator_name()} is on this one with you — on his way, {bruce['route'].get('by', 'travelling')}, "
+                       f"about {left} min out.")
+            else:
+                him = f"{operator_name()} is on this one with you — there, on the scene."
+        else:
+            where = (f"on his way to {bruce['where']}" if bruce.get("route")
+                     else f"at {bruce['where']}" if bruce.get("where") else "elsewhere")
+            him = (f"{operator_name()} isn't on this one: he's {where}, reading this channel on his phone — not on "
+                   "the scene, not on his way, not in danger. Nothing you say treats him as there.")
+        return (f"This is the comms channel for the {case['kind'].lower()} at {case['place']} ({case['area']}) — "
+                f"on it with you: {', '.join(others) or 'nobody else yet'}. {state} {him}")
 
     def reach_out(self, about, why="impulse"):
         """

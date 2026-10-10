@@ -42,7 +42,7 @@ import uuid
 
 from .. import paths
 from ..memory.store import atomic_write, read_text
-from . import places, travel, week
+from . import patrols, places, travel, week
 from . import plans as plans_made
 
 ONLINE, IDLE, BUSY, OFFLINE = "online", "idle", "busy", "offline"
@@ -145,12 +145,26 @@ def together(presence, t=None):
     for contact in book:
         if contact.id not in everyone:
             everyone[contact.id] = _registry.get(contact.id) or of(contact)
-    order = {cid: i for i, cid in enumerate(everyone)}
-    seen = {}
+    # One order for everyone, whoever's asking: put first in their own list, Dick
+    # and Tim each led the pair — Dick at home, Tim "in Blüdhaven", together.
+    ids = [c.id for c in book]
+    order = {cid: i for i, cid in enumerate(ids + ([presence.contact.id] if presence.contact.id not in ids else []))}
+    seen, raw = {}, {}
+
+    def own(cid):
+        if cid not in raw:
+            raw[cid] = everyone[cid]._situation(t)
+        return raw[cid]
 
     def situation(cid):
         if cid not in seen:
-            seen[cid] = everyone[cid]._situation(t)
+            block, company, firm = own(cid)
+            if not firm and places.is_patrol(block.get("doing")):
+                # Out as a pair tonight: Dick and Tim on the same roofs — while both of them are out.
+                mates = [m for m in patrols.partner(cid, t) if m in everyone and m not in company
+                         and places.is_patrol(own(m)[0].get("doing"))]
+                company = list(company) + mates
+            seen[cid] = (block, company, firm)
         return seen[cid]
 
     def near(a, b):
@@ -492,9 +506,9 @@ class Presence:
         """
         doing, where = activity.get("doing") or "", activity.get("where") or ""
         if places.is_patrol(doing):
-            spot = places.patrol_spot(self.contact, where, t)
-            if spot:
-                return spot
+            covering = patrols.sector(self.contact, where or doing, t)
+            if covering:
+                return covering
         if where:
             return self._home_is_home(where)
         named = places.resolve(doing)
@@ -503,17 +517,23 @@ class Presence:
         if activity.get("status") == OFFLINE:
             return getattr(self.contact, "home", "") or ""
         since = activity.get("since", t)
-        return self._planned_place(self._routine(since) or self._whim(since) or {}, since)
+        block = self._routine(since) or self._whim(since) or {}
+        if places.is_patrol(block.get("doing")):
+            # Playing Mario Kart while the routine had him out on patrol: nobody games on
+            # a rooftop at the docks. Whatever they said they're doing instead, they
+            # stayed in to do it.
+            return getattr(self.contact, "home", "") or ""
+        return self._planned_place(block, since)
 
     def _planned_place(self, block, t):
         """Where their plan or routine has them at t."""
         if places.is_patrol(block.get("doing")):
-            # A patrol moves: along their beat, inside wherever the plan put
-            # them — "the rooftops" or "Blüdhaven" is a beat to walk, and Tim
-            # checking Blüdhaven's borders stays in Blüdhaven, off his own.
-            spot = places.patrol_spot(self.contact, block.get("where") or "", t)
-            if spot:
-                return spot
+            # A patrol covers a sector — tonight's roster gives each of them one,
+            # the worst of the city first, a new one each watch — inside wherever
+            # the plan put them: Dick's Blüdhaven, Jason's Crime Alley.
+            covering = patrols.sector(self.contact, block.get("where") or block.get("doing") or "", t)
+            if covering:
+                return covering
         if block.get("where"):
             return self._home_is_home(block["where"])
         return getattr(self.contact, "home", "") or ""
@@ -585,7 +605,50 @@ class Presence:
                 here = travel.position(trip, t or time.time())
                 shown["route"] = {"pts": trip["pts"], "start": trip["start"], "end": trip["end"], "from": trip.get("from", ""),
                                   "by": travel.crossing(*here) or trip.get("by", "")}
+            else:
+                walking = self.patrolling(where, t)
+                if walking:
+                    # Covering a sector: a run over the roofs to somewhere to watch from, a few
+                    # minutes there, on to the next — never a dot parked on the district's name.
+                    shown["spot"] = {**(shown["spot"] or {}), "x": walking["x"], "y": walking["y"]}
+                    shown["where"] = (f"{walking['near']}, {where}" if walking["near"] else where)
+                    if walking["leg"]:
+                        shown["route"] = {**walking["leg"], "from": "", "by": "over the rooftops", "patrol": True}
         return shown
+
+    def patrolling(self, where, t=None):
+        """
+        Where on their patrol they are, if they're covering a sector right now:
+        {"x", "y", "near", "leg"} — see engine.patrols — or None.
+        """
+        t = t or time.time()
+        if not where or not patrols.is_sector(where):
+            return None
+        block, _company, _firm = self._situation(t)
+        if not places.is_patrol(block.get("doing")):
+            return None
+        trip = self._state.get("trip") or {}
+        arrived = trip.get("end") if trip.get("to") == where else None
+        mates = patrols.partner(self.contact.id, t)
+        # A pair walk one walk, a step apart: whoever's first on tonight's roster leads it.
+        leader = min([self.contact.id] + mates, key=lambda cid: patrols.FIELD.index(cid) if cid in patrols.FIELD else 99)
+        offset = (0.0, 0.0) if leader == self.contact.id else (0.28, 0.18)
+        return patrols.where(self.contact.id, where, t, arrived=arrived, seed_id=leader, offset=offset)
+
+    def position(self, t=None):
+        """Exactly where they are at t, (x, y) — on the road, on a patrol, or where their day has them — or None."""
+        t = t or time.time()
+        where, _ = self.whereabouts(t)
+        spot = places.resolve(where or "")
+        if not spot:
+            return None
+        trip = self.trip(where, spot, t)
+        if trip:
+            return travel.position(trip, t)
+        walking = self.patrolling(where, t)
+        if walking:
+            return (walking["x"], walking["y"])
+        return (spot["x"], spot["y"])
 
     # Who spots them, now and then, going about a life they keep to themselves.
     _SPOTTERS = ("Barbara caught them on a traffic camera", "Dick saw them on a rooftop", "a GCPD patrol called it in",
@@ -700,6 +763,9 @@ class Presence:
             else:
                 came = places.resolve(before or "")
                 origin = (came["x"], came["y"]) if came else None
+                walked = self.patrolling(before, left_at - 1) if before and patrols.is_sector(before) else None
+                if walked:
+                    origin = (walked["x"], walked["y"])     # off the roof they were watching from, not the district's middle
             if origin is None or math.dist(origin, here) < 0.8:
                 self._state["trip"] = {"to": where, "pts": [list(here)], "start": t, "end": t}
                 self.save()
@@ -722,6 +788,21 @@ class Presence:
             self._state["trips"] = (self._state.get("trips") or [])[-7:] + [trip]
             self.save()
             return trip if t < trip["end"] else None
+
+    def patrol_legs(self, since, until=None):
+        """The runs across the roofs they made on patrol since `since`, oldest first — for the map's trail."""
+        until = until or time.time()
+        since = max(since, until - 6 * 3600)
+        # Each run starts as a stop does: look a moment into every stop, never between them.
+        t = since - (patrols._local(since) % patrols.STOP) + 1
+        out = []
+        while t < until:
+            where, _ = self.whereabouts(t)
+            walking = self.patrolling(where, t) if where else None
+            if walking and walking["leg"] and (not out or out[-1]["start"] != walking["leg"]["start"]):
+                out.append({**walking["leg"], "by": "over the rooftops"})
+            t += patrols.STOP
+        return out
 
     def trips(self, since):
         """The journeys they've made since `since`, oldest first — the roads behind them on the map."""
@@ -787,6 +868,16 @@ class Presence:
             line += " On their way to you, not there yet: " + ", ".join(
                 f"{n} (about {m} minute{'s' if m != 1 else ''} out)" for n, m in on_the_way) + "."
         spot = places.resolve(where) if where and not trip else None
+        walking = self.patrolling(where, t) if spot else None
+        if walking:
+            # Where on the patrol, exactly — the roof, the run — so "where are you?" gets the truth.
+            line += (f" Just now you're {'on the move across the roofs, heading for' if walking['leg'] else 'watching from a roof over'} "
+                     f"{walking['near'] or 'the streets of ' + where}.")
+            why = patrols.lead(self.contact.id, t)
+            if why:
+                line += (f" You're working this ground tonight because {why} {'is' if why[:1].isupper() else 'are'} on the "
+                         "scanner here again, like the case you worked — a lead worth following.")
+            spot = {**spot, "x": walking["x"], "y": walking["y"]}
         nearby = places.around(spot["x"], spot["y"], but=spot["name"]) if spot else []
         if nearby:
             line += f" Close by: {', '.join(nearby)}."

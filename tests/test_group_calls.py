@@ -281,7 +281,8 @@ def test_where_they_are_comes_from_their_plan_or_home(private_data, monkeypatch)
     whereabouts.set_plan(plan)
     _free("nightwing")
     shown = whereabouts.public()
-    assert shown["where"] == "Crime Alley rooftops" and shown["with"] == ["nightwing"]
+    # Patrolling Crime Alley's roofs: covering the sector, somewhere over it right now.
+    assert shown["where"].endswith("Crime Alley") and shown["with"] == ["nightwing"]
 
 
 def _free(contact_id):
@@ -341,19 +342,21 @@ def test_nobody_sees_where_someone_who_doesnt_share_is(private_data):
     assert "where" not in presence.of(jason).public()
 
 
-def test_on_patrol_they_are_somewhere_on_their_beat_not_at_home(private_data, monkeypatch):
-    from wayne.engine import incidents, places
-    monkeypatch.setattr(incidents, "near", lambda areas, t=None: None)    # a quiet night
+def test_on_patrol_they_cover_a_sector_and_move_through_it(private_data, monkeypatch):
+    from wayne.engine import patrols
     tim = SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake", shares_status=True,
                           shares_location=True, home="Wayne Manor", texting_pace={},
                           beat=("Diamond District", "Gotham Docks"),
                           routine=({"from": 0, "to": 24, "doing": "on patrol", "status": "online", "drift": 0},))
     whereabouts = presence.of(tim)
     where, _ = whereabouts.whereabouts()
-    assert where in tim.beat
-    spots = {whereabouts.whereabouts(t)[0] for t in range(0, 6 * 3600, places.BEAT_STEP)}
-    assert len(spots) == 2                      # they move along it
-    assert whereabouts.public()["spot"]["name"] in tim.beat
+    assert patrols.is_sector(where) and where != tim.home
+    sectors = {whereabouts.whereabouts(t)[0] for t in range(0, 8 * 3600, patrols.WATCH)}
+    assert len(sectors) >= 2                    # a new sector each watch
+    base = (int(time.time()) // patrols.WATCH) * patrols.WATCH + 600
+    spots = {(round(p["spot"]["x"], 1), round(p["spot"]["y"], 1))
+             for p in (whereabouts.public(base + k * 60) for k in range(30))}
+    assert len(spots) >= 3                      # across the roofs, not parked on a district's name
 
 
 def test_places_people_write_land_on_the_map():
@@ -390,26 +393,18 @@ def test_a_tapback_in_a_dm_lands_on_the_message_and_can_be_taken_back(private_da
 
 
 def test_the_map_traces_where_a_patrol_has_been(private_data, monkeypatch):
-    from wayne.engine import incidents, places
-    monkeypatch.setattr(incidents, "near", lambda areas, t=None: None)
+    from wayne.engine import patrols, places
     tim = SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake", shares_status=True,
                           shares_location=True, home="Wayne Manor", texting_pace={},
                           beat=("Diamond District", "Gotham Docks", "Old Gotham"),
                           routine=({"from": 0, "to": 24, "doing": "on patrol", "status": "online", "drift": 0},))
-    trail = presence.of(tim).trail(hours=3)
+    trail = presence.of(tim).trail(hours=5)
     assert len(trail) >= 2
-    assert all(p["name"] in tim.beat for p in trail)
+    assert all(patrols.is_sector(p["where"]) for p in trail)
     assert all(a["where"] != b["where"] for a, b in zip(trail, trail[1:], strict=False))
+    assert presence.of(tim).patrol_legs(time.time() - 3600)                 # the runs across the roofs, too
     assert places.resolve("Waterloo Docks, Blüdhaven")["area"] == "Blüdhaven"
     assert places.resolve("the docks")["name"] == "Gotham Docks"     # Gotham's, without Blüdhaven named
-
-
-def test_a_patrol_goes_where_the_trouble_is_on_its_beat(private_data, monkeypatch):
-    from wayne.engine import incidents, places
-    tim = SimpleNamespace(id="robin", beat=("Diamond District", "Old Gotham"))
-    monkeypatch.setattr(incidents, "near", lambda areas, t=None: {"place": "GCPD Central", "area": "Diamond District"})
-    spots = {places.patrol_spot(tim, "", t) for t in range(0, 6 * 3600, places.BEAT_STEP)}
-    assert "GCPD Central" in spots
 
 
 def test_the_scanner_never_calls_from_inside_blackgate():

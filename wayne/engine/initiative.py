@@ -74,7 +74,8 @@ def afterthought(session, exchanges, by="text"):
            if case else "") + "\n"
         "Reply with JSON only, in this shape:\n"
         '{"doing": "a few words, e.g. checking the docks" or null, '
-        '"where": "the place it puts them, as it would show on a map (e.g. Gotham Docks)" or null, '
+        '"where": "the place it puts them, as it would show on a map (e.g. Gotham Docks); home if it\'s something '
+        'done at home — a game, TV, cooking, a shower" or null, '
         '"with": [first names of anyone they said is physically there with them — not on comms, '
         'not on the phone] or [], '
         '"status": "busy" or "offline" or null, "minutes": how long it will take or null, '

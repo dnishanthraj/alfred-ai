@@ -176,12 +176,28 @@ def block(contact_id, directory, now=None, prompt=None):
             if not seen:
                 continue
         members = ", ".join([operator.name()] + [name(m) for m in group.members if m != contact_id])
-        parts.append(f"Group chat \"{group.name}\" (you, {members}) — the latest you've read:\n"
+        parts.append(f"Group chat \"{group.name}\" (you, {members}){_comms_aside(group)} — the latest you've read:\n"
                      + transcript(seen, name))
     if not parts:
         return ""
     return ("Your group chats — background you know, not something to recite; raise it only if "
             "it's natural:\n" + "\n\n".join(parts))
+
+
+def _comms_aside(group):
+    """A case's comms channel, said as one — and whether he was ever on the scene, or only reading along."""
+    meta = group.meta() or {}
+    if not meta.get("comms"):
+        return ""
+    from . import cases
+    case = cases.for_report(meta.get("case", ""))
+    if case is None:
+        return " — a case's comms channel"
+    over = " — it's over now" if case["status"] == "closed" else ""
+    if "bruce" in cases.team(case):
+        return f" — comms for the {case['kind'].lower()} at {case['place']}, {operator.name()} on it with you{over}"
+    return (f" — comms for the {case['kind'].lower()} at {case['place']}{over}; {operator.name()} wasn't on it, "
+            "only reading along from wherever he was")
 
 
 def addressed(text, contact):
