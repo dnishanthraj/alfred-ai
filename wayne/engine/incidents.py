@@ -367,7 +367,7 @@ def write_dispatch(report, model, options):
     toll = toll_text(report.get("toll") or {})
     instruction = (
         f"You are {force}. At {hour} a call comes in: {report['kind'].lower()}, "
-        f"{report['place']} ({report['area']}), severity {report['severity']} of 4."
+        f"{report['place']} ({report['area']}), severity {report['severity']} of 4." + _setting(report)
         + (f" Callers report {toll}." if toll else "")
         + (f" It looks like {report['gang']}." if report.get("gang") else "")
         + " Write the dispatch as it goes out over the radio — one or two terse sentences, in dispatch voice, "
@@ -428,6 +428,13 @@ SEEN_AS = {"bruce": "the Bat himself — big, dark, there and then not", "nightw
            "redhood": "the Red Hood — the red helmet, the guns", "batwing": "the flying one in the armoured suit — Batwing"}
 
 
+def _setting(report):
+    """What the place is, so what happens there is of a piece with it — the boardwalk, the Iceberg Lounge's floor."""
+    found = places.resolve(report.get("place") or "")
+    bio = (found or {}).get("bio") or ""
+    return f" Where it is: {report['place']} — {bio[:220]}" if bio else ""
+
+
 def _case_view(report, now):
     """Who from the family is on it, as the street saw them — and how far it's got: '' if nobody."""
     from . import cases
@@ -476,7 +483,7 @@ def write_log(report, model, options, now=None):
     rogue = next((g for g in _rogues() if g["name"] == suspect), None)
     toll = toll_text(report.get("toll") or {})
     facts = (f"{report['kind'].lower()} at {report['place']} ({report['area']}), first call at {began}, "
-             f"severity {report['severity']} of 4 ({SCALE[report['severity']]}). It's {clock} now and the report "
+             f"severity {report['severity']} of 4 ({SCALE[report['severity']]}).{_setting(report)} It's {clock} now and the report "
              f"is {STAGE.get(report['status'], report['status'])} — the log goes that far and no further."
              + (f" Casualties as of now: {toll} — keep to exactly that." if toll else " Nobody hurt as of now.")
              + (f" The dispatch went out as: \"{report['dispatch']}\"" if report.get("dispatch") else "")

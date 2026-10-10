@@ -557,6 +557,16 @@ class Presence:
         if not self.contact.shares_status:
             shown = getattr(self.contact, "hidden_as", "unknown") or "unknown"
             out = {"status": shown, "doing": "", "last_active": None, "line": self.line(t)}
+            # On scene at a case, they're seen — witnesses, GCPD, the family on it —
+            # and tracked while they're there; gone from it, they're a last-seen again.
+            now = t or time.time()
+            live, how = self._seen_working(now), "seen working a case"
+            if not live:
+                live, how = self._glimpsed(now)
+            if live:
+                out.update(spot=live, where=live["name"], seen_live=True, doing="working a case" if how.startswith("seen working") else "")
+                self._state["seen"] = {"where": live["name"], "x": live["x"], "y": live["y"], "at": now, "how": how}
+                return out
             seen = self._state.get("seen")
             if seen and (t or time.time()) - seen.get("at", 0) < 48 * 3600:
                 out["last_seen"] = seen          # the last he knows of where they were, and how
@@ -574,6 +584,43 @@ class Presence:
                 shown["route"] = {"pts": trip["pts"], "start": trip["start"], "end": trip["end"], "from": trip.get("from", ""),
                                   "by": travel.crossing(*here) or trip.get("by", "")}
         return shown
+
+    # Who spots them, now and then, going about a life they keep to themselves.
+    _SPOTTERS = ("Barbara caught them on a traffic camera", "Dick saw them on a rooftop", "a GCPD patrol called it in",
+                 "Tim's drone picked them up", "someone posted a blurry photo", "Alfred saw them on the cave's feeds",
+                 "Cass saw them, and said so in one word")
+
+    def _glimpsed(self, t):
+        """
+        Someone who keeps where they are to themselves is still seen now and then —
+        a camera, a rooftop, a patrol — where their own day has them: a few minutes
+        live, then a last-seen. Rarer by day than by night; rarest for Selina.
+        """
+        spell = int(t // 3600)
+        hour = time.localtime(t).tm_hour
+        rate = (self.contact.texting_pace or {}).get("glimpsed", 0.16) * (1.0 if hour >= 19 or hour < 5 else 0.5)
+        if _draw(self.contact.id, "glimpse", spell) >= rate:
+            return None, ""
+        start = spell * 3600 + _draw(self.contact.id, "glimpse-at", spell) * 2700
+        if not start <= t < start + 12 * 60:
+            return None, ""
+        where = self._own_place(t)
+        spot = places.resolve(where or "")
+        if not spot:
+            return None, ""
+        how = self._SPOTTERS[int(_draw(self.contact.id, "spotter", spell) * len(self._SPOTTERS))]
+        return {"name": spot["name"], "x": spot["x"], "y": spot["y"], "area": spot.get("area", "")}, how
+
+    def _seen_working(self, t):
+        """The scene of the case they're on, if they've got there and it's still going: they're seen."""
+        from . import cases
+        case = cases.active(self.contact.id)
+        if not case:
+            return None
+        mine = (case.get("members") or {}).get(self.contact.id) or {}
+        if mine.get("status") != "on scene" and case.get("status") != "on scene":
+            return None
+        return {"name": case["place"], "x": case["x"], "y": case["y"], "area": case.get("area", "")}
 
     # --- getting about -----------------------------------------------------
 

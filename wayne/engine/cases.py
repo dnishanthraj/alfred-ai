@@ -206,6 +206,8 @@ def close(case_id, outcome, result=None):
         if case is None or case["status"] == "closed":
             return None
         case.update({"status": "closed", "closed_at": now, "updated_at": now, "outcome": outcome.strip()[:240]})
+        if result and result.get("story"):
+            case["story"] = result["story"][:700]
         if result:
             case["result"] = {k: result[k] for k in ("ok", "how", "caught", "hurt") if k in result}
         case["log"].append({"at": now, "text": "closed"})
@@ -306,6 +308,34 @@ def brief(contact_id, now=None):
         return (f"Earlier tonight you closed a case: {done['kind'].lower()} at {done['place']} — "
                 f"{done.get('outcome') or 'handled'}.")
     return ""
+
+
+def missions(contact_id, now=None, days=7):
+    """The cases they've worked lately and seen through, newest first — the stories they'd tell."""
+    now = now or time.time()
+    done = [c for c in everything() if contact_id in team(c) and c["status"] == "closed"
+            and now - c.get("closed_at", 0) < days * 86400]
+    return sorted(done, key=lambda c: -c["closed_at"])
+
+
+def missions_note(contact_id, names, now=None, limit=4):
+    """
+    Their recent missions as they'd tell them — the same story everyone who was
+    there remembers — for when the talk turns to cases, or a few of them get
+    together and swap them. '' if they've worked none lately.
+    """
+    now = now or time.time()
+    told = []
+    for c in missions(contact_id, now)[:limit]:
+        when = time.strftime("%A night", time.localtime(c["closed_at"]))
+        others = [names.get(m, m) for m in team(c) if m != contact_id]
+        story = (c.get("story") or c.get("outcome") or "handled")[:320]
+        told.append(f"{when}: the {c['kind'].lower()} at {c['place']}" + (f", with {' and '.join(others)}" if others else "")
+                    + f" — {story}")
+    if not told:
+        return ""
+    return ("Missions you've worked lately — tell them the way they happened, in your own words; whoever else was "
+            "there remembers the same, and can tell their side: " + " | ".join(told))
 
 
 def board_note(names, now=None):

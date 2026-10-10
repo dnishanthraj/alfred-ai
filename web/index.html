@@ -85,11 +85,18 @@
           <button class="groups__new" id="group-new" type="button" data-tip="New group chat"
                   aria-label="New group chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>+</span></button>
         </div>
-        <div class="groups__wrap" id="groups-wrap" hidden>
-          <h3 class="book__group groups__label">Groups</h3>
-          <ul class="book groups" id="groups"></ul>
-        </div>
         <ul class="book" id="book"></ul>
+        <!-- Group chats, under the people: folded away when he likes, finished comms in their own fold. -->
+        <div class="groups__wrap" id="groups-wrap" hidden>
+          <button type="button" class="book__group groups__label groups__toggle" id="groups-toggle" aria-expanded="true">
+            <span>Groups</span><b class="groups__count"></b><i class="groups__chev" aria-hidden="true"></i>
+          </button>
+          <ul class="book groups" id="groups"></ul>
+          <button type="button" class="groups__toggle groups__archived-toggle" id="archived-toggle" aria-expanded="false" hidden>
+            <span>Archived</span><b class="groups__count"></b><i class="groups__chev" aria-hidden="true"></i>
+          </button>
+          <ul class="book groups groups--archived" id="groups-archived" hidden></ul>
+        </div>
       </section>
       <section class="panel panel--foot">
         <button class="lock" id="lock" type="button">Lock Console</button>
@@ -184,10 +191,11 @@
       <!-- On a call with the map or the Codex open: the line itself, small, over it — drag it anywhere. -->
       <div class="gm-call" hidden>
         <div class="gm-call__who"></div>
+        <p class="gm-call__me" hidden><span class="gm-call__me-dot" aria-hidden="true"></span><span class="gm-call__me-text"></span></p>
         <p class="gm-call__line" aria-live="polite"></p>
         <div class="gm-call__tools">
           <button type="button" class="gm-call__talk" aria-label="Mute your mic" aria-pressed="false" data-tip="Mute your mic (hold Space to talk)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            <span class="mic-glyph" aria-hidden="true"></span>
           </button>
           <button type="button" class="gm-call__back" aria-label="Back to the call" data-tip="Back to the call">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
@@ -314,7 +322,7 @@
       <form class="compose" id="compose">
         <button type="button" class="ptt" id="ptt" data-tip="Mute your mic (hold Space to talk)" aria-label="Mute your mic" aria-pressed="false">
           <span class="ptt__ring" aria-hidden="true"></span>
-          <span class="ptt__glyph" aria-hidden="true"></span>
+          <span class="ptt__glyph mic-glyph" aria-hidden="true"></span>
         </button>
         <input class="compose__input" id="input" type="text" autocomplete="off"
                spellcheck="false" placeholder="Type, or hold Space to talk…">

@@ -217,6 +217,7 @@
     }
   ],
   "texting_pace": {
+    "glimpsed": 0.14,
     "lingers": 240,
     "online_read": [
       10,

@@ -1190,6 +1190,30 @@ class ContactSession:
             return ""
         return self._plain(text).strip().strip('"')
 
+    def case_story(self, case, result):
+        """
+        The case as they'd tell it later — who did what (only those who were
+        there), how it ended (as it did) — three or four sentences. The one
+        version everyone on it remembers, told over dinner or on a call.
+        """
+        from ..contacts import directory
+        book = directory()
+        crew = [book.get(m).name if book.get(m) else ("Bruce" if m == "bruce" else m) for m in (case.get("team") or [])]
+        hurt = "; ".join(f"{book.get(w).name if book.get(w) else w} came out of it with {i}"
+                         for w, i in (result.get("hurt") or {}).items())
+        instruction = (
+            f"Tell what happened on the {case['kind'].lower()} at {case['place']} the way you'd tell it later, to "
+            f"family: who was there ({', '.join(crew)}), who did what — the moment it turned, one detail that "
+            f"stuck — and how it ended: {result['line']}" + (f"; {hurt}" if hurt else "")
+            + ". Three or four sentences, past tense, plain, true to that ending; nobody who wasn't there in it. "
+            "Reply with only the story.")
+        payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
+        try:
+            text = self._chat_once(payload, temperature=0.8, num_predict=180)
+        except Exception:
+            return ""
+        return self._plain(text).strip().strip('"')
+
     def draft(self, instruction):
         """
         What they'd say to this, written but not said — for two people opening
@@ -1780,6 +1804,12 @@ class ContactSession:
         if tracker:
             awareness.append(tracker)
         work = "" if guarded or from_contact else self._casework(prompt, brief=head is None)
+        if not guarded and not from_contact and (self._MISSION_TALK.search(prompt or "") or (self.call and self.call.is_group)):
+            from ..contacts import directory
+            from . import cases as case_board
+            told = case_board.missions_note(self.contact.id, {c.id: c.name for c in directory()} | {"bruce": "Bruce"})
+            if told:
+                awareness.append(told)
         if work:
             awareness.append(work)
         leaning = self._leaning_on() if head is None else ""
@@ -2000,9 +2030,15 @@ class ContactSession:
                 + "; ".join(f"\"{w}\"" for w in worn[:4]) + ".")
 
     # Talk of trouble on the scanner — not "go to bed", "working late" or "on it".
+    _MISSION_TALK = re.compile(r"(?i)\b(last night|the other night|that case|the case|cases|mission|missions|"
+                               r"how did it go|how'd it go|what happened|tell (me|us)|war stor|dinner|catch up|"
+                               r"this week|patrol)\b")
+
     _CRIMEY = re.compile(r"(?i)\b(cases?|scanner|reports?|robbery|robberies|shooting|shots|body|bodies|"
                          r"kidnap\w*|gang|riot|hostage|crime|dispatch|called in|take (that|this) one|"
-                         r"check (it|that) out|on the scanner)\b")
+                         r"check (it|that) out|on the scanner|need you (on|at|over)|get (over|down) to|"
+                         r"joker|scarecrow|riddler|penguin|two-face|bane|ivy|freeze|croc|black mask|zsasz|"
+                         r"hatter|firefly|hush|clayface|harley|deathstroke|falcone|thorne|breakout|stabbing|machete)\b")
 
     def _casework(self, prompt, brief=True):
         """
@@ -2017,16 +2053,28 @@ class ContactSession:
         brief = cases.brief(self.contact.id) if brief else ""
         if brief:
             parts.append(brief)
-        if self._CRIMEY.search(prompt or "") and not cases.active(self.contact.id):
-            taken = {c["id"] for c in cases.board() if c["status"] != "closed"}
-            open_ = [r for r in incidents.at() if r["id"] not in taken and r["status"] != "resolved"
-                     and r["severity"] >= 2][:5]
+        if self._CRIMEY.search(prompt or ""):
+            # Everything open, as he'd refer to it — the place, the district, who's behind it — and
+            # who's already on what, so "the one with Scarecrow" or "help Cass" finds its case.
+            from ..contacts import directory
+            book = directory()
+            board = {c["id"]: c for c in cases.board() if c["status"] != "closed"}
+            mine = cases.active(self.contact.id)
+            open_ = sorted((r for r in incidents.at() if r["status"] != "resolved" and r["severity"] >= 2),
+                           key=lambda r: (-r["severity"], -r["at"]))[:7]
+
+            def described(r):
+                crew = [book.get(m).name if book.get(m) else "Bruce" if m == "bruce" else m
+                        for m in cases.team(board[r["id"]])] if r["id"] in board else []
+                toll = incidents.toll_text(r.get("toll") or {})
+                return (f"{r['kind'].lower()} at {r['place']} ({r['area']})"
+                        + (f", {r['suspect']} suspected" if r.get("suspect") else "")
+                        + (f", {toll}" if toll else "") + (f" — {', '.join(crew)} on it" if crew else ""))
             if open_:
-                parts.append("Open on the scanner: " + "; ".join(
-                    f"{r['kind'].lower()} at {r['place']}" + (f" (\"{r['dispatch']}\")" if r.get("dispatch") else "")
-                    for r in open_)
-                    + ". If he asks you to take one — or you'd take it yourself — say so your way and end "
-                    "with [take: the place].")
+                parts.append("Open on the scanner: " + "; ".join(described(r) for r in open_)
+                             + (". You're already on one; moving to another means leaving it." if mine else ".")
+                             + " If he asks you to take one — by its place, its district, the rogue, or to back "
+                             "someone up — or you'd go yourself, say so your way and end with [take: its place].")
         return " ".join(parts)
 
     def _can_look(self):

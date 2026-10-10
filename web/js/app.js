@@ -193,6 +193,19 @@
   function showHeard(text) {
     el.heard.textContent = text ? '“' + text + '”' : '';
     el.heard.dataset.show = text ? '1' : '0';
+    callbarMe(text ? '\u201c' + text + '\u201d' : '', false);
+  }
+
+  // The overlay's line for him: a live dot while he talks, then his words for a while.
+  var meTimer = null;
+  function callbarMe(text, live) {
+    var root = document.querySelector('.gm-call__me');
+    if (!root) return;
+    clearTimeout(meTimer);
+    root.hidden = !text;
+    root.dataset.live = live ? '1' : '0';
+    root.querySelector('.gm-call__me-text').textContent = text ? 'You: ' + text : '';
+    if (text && !live) meTimer = setTimeout(function () { root.hidden = true; }, 7000);
   }
 
   /**
@@ -413,6 +426,8 @@
   function setState(value) {
     document.documentElement.dataset.state = value;
     el.status.textContent = STATE_COPY[value] || '';
+    if (value === 'listening') callbarMe('Speaking\u2026', true);
+    else if (value === 'transcribing') callbarMe('\u2026', true);
     if (state.viz) state.viz.setMode(value);
     // On a call with company, speaking belongs to one seat (see seatSpeaking);
     // the rest breathe — or all of them think, while a reply is coming.
@@ -547,11 +562,13 @@
     node.style.backgroundImage =
       "url('" + base + ".png" + v + "'), url('" + base + ".jpg" + v + "'), url('" + base + ".webp" + v + "'), " +
       "url('/static/portraits/_silhouette.svg')";
+    // Framed as he set it in the Codex — or filling the circle, wherever the face is
+    // drawn: a size left to the stylesheet drew some faces at full size, a dark corner showing.
     var frame = contact.portrait || {};
-    node.style.backgroundSize = frame.size
-      ? [frame.size, frame.size, frame.size, 'cover'].join(', ') : '';
-    node.style.backgroundPosition = frame.position
-      ? [frame.position, frame.position, frame.position, fallbackPosition].join(', ') : '';
+    var size = frame.size || 'cover', at = frame.position || fallbackPosition || 'center 22%';
+    node.style.backgroundSize = [size, size, size, 'cover'].join(', ');
+    node.style.backgroundPosition = [at, at, at, fallbackPosition || 'center 22%'].join(', ');
+    node.style.backgroundRepeat = 'no-repeat';
   }
 
   function onCall(id) { return state.party.indexOf(id) !== -1; }
@@ -1750,16 +1767,40 @@
     }).catch(function () {});
   }
 
+  // Folded or open, as he left them.
+  function foldState(key, fallback) {
+    try { var v = localStorage.getItem(key); return v === null ? fallback : v === '1'; } catch (e) { return fallback; }
+  }
+  function setFold(key, open) { try { localStorage.setItem(key, open ? '1' : '0'); } catch (e) { /* not kept */ } }
+
   function renderGroups() {
     var list = el.groups;
     if (!list) return;
     list.innerHTML = '';
+    var archivedList = document.getElementById('groups-archived');
+    archivedList.innerHTML = '';
     el['groups-wrap'].hidden = !Object.keys(state.groups).length;
     var ids = Object.keys(state.groups).sort(function (a, b) {
       var la = (state.groups[a].last || {}).at || state.groups[a].created_at || 0;
       var lb = (state.groups[b].last || {}).at || state.groups[b].created_at || 0;
       return lb - la;
     });
+    var live = ids.filter(function (id) { return !state.groups[id].archived; });
+    var put = ids.filter(function (id) { return state.groups[id].archived; });
+    var open = foldState('wt-groups-open', true), openArchived = foldState('wt-archived-open', false);
+    var toggle = document.getElementById('groups-toggle'), archToggle = document.getElementById('archived-toggle');
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.querySelector('.groups__count').textContent = live.length;
+    list.hidden = !open;
+    archToggle.hidden = !open || !put.length;
+    archToggle.setAttribute('aria-expanded', openArchived ? 'true' : 'false');
+    archToggle.querySelector('.groups__count').textContent = put.length;
+    archivedList.hidden = !open || !openArchived || !put.length;
+    if (!toggle.dataset.wired) {
+      toggle.dataset.wired = '1';
+      toggle.addEventListener('click', function () { setFold('wt-groups-open', !foldState('wt-groups-open', true)); renderGroups(); });
+      archToggle.addEventListener('click', function () { setFold('wt-archived-open', !foldState('wt-archived-open', false)); renderGroups(); });
+    }
     ids.forEach(function (id) {
       var g = state.groups[id];
       var li = document.createElement('li');
@@ -1796,7 +1837,7 @@
 
       row.addEventListener('click', function () { openGroup(id); });
       li.appendChild(row);
-      list.appendChild(li);
+      (g.archived ? archivedList : list).appendChild(li);
     });
   }
 
@@ -2828,7 +2869,11 @@
     if (state.connectedId) send({ type: 'mute', on: on });
   }
 
+  // One mic, the same everywhere: the call's own button and the overlay's — struck through when muted.
+  var MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+  var MIC_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 9.3V6a3 3 0 0 0-5.8-1.1M9 9v2a3 3 0 0 0 5 2.2"/><path d="M19 11a7 7 0 0 1-1.1 3.8M5 11a7 7 0 0 0 11.4 5.4M12 18v3"/><path d="M3.5 3.5l17 17"/></svg>';
   function paintMute() {
+    document.querySelectorAll('.mic-glyph').forEach(function (g) { g.innerHTML = state.muted ? MIC_OFF : MIC; });
     var tip = state.muted ? 'Unmute your mic' : 'Mute your mic (hold Space to talk)';
     el.ptt.dataset.muted = state.muted ? '1' : '0';
     el.ptt.dataset.tip = tip;
@@ -3413,6 +3458,7 @@
   wireInput();
   wireAudio();
   wireMic();
+  paintMute();          // the mic drawn on both buttons from the start
   wireSystem();
   wireLayout();
   wireSounds();

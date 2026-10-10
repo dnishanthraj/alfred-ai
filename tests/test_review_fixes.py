@@ -60,7 +60,9 @@ def test_a_tic_used_lately_is_left_out_of_the_next_text():
     assert initiative.untic(contact, "lol", ["lol"]) == "lol"        # never empties a text
 
 
-def test_someone_who_does_not_share_their_status_shows_as_unknown():
+def test_someone_who_does_not_share_their_status_shows_as_unknown(tmp_path, monkeypatch):
+    from wayne import paths
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)          # no case of his on the real board
     contact = SimpleNamespace(id="redhood", routine=(), texting_pace={}, shares_status=False)
     state = presence.of(contact)
     state.touch()

@@ -1554,18 +1554,20 @@ class Console(GroupChats):
         """'[take: Diamond District]' — the open report they meant, by place or kind."""
         import difflib
 
-        from ..engine import cases, incidents
-        taken = {c["id"] for c in cases.board() if c["status"] != "closed"}
-        open_ = [r for r in incidents.at() if r["id"] not in taken and r["status"] != "resolved"]
+        from ..engine import incidents
+        # Open or already being worked: with teams, "back Cass up" is a case to join.
+        open_ = sorted((r for r in incidents.at() if r["status"] != "resolved"),
+                       key=lambda r: (-r["severity"], -r["at"]))
         if not open_:
             return
         said = named.lower().strip(" .")
-        if said in ("", "the place", "it", "that", "this", "one"):
+        if said in ("", "the place", "its place", "it", "that", "this", "one"):
             return              # the instruction's own placeholder, or nothing to go on
-        # By what it names — the place, the district, the kind of call — first;
-        # only then a close match. At a cutoff of 0.1, "the docks" took a
+        # By what it names — the place, the district, the rogue, the kind of call —
+        # first; only then a close match. At a cutoff of 0.1, "the docks" took a
         # mugging at the cathedral.
         report = next((r for r in open_ if r["place"].lower() in said or said in r["place"].lower()), None) \
+            or next((r for r in open_ if r.get("suspect") and (r["suspect"].lower().replace("the ", "") in said)), None) \
             or next((r for r in open_ if r["area"].lower() in said or said in r["area"].lower()), None) \
             or next((r for r in open_ if r["kind"].lower() in said), None)
         if report is None:
@@ -1654,6 +1656,10 @@ class Console(GroupChats):
         crew = [m for m in cases.team(case) if self.directory.get(m)]
         if case["status"] == "closed" or not (len(crew) >= 2 or ("bruce" in cases.team(case) and crew)):
             return None
+        # Jason and Randy working one between them, him not on it: their own channel, not his to read.
+        sharers = [m for m in crew if getattr(self.directory.get(m), "shares_location", True)]
+        if not sharers and "bruce" not in cases.team(case):
+            return None
         found = next((g for g in store.all_groups() if (g.meta() or {}).get("case") == case["id"]), None)
         if found is None:
             found = store.create(f"Comms · {case['kind']} · {case['place']}"[:60], crew)
@@ -1681,9 +1687,15 @@ class Console(GroupChats):
             meta = group.meta() or {}
             if not meta.get("comms"):
                 continue
+            if meta.get("archived"):
+                # Put away when it ended; gone for good a few days on, so they don't pile up.
+                if now - meta.get("archived_at", now) > 3 * 86400:
+                    await self.group_delete(group.id)
+                continue
             case = cases.for_report(meta["case"])
             if case is None or (case["status"] == "closed" and now > meta.get("close_at", now + 1)):
-                await self.group_delete(group.id)
+                group.update_meta(lambda m: m.update({"archived": True, "archived_at": now}))
+                await self.broadcast({"type": "group_updated", "group": self.group_payload(group)})
                 continue
             if case["status"] == "closed":
                 if not meta.get("signed_off"):
@@ -1839,7 +1851,10 @@ class Console(GroupChats):
                 return
             session = self.session_for(writer.id)
             async with self.turn_lock:
-                outcome = await asyncio.get_running_loop().run_in_executor(None, session.case_outcome, case, result)
+                loop = asyncio.get_running_loop()
+                outcome = await loop.run_in_executor(None, session.case_outcome, case, result)
+                # The story of it, told once, the way they'd tell it later — the one everyone on it remembers.
+                result["story"] = await loop.run_in_executor(None, session.case_story, case, result)
             closed = cases.close(case["id"], outcome or result["line"], result)
             if not closed:
                 return
@@ -1897,7 +1912,8 @@ class Console(GroupChats):
             others = [names[m] for m in team if m != member]
             try:
                 Vault(member).memorize(f"On {when} you were on the {case['kind'].lower()} at {case['place']}"
-                                       + (f" with {' and '.join(others)}" if others else "") + f": {result['line']}.")
+                                       + (f" with {' and '.join(others)}" if others else "")
+                                       + f": {result.get('story') or result['line']}")
             except Exception:
                 log.exception("couldn't remember case %s for %s", case["id"], member)
         if result.get("caught"):

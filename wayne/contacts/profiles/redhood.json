@@ -242,6 +242,7 @@
     }
   ],
   "texting_pace": {
+    "glimpsed": 0.18,
     "lingers": 300,
     "online_read": [
       4,

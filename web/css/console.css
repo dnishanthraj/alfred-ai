@@ -324,6 +324,23 @@ html[data-rail="hidden"] .rail { display: none; }
 
 .book { list-style: none; margin: 0; padding: 0; }
 .book__item + .book__item { margin-top: 4px; }
+/* The directory edge to edge: a row's highlight runs the whole width of the rail. */
+.panel--book .book, .panel--book .groups__wrap { margin-left: -20px; margin-right: -20px; }
+.panel--book .book__row { padding-left: 18px; padding-right: 20px; }
+.panel--book .book__group { padding-left: 20px; padding-right: 20px; }
+html[data-rail="compact"] .panel--book .book, html[data-rail="compact"] .panel--book .groups__wrap { margin-left: -10px; margin-right: -10px; }
+/* Groups under the people, folded at will. */
+.groups__wrap { margin-top: 18px; }
+.groups__toggle { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; text-align: left;
+  font: inherit; cursor: var(--cursor-pointer); }
+.groups__toggle .groups__count { font-weight: 400; color: var(--text-faint); opacity: 0.8; }
+.groups__chev { margin-left: auto; width: 7px; height: 7px; border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor; transform: rotate(45deg); transition: transform 0.2s var(--ease); opacity: 0.7; }
+.groups__toggle[aria-expanded="false"] .groups__chev { transform: rotate(-45deg); }
+.groups__archived-toggle { padding: 10px 20px 4px; font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--text-faint); }
+.groups__archived-toggle[hidden], .groups--archived[hidden], .book.groups[hidden] { display: none; }
+.groups--archived .book__row { opacity: 0.7; }
 
 .book__row {
   display: grid;
@@ -757,8 +774,10 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
 }
 .ptt:hover { color: var(--primary); border-color: var(--primary-dim); }
 
-/* A filled capsule reads as a microphone without needing an icon font. */
-.ptt__glyph { width: 9px; height: 13px; border-radius: 5px; background: currentColor; }
+/* The mic, drawn the same here and on the overlay; struck through when muted. */
+.mic-glyph { display: block; width: 18px; height: 18px; }
+.mic-glyph svg { width: 100%; height: 100%; display: block; }
+.gm-call__talk .mic-glyph { width: 100%; height: 100%; }
 .ptt__ring { position: absolute; inset: -1px; border-radius: 50%; border: 1px solid transparent; }
 
 .ptt[data-live="1"] { color: var(--alert); border-color: var(--alert); }
@@ -772,8 +791,6 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
 .ptt[data-ambient="1"] { color: var(--primary); border-color: var(--primary-dim); }
 /* Muted: the capsule struck through, in the alert colour — Space won't open it. */
 .ptt[data-muted="1"] { color: var(--alert); border-color: rgba(224, 87, 79, 0.55); background: rgba(224, 87, 79, 0.08); }
-.ptt[data-muted="1"]::after, .gm-call__talk[data-muted="1"]::after { content: ""; position: absolute; width: 22px;
-  height: 1.6px; background: currentColor; transform: rotate(-45deg); border-radius: 1px; }
 .gm-call__talk { position: relative; }
 .gm-call__talk[data-muted="1"] { color: var(--alert) !important; border-color: rgba(224, 87, 79, 0.55) !important;
   background: rgba(224, 87, 79, 0.08); }
@@ -1891,6 +1908,16 @@ input[type="text"], input[type="search"], input[type="password"], input:not([typ
 .gm-call__tools button:hover { color: var(--primary); border-color: var(--primary-dim); }
 .gm-call__talk.is-on { color: #02050a; background: var(--primary); border-color: var(--primary); }
 .gm-call__end { border-color: rgba(224, 87, 79, 0.45) !important; }
+/* His own line: a live dot while he talks, then what he said. */
+.gm-call__me { display: flex; align-items: center; gap: 8px; margin: 2px 0 0; font-size: 12px; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gm-call__me[hidden] { display: none; }
+.gm-call__me-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+.gm-call__me[data-live="1"] { color: var(--text); }
+.gm-call__me[data-live="1"] .gm-call__me-dot { background: var(--alert); box-shadow: 0 0 8px var(--alert);
+  animation: gm-me 1.1s ease-in-out infinite; }
+.gm-call__me-text { overflow: hidden; text-overflow: ellipsis; }
+@keyframes gm-me { 50% { transform: scale(0.6); opacity: 0.6; } }
 .gm-call__end:hover { color: var(--alert) !important; background: rgba(224, 87, 79, 0.12); }
 
 /* --- the Codex: who's who and what's where ---------------------------------- */
