@@ -2556,6 +2556,39 @@
      97.0
     ]
    ]
+  },
+  {
+   "name": "Burnside Park",
+   "coast": [
+    [
+     101.6,
+     55.6
+    ],
+    [
+     105.2,
+     55.0
+    ],
+    [
+     107.8,
+     56.4
+    ],
+    [
+     108.2,
+     59.6
+    ],
+    [
+     106.4,
+     61.6
+    ],
+    [
+     102.8,
+     61.8
+    ],
+    [
+     101.0,
+     59.4
+    ]
+   ]
   }
  ],
  "districts": [
@@ -2775,8 +2808,8 @@
   {
    "name": "Bristol",
    "at": [
-    5.0,
-    22.0
+    0.5,
+    28.0
    ],
    "angle": 10,
    "block": 1.8,
@@ -3981,8 +4014,8 @@
      110.0
     ],
     [
-     -12.0,
-     114.6
+     -6.6,
+     107.2
     ]
    ]
   },
@@ -4062,23 +4095,6 @@
    ]
   },
   {
-   "name": "Trigate Bridge",
-   "line": [
-    [
-     24.2,
-     38.6
-    ],
-    [
-     26.6,
-     42.0
-    ],
-    [
-     28.8,
-     44.8
-    ]
-   ]
-  },
-  {
    "name": "Vincefinkel Bridge",
    "line": [
     [
@@ -4137,16 +4153,16 @@
    "name": "Burnside Bridge",
    "line": [
     [
-     86.6,
-     40.6
+     84.6,
+     57.0
     ],
     [
-     91.0,
-     40.2
+     91.3,
+     57.2
     ],
     [
-     95.6,
-     39.8
+     98.1,
+     57.4
     ]
    ]
   },
@@ -4181,32 +4197,6 @@
     [
      66.8,
      117.2
-    ]
-   ]
-  },
-  {
-   "name": "Sprang Bridge",
-   "line": [
-    [
-     33.0,
-     51.6
-    ],
-    [
-     33.0,
-     55.2
-    ]
-   ]
-  },
-  {
-   "name": "Sprang Bridge",
-   "line": [
-    [
-     41.6,
-     51.6
-    ],
-    [
-     41.6,
-     54.8
     ]
    ]
   },
@@ -4250,6 +4240,40 @@
     [
      47.0,
      47.4
+    ]
+   ]
+  },
+  {
+   "name": "Halyard Bridge",
+   "line": [
+    [
+     110.6,
+     -8.4
+    ],
+    [
+     112.4,
+     -8.0
+    ],
+    [
+     114.2,
+     -7.6
+    ]
+   ]
+  },
+  {
+   "name": "Fort Joseph Bridge",
+   "line": [
+    [
+     111.6,
+     -2.6
+    ],
+    [
+     113.5,
+     -2.0
+    ],
+    [
+     115.4,
+     -1.4
     ]
    ]
   }
@@ -4384,16 +4408,16 @@
   {
    "name": "Atlantic Ocean",
    "at": [
-    104.0,
-    30.0
+    34.0,
+    166.0
    ],
    "rotate": 0
   },
   {
    "name": "Atlantic Ocean",
    "at": [
-    110.0,
-    120.0
+    78.0,
+    158.0
    ],
    "rotate": 0
   },
@@ -4401,7 +4425,7 @@
    "name": "Kane River",
    "at": [
     -30.0,
-    52.0
+    43.5
    ],
    "rotate": 18
   }
@@ -4425,8 +4449,8 @@
   },
   {
    "name": "Drake Manor",
-   "x": 7.6,
-   "y": 16.4,
+   "x": 6.0,
+   "y": 27.0,
    "area": "Bristol",
    "kind": "landmark",
    "icon": "manor",
@@ -4438,8 +4462,8 @@
   },
   {
    "name": "Bristol",
-   "x": 5.0,
-   "y": 22.0,
+   "x": 0.5,
+   "y": 28.0,
    "area": "Bristol",
    "kind": "district",
    "match": [
@@ -4464,7 +4488,7 @@
    "name": "Sionis Steel Mill",
    "x": 2.0,
    "y": 92.0,
-   "area": "Gotham County",
+   "area": "Ironworks",
    "kind": "landmark",
    "icon": "industry",
    "match": [
@@ -4506,8 +4530,8 @@
   },
   {
    "name": "Knightsdome",
-   "x": 52.4,
-   "y": 26.4,
+   "x": 52.48,
+   "y": 25.96,
    "area": "Otisburg",
    "kind": "landmark",
    "icon": "stadium",
@@ -4694,7 +4718,7 @@
   {
    "name": "Gotham University",
    "x": 25.6,
-   "y": 66.6,
+   "y": 67.05,
    "area": "University District",
    "kind": "landmark",
    "icon": "university",
@@ -4709,7 +4733,7 @@
   },
   {
    "name": "Gotham General Hospital",
-   "x": 33.4,
+   "x": 32.9,
    "y": 75.0,
    "area": "University District",
    "kind": "landmark",
@@ -4798,15 +4822,15 @@
   },
   {
    "name": "Ace Chemicals",
-   "x": 70.4,
-   "y": 66.6,
-   "area": "Upper East Side",
+   "x": 2.42,
+   "y": 85.1,
+   "area": "Ironworks",
    "kind": "landmark",
    "icon": "industry",
    "match": [
     "ace chemicals"
    ],
-   "bio": "Chemical plant on the Upper East Side shore — the vats, the catwalks, the river outflow. Its safety record is a matter of public concern and private legend.",
+   "bio": "Chemical plant on the Ironworks shore, staring across the river at the city — the vats, the catwalks, the outfall into the Gotham River. Its safety record is a matter of public concern and private legend.",
    "note": "Where a man fell in and something else climbed out."
   },
   {
@@ -4903,8 +4927,8 @@
   },
   {
    "name": "Union Station",
-   "x": 39.6,
-   "y": 97.2,
+   "x": 39.52,
+   "y": 98.05,
    "area": "Diamond District",
    "kind": "landmark",
    "icon": "station",
@@ -4931,7 +4955,7 @@
    "name": "GCPD Central",
    "x": 54.4,
    "y": 102.4,
-   "area": "Diamond District",
+   "area": "Old Gotham",
    "kind": "landmark",
    "icon": "police",
    "match": [
@@ -4992,8 +5016,8 @@
   },
   {
    "name": "City Hall",
-   "x": 76.0,
-   "y": 96.0,
+   "x": 76.09,
+   "y": 95.38,
    "area": "City Hall District",
    "kind": "landmark",
    "icon": "civic",
@@ -5090,8 +5114,8 @@
   },
   {
    "name": "Gotham Cathedral",
-   "x": 43.6,
-   "y": 106.0,
+   "x": 43.01,
+   "y": 106.35,
    "area": "Old Gotham",
    "kind": "landmark",
    "icon": "church",
@@ -5336,9 +5360,9 @@
   },
   {
    "name": "Gotham Power Station",
-   "x": 78.4,
-   "y": 30.8,
-   "area": "New Town",
+   "x": 78.47,
+   "y": 31.1,
+   "area": "Robinsville",
    "kind": "landmark",
    "icon": "industry",
    "match": [
@@ -5399,8 +5423,8 @@
   },
   {
    "name": "Falcone Estate",
-   "x": -9.0,
-   "y": 47.0,
+   "x": -9.03,
+   "y": 47.45,
    "area": "Kane Heights",
    "kind": "landmark",
    "icon": "manor",
@@ -5414,7 +5438,7 @@
    "name": "Gotham Stock Exchange",
    "x": 57.4,
    "y": 101.4,
-   "area": "Diamond District",
+   "area": "Old Gotham",
    "kind": "landmark",
    "icon": "civic",
    "match": [
@@ -5480,6 +5504,1540 @@
    ],
    "bio": "The Mile's funhouse — mirror maze, tilting rooms, a clown's mouth for a door — next to the big wheel and the old wooden coaster. Open some summers; boarded up the rest, and never quite empty.",
    "note": "Every time we clear it out, someone moves back in. The paint on the clown keeps turning green."
+  },
+  {
+   "name": "Narrows Monorail Station",
+   "x": 22.0,
+   "y": 33.8,
+   "area": "The Narrows",
+   "kind": "landmark",
+   "icon": "station",
+   "match": [
+    "monorail",
+    "narrows monorail",
+    "monorail station",
+    "narrows station"
+   ],
+   "bio": "The last stop on the old elevated monorail, a rusting platform on pylons above the Narrows' main drag. The trains stopped years ago; the station never emptied — squatters, dealers, and kids who climb it for the view of the skyline across the water.",
+   "note": "My father built the line to bring the Narrows into the city. The city stopped paying for it the year he died.",
+   "canon": "Batman Begins (2005)"
+  },
+  {
+   "name": "Trigate Night Market",
+   "x": 24.28,
+   "y": 35.04,
+   "area": "The Narrows",
+   "kind": "spot",
+   "icon": "market",
+   "match": [
+    "night market",
+    "trigate market",
+    "trigate night market",
+    "under the trigate"
+   ],
+   "bio": "Tarps, generators and folding tables under the Trigate Bridge ramps, from dusk until the police launch comes past: phone chargers, antibiotics, cigarettes by the single, and whatever fell off a truck on the way over.",
+   "note": "Anything stolen in Gotham turns up here inside a week. So does anyone hiding.",
+   "canon": "invented"
+  },
+  {
+   "name": "Narrows Precinct House",
+   "x": 20.0,
+   "y": 38.4,
+   "area": "The Narrows",
+   "kind": "landmark",
+   "icon": "police",
+   "match": [
+    "narrows precinct",
+    "narrows precinct house",
+    "narrows police"
+   ],
+   "bio": "The GCPD's station house on the island: sandbagged steps, a desk sergeant behind bulletproof glass, and a posting rookies get as a lesson and veterans get as a punishment.",
+   "note": "Jim keeps two honest sergeants here. He doesn't put their names in writing.",
+   "canon": "invented"
+  },
+  {
+   "name": "Our Lady of the Narrows",
+   "x": 22.2,
+   "y": 39.4,
+   "area": "The Narrows",
+   "kind": "spot",
+   "icon": "church",
+   "match": [
+    "our lady of the narrows",
+    "narrows soup kitchen",
+    "soup kitchen"
+   ],
+   "bio": "A brick church with a cracked bell and the island's only soup kitchen in the basement, run by a parish priest and three nuns who know every name in the Narrows — including the ones the police are asking about.",
+   "note": "The basement door is never locked. I've sent people there who had nowhere else to go.",
+   "canon": "invented"
+  },
+  {
+   "name": "Burnley Square",
+   "x": 52.4,
+   "y": 40.2,
+   "area": "Burnley",
+   "kind": "spot",
+   "icon": "station",
+   "match": [
+    "burnley square"
+   ],
+   "bio": "Where the Kane Line comes up into Burnley: a square of bodegas, check-cashers and a dry fountain. The Burnley Town Massive have held its corners since before most of their members were born.",
+   "note": "Every gang war in this city starts as an argument over one of these corners.",
+   "canon": "Burnley Town Massive from the comics (2000s Batman titles); square invented"
+  },
+  {
+   "name": "Hamilton Hill High School",
+   "x": 49.4,
+   "y": 43.2,
+   "area": "Burnley",
+   "kind": "landmark",
+   "icon": "school",
+   "match": [
+    "hamilton hill high",
+    "hamilton hill high school",
+    "burnley high"
+   ],
+   "bio": "Burnley's public high school, named for a mayor the city now agrees was owned outright by Rupert Thorne. Metal detectors at both doors, a roof garden the students built themselves, a basketball team that wins everything and a graduation rate that doesn't.",
+   "note": "The Wayne Foundation pays for the after-school programme. Half the kids in it have an older brother in the BTM.",
+   "canon": "Batman Beyond (Hamilton Hill High); Detective Comics #503 (Mayor Hamilton Hill)"
+  },
+  {
+   "name": "Dooley's Gym",
+   "x": 54.2,
+   "y": 43.8,
+   "area": "Burnley",
+   "kind": "spot",
+   "icon": "gym",
+   "match": [
+    "dooley's gym",
+    "dooleys gym",
+    "dooley's",
+    "boxing gym"
+   ],
+   "bio": "Three flights up over a Burnley tyre shop: two rings, heavy bags patched with duct tape, and a hand-painted sign — no colours, no guns, no excuses. Old fighters coach the kids for free; cops and BTM soldiers spar on alternate nights.",
+   "note": "Dooley has never asked my name. He tells me I drop my left.",
+   "canon": "invented"
+  },
+  {
+   "name": "Pinkney Orphanage",
+   "x": 48.4,
+   "y": 45.6,
+   "area": "Burnley",
+   "kind": "landmark",
+   "icon": "manor",
+   "match": [
+    "pinkney orphanage",
+    "the orphanage"
+   ],
+   "bio": "Cyrus Pinkney's gothic orphanage above the Arkham Channel, built with Solomon Wayne's money in the 1870s and shut since a funding scandal in the eighties: lancet windows, a chapel with no glass left, and dormitories the city's runaways still find their way into.",
+   "note": "Solomon Wayne paid for it, Pinkney built it, the city let it rot. I keep meaning to buy it back.",
+   "canon": "Batman: Arkham Knight (2015)"
+  },
+  {
+   "name": "Sacred Martyr Church",
+   "x": 65.4,
+   "y": 49.0,
+   "area": "The Bowery",
+   "kind": "landmark",
+   "icon": "church",
+   "match": [
+    "sacred martyr",
+    "sacred martyr church"
+   ],
+   "bio": "A soot-black Gothic Revival church on the Bowery: a breakfast line at six, AA in the basement at eight, and a confessional that has heard every crime in the district at least twice.",
+   "note": "The priest leaves the bell-tower door unlatched. We've never discussed it.",
+   "canon": "Gotham Knights (2022)"
+  },
+  {
+   "name": "S.K. Animal Shelter",
+   "x": 69.2,
+   "y": 51.6,
+   "area": "The Bowery",
+   "kind": "spot",
+   "icon": "zoo",
+   "match": [
+    "s.k. animal shelter",
+    "sk animal shelter",
+    "animal shelter",
+    "cat shelter"
+   ],
+   "bio": "A no-kill shelter in a converted Bowery garage, kept afloat by an anonymous donor who signs the cheques 'S.K.': two hundred cats, forty dogs, and a waiting list to volunteer.",
+   "note": "Selina's money. She'd deny it with a straight face.",
+   "canon": "Gotham Knights (2022)"
+  },
+  {
+   "name": "The Alcazar",
+   "x": 67.8,
+   "y": 53.4,
+   "area": "The Bowery",
+   "kind": "spot",
+   "icon": "hotel",
+   "match": [
+    "the alcazar",
+    "alcazar hotel",
+    "flophouse"
+   ],
+   "bio": "The last of the Bowery flophouses: twelve dollars a night for a cubicle under a chicken-wire ceiling, cash, no names asked. Some men have lived here thirty years; some stay one night, and the police come asking a week later.",
+   "note": "Jason slept in the doorway across the street, the winter before he went after my tyres.",
+   "canon": "invented (after the real Bowery's flophouses)"
+  },
+  {
+   "name": "Engine 33",
+   "x": 63.8,
+   "y": 51.8,
+   "area": "The Bowery",
+   "kind": "spot",
+   "icon": "fire",
+   "match": [
+    "engine 33",
+    "ladder 12",
+    "bowery firehouse",
+    "firehouse"
+   ],
+   "bio": "Engine 33 and Ladder 12, the busiest firehouse in Gotham: forty runs on a bad night, most of them fires somebody set on purpose. The memorial wall by the pole ran out of room years ago; they've started on the ceiling.",
+   "canon": "invented"
+  },
+  {
+   "name": "The Bowery Arms",
+   "x": 68.2,
+   "y": 48.6,
+   "area": "The Bowery",
+   "kind": "spot",
+   "icon": "bar",
+   "match": [
+    "bowery arms",
+    "the bowery arms"
+   ],
+   "bio": "A saloon on the Bowery since the Civil War: sawdust on the floor, ale in two colours, light and dark, no television, and a bartender who has thrown out two mayors and a police commissioner.",
+   "note": "Jim drank here when he was a lieutenant. He swears the commissioner they threw out was Loeb.",
+   "canon": "invented"
+  },
+  {
+   "name": "Gotham Academy",
+   "x": 36.0,
+   "y": 55.0,
+   "area": "Coventry",
+   "kind": "landmark",
+   "icon": "school",
+   "match": [
+    "gotham academy"
+   ],
+   "bio": "The city's oldest and most expensive prep school, a pile of gothic stone on the Coventry bank of the Sprang with Arkham's towers in view across the water. Blazers, Latin, a burned-out North Hall nobody will rebuild, and tunnels under the lawns the prospectus doesn't mention.",
+   "note": "The tunnels under North Hall run all the way to the river. Someone keeps unbricking them.",
+   "canon": "Gotham Academy (2014)"
+  },
+  {
+   "name": "Lacey Towers",
+   "x": 40.4,
+   "y": 55.2,
+   "area": "Coventry",
+   "kind": "landmark",
+   "icon": "tower",
+   "match": [
+    "lacey towers"
+   ],
+   "bio": "Coventry's prewar luxury apartment tower: doormen in braid, a penthouse terrace over the Sprang, and a murder on an upper floor a few winters back that the co-op board still calls 'the incident'.",
+   "note": "Sionis kept the penthouse for years under a shell company. The doormen remember more than they told the police.",
+   "canon": "Batman: Arkham Origins (2013)"
+  },
+  {
+   "name": "Coventry Cold Storage",
+   "x": 34.73,
+   "y": 54.55,
+   "area": "Coventry",
+   "kind": "spot",
+   "icon": "industry",
+   "match": [
+    "coventry cold storage",
+    "cold storage",
+    "coventry docks"
+   ],
+   "bio": "A block-long refrigerated warehouse on the Coventry docks — meat, fish and pharmaceuticals at minus twenty, and a compressor hum you can hear from the Sprang Bridge. The night foreman doesn't ask what's in the back freezer.",
+   "note": "Victor Fries held these docks for a winter when the bridges were down. The back freezer still has his locks on it.",
+   "canon": "No Man's Land (Mr. Freeze held the Coventry docks); warehouse invented"
+  },
+  {
+   "name": "Coventry Market Hall",
+   "x": 42.0,
+   "y": 60.4,
+   "area": "Coventry",
+   "kind": "spot",
+   "icon": "market",
+   "match": [
+    "coventry market",
+    "coventry market hall",
+    "market hall"
+   ],
+   "bio": "An 1890s iron-and-glass market hall off Coventry Circle: butchers, a cheese counter, a hardware stall run by the same family for four generations, and a coffee bar where Academy teachers and Arkham orderlies share the counter and don't compare notes.",
+   "canon": "invented (canon Coventry's small shops and local markets)"
+  },
+  {
+   "name": "Blackgate Ferry Landing",
+   "x": 64.38,
+   "y": 117.94,
+   "area": "Blackgate Isle",
+   "kind": "spot",
+   "icon": "dock",
+   "match": [
+    "blackgate ferry",
+    "blackgate ferry landing",
+    "prison ferry"
+   ],
+   "bio": "The slip on the island's north-west shore where the visitors' ferry ties up: a waiting shed, a metal detector, and a guard who reads your letters. Ten minutes across, and it feels longer on the way back.",
+   "canon": "invented"
+  },
+  {
+   "name": "Blackgate Causeway Gate",
+   "x": 66.89,
+   "y": 117.35,
+   "area": "Blackgate Isle",
+   "kind": "spot",
+   "icon": "prison",
+   "match": [
+    "blackgate causeway",
+    "causeway gate",
+    "sally port"
+   ],
+   "bio": "Where the causeway from the City Hall shore reaches the island: double fences, a sally port for the prison buses, and an intake hall where every new arrival is stripped, numbered and photographed before he ever sees a cell.",
+   "canon": "invented"
+  },
+  {
+   "name": "Blackgate Potter's Field",
+   "x": 74.61,
+   "y": 124.55,
+   "area": "Blackgate Isle",
+   "kind": "spot",
+   "icon": "cemetery",
+   "match": [
+    "potter's field",
+    "potters field",
+    "blackgate potter's field"
+   ],
+   "bio": "The city's potter's field on the island's eastern tip: row after row of numbered concrete markers where Gotham buries its unclaimed dead, dug by inmates on a dollar a day.",
+   "note": "I've come here looking for a name more than once. The numbers don't always match the ledger.",
+   "canon": "invented (after New York's Hart Island)"
+  },
+  {
+   "name": "Blackgate Prison Industries",
+   "x": 71.0,
+   "y": 126.0,
+   "area": "Blackgate Isle",
+   "kind": "spot",
+   "icon": "industry",
+   "match": [
+    "prison industries",
+    "blackgate industries",
+    "plate shop"
+   ],
+   "bio": "The prison's workshops in the island's old powerhouse, turning out licence plates, road signs and mattresses for the city at forty cents an hour. Whoever runs the shop floor runs the yard.",
+   "note": "Cobblepot ran it from a cell one year. Output went up.",
+   "canon": "Batman: Arkham Origins Blackgate (2013) (the Industrial wing); details invented"
+  },
+  {
+   "name": "Little Paris",
+   "x": 51.6,
+   "y": 120.8,
+   "area": "Paris Island",
+   "kind": "landmark",
+   "icon": "circus",
+   "match": [
+    "little paris",
+    "paris island amusement park",
+    "charles paris"
+   ],
+   "bio": "The Charles Paris amusement park that gave the island its name, Gotham's playground before the Mile: a carousel hall with its horses still inside, a dead wooden coaster, and a few ride families who never left when the ferries stopped.",
+   "note": "Somebody oils the carousel. Nobody admits to it.",
+   "canon": "Gotham Nights II (1995)"
+  },
+  {
+   "name": "Paris Island Incinerator",
+   "x": 49.2,
+   "y": 122.6,
+   "area": "Paris Island",
+   "kind": "landmark",
+   "icon": "industry",
+   "match": [
+    "paris island incinerator",
+    "incinerator"
+   ],
+   "bio": "The city's old garbage incinerator: a brick furnace hall and a two-hundred-foot stack that hasn't smoked since the clean-air suits. The barges stopped coming; the stories about what else went into the furnace didn't.",
+   "note": "The furnace still lights. I checked.",
+   "canon": "Gotham Knights (2022)"
+  },
+  {
+   "name": "Paris Island Quarantine Hospital",
+   "x": 46.95,
+   "y": 121.44,
+   "area": "Paris Island",
+   "kind": "landmark",
+   "icon": "hospital",
+   "match": [
+    "quarantine hospital",
+    "paris island hospital",
+    "the lazaretto"
+   ],
+   "bio": "The old quarantine hospital at the island's west end, where the city once shipped its typhoid and smallpox cases and later its addicts. Closed since the seventies: collapsing brick wards, trees growing through the roof, and graffiti from every decade since.",
+   "note": "Every few years someone sets up shop in the morgue wing. It's never anyone good.",
+   "canon": "invented (after New York's North Brother Island)"
+  },
+  {
+   "name": "The Cauldron",
+   "x": 52.09,
+   "y": 122.3,
+   "area": "Paris Island",
+   "kind": "spot",
+   "icon": "water",
+   "match": [
+    "the cauldron"
+   ],
+   "bio": "The harbour pilots' name for the churning water round Paris Island, where the old Cauldron mine workings flooded a century ago and the tide still boils over the drowned pits. Pilots give it a wide berth; the ones who didn't are down there with the mine.",
+   "note": "Whatever goes off the Old Gotham piers comes up here in three days. I keep the tide tables.",
+   "canon": "Gotham Knights (2022) / Eliot R. Brown's map (the Cauldron, a sunken old mine round Paris Island), recast as harbour water"
+  },
+  {
+   "name": "Burnside College",
+   "x": 105.0,
+   "y": 63.4,
+   "area": "Burnside",
+   "kind": "landmark",
+   "icon": "university",
+   "match": [
+    "burnside college"
+   ],
+   "bio": "A small, scrappy college spread through Burnside's old textile mills, strong on engineering and design and full of students who couldn't afford Gotham U and wouldn't have gone anyway. Its labs spin off a startup a month; its students set the borough's rents, music and coffee prices.",
+   "note": "Barbara's doctorate is here. She says the lab is the one place nobody introduces her as the commissioner's daughter.",
+   "canon": "Batgirl (2014)"
+  },
+  {
+   "name": "Burnside Square",
+   "x": 107.4,
+   "y": 67.4,
+   "area": "Burnside",
+   "kind": "spot",
+   "icon": "garden",
+   "match": [
+    "burnside square"
+   ],
+   "bio": "The heart of the borough: a plane-tree square under the old Burnside Savings Bank clock, food trucks down one side, a farmers' market on Saturdays and a different band busking on every corner. Rents around it doubled in five years, and the murals say so.",
+   "note": "Cass's neighbourhood. She knows every busker by name, and they all know her by sight.",
+   "canon": "Batgirl (2014) (Burnside); square invented"
+  },
+  {
+   "name": "Burnside Flea",
+   "x": 96.91,
+   "y": 63.66,
+   "area": "Burnside",
+   "kind": "spot",
+   "icon": "market",
+   "match": [
+    "burnside flea",
+    "flea market",
+    "the flea"
+   ],
+   "bio": "Weekends in the shell of the old Cole Sugar refinery on the waterfront: vintage leather, records, restored typewriters and the best tacos in Gotham. Half the stalls are art students; the other half are fences with better branding.",
+   "canon": "invented (after the Brooklyn Flea)"
+  },
+  {
+   "name": "The Gaslight",
+   "x": 109.0,
+   "y": 69.0,
+   "area": "Burnside",
+   "kind": "spot",
+   "icon": "club",
+   "match": [
+    "the gaslight",
+    "gaslight club"
+   ],
+   "bio": "A music venue in a former gas-lamp works: five hundred capacity, a floor that sticks, punk on Tuesdays and Gotham's next big thing most Fridays. The sound engineer has a waiting list; the fire marshal has a file.",
+   "canon": "invented"
+  },
+  {
+   "name": "Fort Dumas",
+   "x": 58.6,
+   "y": 131.4,
+   "area": "Justice Island",
+   "kind": "landmark",
+   "icon": "museum",
+   "match": [
+    "fort dumas"
+   ],
+   "bio": "The star-shaped harbour fort the Statue of Justice stands on, built against the British and never fired in anger. Its casemates hold the statue's museum now; its cannons still point at an empty sea.",
+   "note": "Named for a colonel, not the novelist. Jason was disappointed.",
+   "canon": "Gotham Knights (2022)",
+   "at": [
+    57.6,
+    130.4
+   ]
+  },
+  {
+   "name": "Justice Island Armory",
+   "x": 56.2,
+   "y": 131.2,
+   "area": "Justice Island",
+   "kind": "spot",
+   "icon": "civic",
+   "match": [
+    "justice island armory",
+    "old armory"
+   ],
+   "bio": "The garrison's red-brick armory from the 1880s, later a Parks Department shed, now padlocked — though the padlocks are newer than they should be.",
+   "canon": "Gotham Knights (2022) (the Armory)"
+  },
+  {
+   "name": "Justice Island Ferry Pier",
+   "x": 56.48,
+   "y": 129.59,
+   "area": "Justice Island",
+   "kind": "spot",
+   "icon": "dock",
+   "match": [
+    "justice island pier",
+    "justice island ferry",
+    "statue pier"
+   ],
+   "bio": "The statue ferry's landing on the island's north-west corner: a ticket booth, a snack hut and, on summer afternoons, a queue of tourists photographing a skyline most of them won't walk through after dark.",
+   "canon": "invented"
+  },
+  {
+   "name": "Port Adams Container Terminal",
+   "x": 6.55,
+   "y": 92.0,
+   "area": "Ironworks",
+   "kind": "landmark",
+   "icon": "dock",
+   "match": [
+    "port adams",
+    "container terminal",
+    "container port",
+    "container yard"
+   ],
+   "bio": "Gotham's container port, a mile of mainland shore under red gantry cranes and boxes stacked like city blocks. Customs opens about one container in fifty; the other forty-nine are the Ironworks' real economy.",
+   "note": "Cobblepot's shipments come in through Dixon Docks. The ones he doesn't want me to see come in here.",
+   "canon": "Batman: Arkham Knight (2015) (Port Adams)"
+  },
+  {
+   "name": "Ironworks Rail Yard",
+   "x": -1.0,
+   "y": 94.0,
+   "area": "Ironworks",
+   "kind": "spot",
+   "icon": "station",
+   "match": [
+    "ironworks rail yard",
+    "rail yard",
+    "railyard",
+    "freight yard",
+    "train yard"
+   ],
+   "bio": "Forty tracks of freight yard behind the mills, where boxcars are broken up and made up again under sodium lights all night. Steel goes out, everything else comes in, and the yard police can't watch all forty tracks at once.",
+   "canon": "invented"
+  },
+  {
+   "name": "Old Koul Brau Brewery",
+   "x": -2.0,
+   "y": 87.0,
+   "area": "Ironworks",
+   "kind": "spot",
+   "icon": "industry",
+   "match": [
+    "koul brau",
+    "koul brau brewery",
+    "the old brewery"
+   ],
+   "bio": "Gotham's beer for ninety years, brewed in the Ironworks until the company sold out and the vats went cold. The neon stein on the roof still lights up every night, and nobody can say who pays the bill.",
+   "note": "The neon's wired to the building next door. Someone is living in the brewhouse.",
+   "canon": "Gotham Knights (2022)"
+  },
+  {
+   "name": "The Bessemer",
+   "x": 1.8,
+   "y": 90.6,
+   "area": "Ironworks",
+   "kind": "spot",
+   "icon": "diner",
+   "match": [
+    "the bessemer",
+    "bessemer diner"
+   ],
+   "bio": "A twenty-four-hour diner at the mill gates, named for the furnace that built the district: steel-toed boots under every stool at six, eggs and kielbasa, and a jukebox nobody's changed since the last strike.",
+   "note": "The mill foremen eat here at six. You learn more at the counter than from Sionis's books.",
+   "canon": "invented"
+  },
+  {
+   "name": "Cherry Hills Library",
+   "x": 41.0,
+   "y": 28.2,
+   "area": "Cherry Hills",
+   "kind": "landmark",
+   "icon": "library",
+   "match": [
+    "cherry hills library",
+    "carnegie library"
+   ],
+   "bio": "A 1905 Carnegie library at the top of the hill: marble steps, a green-shaded reading room, and a librarian who has kept it open through three budget cuts and a riot. Free wifi made it the busiest building in Cherry Hills.",
+   "canon": "invented"
+  },
+  {
+   "name": "The Hi-Hat",
+   "x": 39.8,
+   "y": 30.8,
+   "area": "Cherry Hills",
+   "kind": "spot",
+   "icon": "club",
+   "match": [
+    "the hi-hat",
+    "hi-hat club"
+   ],
+   "bio": "A basement jazz club on the Cherry Hills slope since 1938: forty seats, a house trio that plays until four, and photographs of everyone who ever sat in covering the walls.",
+   "note": "My parents had their first date here. The owner's son still tears up my bill.",
+   "canon": "invented"
+  },
+  {
+   "name": "68th Street Courts",
+   "x": 37.2,
+   "y": 31.6,
+   "area": "Cherry Hills",
+   "kind": "spot",
+   "icon": "stadium",
+   "match": [
+    "68th street courts",
+    "sixty-eighth street courts"
+   ],
+   "bio": "Fenced asphalt courts halfway down the hill, where the best summer league in Gotham plays under floodlights and college scouts sit beside men who don't want their picture taken. The Sixty-Eight Kings took their name from the street.",
+   "note": "The Kings deal from the north bleachers. The kids on court pretend not to see. So do the scouts.",
+   "canon": "Batgirl vol. 4 (Cherry Hill and the Sixty-Eight Kings); courts invented"
+  },
+  {
+   "name": "GBC Broadcast Center",
+   "x": 66.2,
+   "y": 32.2,
+   "area": "New Town",
+   "kind": "landmark",
+   "icon": "news",
+   "match": [
+    "gbc",
+    "gotham broadcasting",
+    "gbc tower",
+    "news chopper",
+    "news helicopter"
+   ],
+   "bio": "The Gotham Broadcasting Company's glass tower: a street-level studio for the morning show, the six o'clock news upstairs, and a rooftop helipad for the GBC chopper, which gets to every fire, chase and rooftop sighting about four minutes after the police.",
+   "note": "The chopper pilot is good. Too good, twice. I've learned to stay under the bridges.",
+   "canon": "GBC as named in the brief (not found in canon); details invented"
+  },
+  {
+   "name": "New Town Bus Terminal",
+   "x": 68.2,
+   "y": 36.8,
+   "area": "New Town",
+   "kind": "landmark",
+   "icon": "station",
+   "match": [
+    "bus terminal",
+    "bus station",
+    "new town bus terminal"
+   ],
+   "bio": "The interstate bus terminal at the foot of the Pioneers Expressway: four floors of gates under fluorescent light that never goes off, and the first place every runaway in the state lands. Pimps meet the late buses; so do the outreach workers, when they get there first.",
+   "note": "Half the kids I find were met here first. I try to be at the one a.m. from Metropolis.",
+   "canon": "invented"
+  },
+  {
+   "name": "The Silver Comet",
+   "x": 61.26,
+   "y": 30.75,
+   "area": "New Town",
+   "kind": "spot",
+   "icon": "diner",
+   "match": [
+    "silver comet",
+    "the silver comet",
+    "silver comet diner"
+   ],
+   "bio": "A 1940s stainless-steel dining car hauled off the rails and set on blocks beside the tracks off Kane Avenue: open all night, pie under glass, and a counterman who has served cops, cabbies and a sitting mayor at the same hour without seating any of them together.",
+   "canon": "invented"
+  },
+  {
+   "name": "Arkham Mansion",
+   "x": 31.6,
+   "y": 44.8,
+   "area": "Arkham Island",
+   "kind": "landmark",
+   "icon": "manor",
+   "match": [
+    "arkham mansion"
+   ],
+   "bio": "The Arkham family's Victorian house, where Amadeus Arkham first took in patients and later lost his own mind: now the asylum's administration block, with the warden's office upstairs and the founder's portrait still glaring down the stairwell.",
+   "note": "Every patient file since 1921 is in the archive under this house. The warden doesn't know I've read most of them.",
+   "canon": "Batman: Arkham Asylum (2009); A Serious House on Serious Earth (1989)"
+  },
+  {
+   "name": "Arkham Botanical Gardens",
+   "x": 36.2,
+   "y": 43.4,
+   "area": "Arkham Island",
+   "kind": "landmark",
+   "icon": "garden",
+   "match": [
+    "arkham botanical gardens",
+    "arkham gardens",
+    "arkham glasshouse",
+    "arkham greenhouse"
+   ],
+   "bio": "A Victorian glasshouse on the asylum grounds, built for horticultural therapy: palms against steam-streaked glass, beds tended by the gentler patients and, during certain admissions, plants that grow faster than they should.",
+   "note": "When Pamela is admitted, the gardeners stop coming in. They're not wrong.",
+   "canon": "Batman: Arkham Asylum (2009)"
+  },
+  {
+   "name": "Intensive Treatment",
+   "x": 37.8,
+   "y": 48.8,
+   "area": "Arkham Island",
+   "kind": "spot",
+   "icon": "asylum",
+   "match": [
+    "intensive treatment",
+    "arkham intensive treatment"
+   ],
+   "bio": "Arkham's maximum-security wing, sunk into the bedrock beneath the main building: a single lift, six guard stations, and cells designed for the patients the rest of the asylum couldn't hold.",
+   "note": "The Joker's cell has been refitted four times. He has left it nine.",
+   "canon": "Batman: Arkham Asylum (2009)"
+  },
+  {
+   "name": "Arkham Family Crypt",
+   "x": 30.6,
+   "y": 47.0,
+   "area": "Arkham Island",
+   "kind": "spot",
+   "icon": "cemetery",
+   "match": [
+    "arkham crypt",
+    "arkham family crypt",
+    "arkham cemetery"
+   ],
+   "bio": "A granite crypt in the walled cemetery behind the mansion: Elizabeth Arkham, for whom the asylum is named; Constance and Harriet Arkham, murdered in the house by a patient in 1921; and Amadeus, who outlived them in a cell of his own asylum.",
+   "note": "Escaped patients come here first more often than chance allows. None of them can say why.",
+   "canon": "Arkham Asylum: A Serious House on Serious Earth (1989)"
+  },
+  {
+   "name": "Wayne Mining Building",
+   "x": 23.0,
+   "y": 91.4,
+   "area": "Upper West Side",
+   "kind": "landmark",
+   "icon": "tower",
+   "match": [
+    "wayne mining building",
+    "old wayne mining",
+    "wayne mining"
+   ],
+   "bio": "The 1890s headquarters of the Wayne Mining Company, twelve storeys of granite and verdigris copper built when the family fortune still came out of the ground. Apartments now, with the company's crossed picks still carved over the door.",
+   "note": "The Cauldron mine paid for every stone of it. Not every man who dug it got paid.",
+   "canon": "Gotham Knights (2022) (Old Wayne Mining HQ, Gotham Heights)"
+  },
+  {
+   "name": "First Church of Gotham City",
+   "x": 26.2,
+   "y": 86.6,
+   "area": "Upper West Side",
+   "kind": "landmark",
+   "icon": "church",
+   "match": [
+    "first church",
+    "first church of gotham",
+    "first church of gotham city"
+   ],
+   "bio": "The city's oldest congregation, which left Old Gotham for the West Side in the 1850s and brought its founders' gravestones with it: brownstone Gothic, a stained-glass Justice with her scales, and a Sunday crowd that's half old money and half the shelter next door.",
+   "note": "Solomon Wayne's stone is set into the vestibule floor. Everyone walks over him on the way in.",
+   "canon": "Gotham Knights (2022)"
+  },
+  {
+   "name": "Riverside Esplanade",
+   "x": 15.38,
+   "y": 93.33,
+   "area": "Upper West Side",
+   "kind": "spot",
+   "icon": "garden",
+   "match": [
+    "riverside esplanade",
+    "the esplanade"
+   ],
+   "bio": "Two miles of promenade along the Gotham River below the West Side: joggers at dawn, chess players by the boat basin, and after dark a long unlit path with the mainland's lights on the far bank and very few people on this one.",
+   "canon": "invented"
+  },
+  {
+   "name": "Congregation Tifereth Israel",
+   "x": 23.0,
+   "y": 85.6,
+   "area": "Upper West Side",
+   "kind": "spot",
+   "icon": "civic",
+   "match": [
+    "tifereth israel"
+   ],
+   "bio": "A Moorish Revival synagogue on West End Avenue, horseshoe arches and a copper dome gone green. It runs the neighbourhood food pantry and a free legal clinic on Thursday nights that has kept half the block from being evicted.",
+   "canon": "invented"
+  },
+  {
+   "name": "Fei Hong Supermarket",
+   "x": 28.6,
+   "y": 105.2,
+   "area": "Chinatown",
+   "kind": "spot",
+   "icon": "market",
+   "match": [
+    "fei hong",
+    "fei hong supermarket"
+   ],
+   "bio": "Chinatown's biggest grocery, in a converted bowling alley: forty aisles, live tanks along the back wall, a roast-meat counter with a queue out the door every Saturday, and a community board by the tills that's the real neighbourhood paper.",
+   "note": "Cass stops in after patrol. The women at the roast counter have decided she's too thin.",
+   "canon": "Gotham Knights (2022)"
+  },
+  {
+   "name": "Chinatown Veterans' Arch",
+   "x": 29.6,
+   "y": 102.2,
+   "area": "Chinatown",
+   "kind": "spot",
+   "icon": "statue",
+   "match": [
+    "veterans' arch",
+    "veterans arch",
+    "chinatown arch",
+    "memorial arch"
+   ],
+   "bio": "A granite arch raised by the neighbourhood in 1962 for its own who died in the Second World War and Korea, after City Hall declined to pay for one. Wreaths every Memorial Day; missing-person flyers, in two languages, taped to its pillars the rest of the year.",
+   "canon": "invented (after New York's Kimlau Memorial Arch)"
+  },
+  {
+   "name": "Chinatown Bus Depot",
+   "x": 25.4,
+   "y": 100.2,
+   "area": "Chinatown",
+   "kind": "spot",
+   "icon": "station",
+   "match": [
+    "chinatown bus",
+    "chinatown bus depot",
+    "chinatown buses"
+   ],
+   "bio": "A curbside depot under the expressway where cut-price coaches leave every half hour for Metropolis, Blüdhaven and the casinos: fifteen dollars cash, no names on the manifest. Students, grandmothers, and people who'd rather not be seen at Union Station.",
+   "canon": "invented"
+  },
+  {
+   "name": "Rialto Buddhist Temple",
+   "x": 24.6,
+   "y": 105.6,
+   "area": "Chinatown",
+   "kind": "spot",
+   "icon": "civic",
+   "match": [
+    "rialto temple",
+    "rialto buddhist temple",
+    "buddhist temple"
+   ],
+   "bio": "A Buddhist temple in what was the Rialto movie house: the marquee out front still has its bulbs, and a sixteen-foot gilded Buddha sits where the screen used to be. Incense, fortune sticks, and the quietest room south of the park.",
+   "canon": "invented (after New York's Mahayana Temple)"
+  },
+  {
+   "name": "Gotham Downs",
+   "x": 6.4,
+   "y": 48.0,
+   "area": "Kane Heights",
+   "kind": "landmark",
+   "icon": "stadium",
+   "match": [
+    "gotham downs",
+    "racetrack",
+    "race track"
+   ],
+   "bio": "A century-old thoroughbred track on the river flats below the heights, grandstand peeling, betting windows still busy. The Falcones have kept the same box over the finish line since it opened, and the stewards have never once ruled against a Falcone horse.",
+   "note": "I bought a horse once to get into the owners' bar. It finished last. The conversation didn't.",
+   "canon": "invented"
+  },
+  {
+   "name": "Kane Heights Country Club",
+   "x": 0.4,
+   "y": 47.0,
+   "area": "Kane Heights",
+   "kind": "spot",
+   "icon": "garden",
+   "match": [
+    "kane heights country club",
+    "country club"
+   ],
+   "bio": "Eighteen holes on what was the Kane family's deer park, a clubhouse with Robert Kane's portrait over the bar, and a membership committee that has blackballed senators but never a Falcone. Three generations of judges have lost golf games here on purpose.",
+   "note": "The Kanes founded it. I'm still a member. I've never been.",
+   "canon": "invented"
+  },
+  {
+   "name": "Kane River Locks",
+   "x": 5.0,
+   "y": 54.0,
+   "area": "Kane Heights",
+   "kind": "spot",
+   "icon": "water",
+   "match": [
+    "kane river locks",
+    "kane locks",
+    "the weir"
+   ],
+   "bio": "The old lock and weir where the Kane River drops toward the Gotham River: no barge has used it in forty years, the lock-keeper's cottage sells bait and coffee, and the spillway is where Kane Heights goes to fish, to think, or to get rid of things.",
+   "note": "The grate on the weir catches what the river carries. I check it after the Falcones have a bad week.",
+   "canon": "invented"
+  },
+  {
+   "name": "Slaughter Swamp",
+   "x": -1.0,
+   "y": 54.0,
+   "area": "Kane Heights",
+   "kind": "landmark",
+   "icon": "water",
+   "match": [
+    "slaughter swamp",
+    "the swamp"
+   ],
+   "bio": "Black water and dead cedars where the Kane River spreads into marsh below the heights: no lights, no houses, and a drowning count the county stopped publishing decades ago. Local children know a nursery rhyme about it their parents won't let them sing after dark.",
+   "note": "Grundy always crawls back here. The swamp always takes him back.",
+   "canon": "DC comics (Slaughter Swamp, where Solomon Grundy rose)"
+  },
+  {
+   "name": "Brentwood Academy",
+   "x": 1.6,
+   "y": 25.6,
+   "area": "Bristol",
+   "kind": "landmark",
+   "icon": "school",
+   "match": [
+    "brentwood academy",
+    "brentwood"
+   ],
+   "bio": "Bristol's boarding school: brick quads, a chapel, a rowing crew on Bristol Lake and a waiting list of senators' sons. It turns out bankers and lawyers, and every so often a boy far too observant for his teachers.",
+   "note": "Tim spent two years here pretending to be an average student. Nobody noticed but me.",
+   "canon": "Robin (1993) (Tim Drake's prep school)"
+  },
+  {
+   "name": "St. Faustina Church",
+   "x": 7.4,
+   "y": 25.0,
+   "area": "Bristol",
+   "kind": "spot",
+   "icon": "church",
+   "match": [
+    "st. faustina",
+    "st faustina",
+    "saint faustina",
+    "st. faustina church"
+   ],
+   "bio": "A small stone church on the Bristol road where the old families marry, christen and bury: box pews with brass nameplates, a churchyard full of the founders' younger sons, and a Christmas Eve service that doubles as the county's most exclusive party.",
+   "note": "My parents were married here. I sat in the same pew for their funeral.",
+   "canon": "Gotham Knights (2022)"
+  },
+  {
+   "name": "Leblanc Funeral Home",
+   "x": 5.0,
+   "y": 26.0,
+   "area": "Bristol",
+   "kind": "spot",
+   "icon": "cemetery",
+   "match": [
+    "leblanc funeral home",
+    "leblanc's",
+    "funeral home"
+   ],
+   "bio": "The funeral home that has buried Bristol's old money for a century, on the road down to the cemetery gates: discreet, expensive, and very good at keeping a family matter private. Its limousines are older than most of the mourners.",
+   "canon": "Gotham Knights (2022)"
+  },
+  {
+   "name": "Ralli's Family Restaurant",
+   "x": 51.4,
+   "y": 28.6,
+   "area": "Otisburg",
+   "kind": "spot",
+   "icon": "diner",
+   "match": [
+    "ralli's",
+    "rallis",
+    "ralli's family restaurant"
+   ],
+   "bio": "Two blocks from the Knightsdome since 1952: red leather booths, signed photographs of every Knights team on the walls, a meatball hero named for a shortstop nobody remembers, and a back room where the ticket scalpers settle up after home games.",
+   "canon": "Gotham Knights (2022)"
+  },
+  {
+   "name": "Wayne Center for Children",
+   "x": 46.4,
+   "y": 31.4,
+   "area": "Otisburg",
+   "kind": "landmark",
+   "icon": "school",
+   "match": [
+    "wayne center for children",
+    "wayne children's center",
+    "wayne center"
+   ],
+   "bio": "The Wayne Foundation's children's centre among the Otisburg towers: daycare, after-school tutoring, a paediatric clinic and a gym, free to any child in the city — and a waiting list that says more about Gotham than any crime statistic.",
+   "note": "The one building with my name on it I'm sure of.",
+   "canon": "Gotham Knights (2022)"
+  },
+  {
+   "name": "The Parachute Drop",
+   "x": 60.4,
+   "y": 27.2,
+   "area": "Amusement Mile",
+   "kind": "spot",
+   "icon": "tower",
+   "match": [
+    "parachute drop",
+    "parachute tower",
+    "parachute jump"
+   ],
+   "bio": "A two-hundred-and-fifty-foot steel tower moved here from the World's Fair in Robinson Park and planted at the Mile's west end. The parachutes went decades ago and the lights soon after; it's still the tallest thing on the north shore.",
+   "note": "The best view of the Mile, and everyone knows it. I only use it when I want to be seen.",
+   "canon": "invented (after Coney Island's Parachute Jump; World's Fair site from Gotham Knights)"
+  },
+  {
+   "name": "The Mile Pier",
+   "x": 68.61,
+   "y": 22.94,
+   "area": "Amusement Mile",
+   "kind": "spot",
+   "icon": "dock",
+   "match": [
+    "mile pier",
+    "the mile pier",
+    "amusement mile pier",
+    "ferry pier"
+   ],
+   "bio": "The long pier at the Mile's east end where the Blüdhaven ferry ties up: fishermen along the rails at dawn, a bait shop that sells beer to anyone, and a last boat at 11:40 that someone misses every night.",
+   "note": "When Dick's had a bad night in Gotham he takes the ferry home, not the bike. He stands at the stern the whole way.",
+   "canon": "invented"
+  },
+  {
+   "name": "Solomon Wayne Courthouse",
+   "x": 65.8,
+   "y": 46.0,
+   "area": "Crime Alley",
+   "kind": "landmark",
+   "icon": "civic",
+   "match": [
+    "solomon wayne courthouse",
+    "night court",
+    "park row courthouse"
+   ],
+   "bio": "A granite courthouse on Park Row, built by Judge Solomon Wayne in the 1850s when this was the respectable end of town. The real courts moved downtown long ago; what's left is night court, the public defenders, and a statue of the judge with his nose shot off.",
+   "note": "Solomon Wayne would recognise the defendants. He wouldn't recognise the street.",
+   "canon": "Batman: Arkham City (2011)"
+  },
+  {
+   "name": "Burnside Bridge",
+   "x": 84.3,
+   "y": 57.0,
+   "area": "Robinsville",
+   "kind": "landmark",
+   "icon": "tower",
+   "match": [
+    "burnside bridge"
+   ],
+   "bio": "The green steel suspension bridge from the Robinsville spit across to Burnside: six lanes, a bike path the borough fought ten years for, and a footwalk packed on Friday nights with people heading over for the bars.",
+   "note": "Cass runs it at dawn, there and back, and calls it a warm-up.",
+   "canon": "Batgirl (2014) (the Burnside Bridge)"
+  },
+  {
+   "name": "Robinsville Station",
+   "x": 80.0,
+   "y": 40.4,
+   "area": "Robinsville",
+   "kind": "spot",
+   "icon": "station",
+   "match": [
+    "robinsville station",
+    "coast line station"
+   ],
+   "bio": "A clapboard Coast Line halt on the spit: two platforms, a waiting room with a pot-bellied stove, and the last stop before the trains cross the Pioneers Bridge. Commuters by day; after dark it's mostly the Iceberg Lounge crowd, dressed better than the station.",
+   "canon": "invented"
+  },
+  {
+   "name": "Gotham City Morgue",
+   "x": 32.4,
+   "y": 73.4,
+   "area": "University District",
+   "kind": "landmark",
+   "icon": "hospital",
+   "match": [
+    "morgue",
+    "city morgue",
+    "medical examiner",
+    "coroner's office",
+    "the coroner"
+   ],
+   "bio": "The Chief Medical Examiner's office, a windowless block behind Gotham General joined to it by a tunnel the public never sees: forty drawers, a backlog measured in weeks, and a night attendant who has seen everything the city does to itself.",
+   "note": "The night ME leaves her files on the desk when she goes for coffee. She takes a long time over coffee.",
+   "canon": "invented"
+  },
+  {
+   "name": "The Bursar's Office",
+   "x": 27.2,
+   "y": 66.4,
+   "area": "University District",
+   "kind": "spot",
+   "icon": "bar",
+   "match": [
+    "the bursar's office",
+    "bursar's office",
+    "bursars office"
+   ],
+   "bio": "A basement bar off University Avenue, named so students can tell their parents where they are with a straight face: dollar pitchers on Thursdays, a jukebox stuck in 1994, and law students arguing the Fourth Amendment with the bouncer.",
+   "note": "Harvey drank here in law school. So did half the people he later prosecuted.",
+   "canon": "invented"
+  },
+  {
+   "name": "Elliot Memorial Hospital",
+   "x": 64.75,
+   "y": 72.8,
+   "area": "Upper East Side",
+   "kind": "landmark",
+   "icon": "hospital",
+   "match": [
+    "elliot memorial",
+    "elliot memorial hospital"
+   ],
+   "bio": "The private hospital the Elliot family endowed on Fifth Avenue: a marble lobby, a concierge desk, and a top-floor wing where Gotham's wealthy go to be discreetly ill, discreetly dried out, or discreetly treated for gunshot wounds.",
+   "note": "Tommy's family name is over the door. I read the private wing's admissions every month.",
+   "canon": "Batman: Arkham Knight (2015)"
+  },
+  {
+   "name": "Gotham Public Library",
+   "x": 62.27,
+   "y": 87.74,
+   "area": "Fashion District",
+   "kind": "landmark",
+   "icon": "library",
+   "match": [
+    "gotham public library",
+    "public library",
+    "central library"
+   ],
+   "bio": "The central branch of the Gotham Public Library on Fifth Avenue: Beaux-Arts marble, a reading room the length of a city block, and a pair of bronze owls over the doors that the architect's drawings don't show.",
+   "note": "Somebody keeps the bronze owls polished. The maintenance staff swear it isn't them.",
+   "canon": "Batgirl (Barbara Gordon ran the Gotham Public Library); the owls nod to the Court of Owls"
+  },
+  {
+   "name": "Lacey's",
+   "x": 66.35,
+   "y": 89.3,
+   "area": "Fashion District",
+   "kind": "landmark",
+   "icon": "market",
+   "match": [
+    "lacey's",
+    "laceys",
+    "lacey's department store"
+   ],
+   "bio": "The department store that fills a whole block of Fashion Avenue: eleven floors, wooden escalators still running on the eighth, and a Thanksgiving parade whose balloons have been hijacked twice.",
+   "note": "Selina's favourite store, for reasons that have nothing to do with buying things.",
+   "canon": "Batman: Arkham Knight (2015)"
+  },
+  {
+   "name": "Gotham Globe",
+   "x": 72.0,
+   "y": 100.2,
+   "area": "City Hall District",
+   "kind": "landmark",
+   "icon": "news",
+   "match": [
+    "gotham globe",
+    "globe building",
+    "the globe tower"
+   ],
+   "bio": "The Gazette's louder rival, in a terracotta tower on the old newspaper row across from City Hall: bigger headlines, bigger photographs, and a police-radio room that has scooped the GCPD's own press office more than once.",
+   "note": "The Globe pays for night-lens photographs of the rooftops. I've seen the one of me. It's mostly elbow.",
+   "canon": "Batman (1989)"
+  },
+  {
+   "name": "East End Heliport",
+   "x": 75.53,
+   "y": 109.32,
+   "area": "City Hall District",
+   "kind": "spot",
+   "icon": "heliport",
+   "match": [
+    "east end heliport",
+    "heliport",
+    "downtown heliport"
+   ],
+   "bio": "A concrete pad on a pier off the East End: commuter helicopters to the airport for people whose time is worth more than the fare, sightseeing flights for people whose isn't, and the GCPD air unit when Central's roof is full.",
+   "note": "The company helicopter lives here. The flights the pilots don't log are mine.",
+   "canon": "invented"
+  },
+  {
+   "name": "Gotham Ferry Terminal",
+   "x": 47.44,
+   "y": 115.51,
+   "area": "Old Gotham",
+   "kind": "landmark",
+   "icon": "dock",
+   "match": [
+    "ferry terminal",
+    "gotham ferry",
+    "statue ferry",
+    "ferry building",
+    "gotham ferry co"
+   ],
+   "bio": "The Gotham Ferry Company's green-iron terminal at the foot of Old Gotham, built in 1909 and repainted about as often: boats every half hour to Justice Island and the Statue, and a waiting room full of tourists, commuters and pickpockets who know the timetable better than either.",
+   "canon": "Gotham Knights (2022) (Gotham Ferry Co.)"
+  },
+  {
+   "name": "GCFD Headquarters",
+   "x": 50.8,
+   "y": 106.4,
+   "area": "Old Gotham",
+   "kind": "landmark",
+   "icon": "fire",
+   "match": [
+    "gcfd",
+    "fire department",
+    "fire headquarters",
+    "gotham city fire department"
+   ],
+   "bio": "Gotham City Fire Department headquarters, an 1880s firehouse with its brass pole intact, a museum of hand-pumpers on the ground floor and a dispatch room upstairs that hears about every fire in the city ninety seconds before GBC does.",
+   "note": "The fire marshal sends me copies of the arson reports. Officially, I'm a donor.",
+   "canon": "Gotham Knights (2022) (Gotham City Fire Department)"
+  },
+  {
+   "name": "Kane Industries",
+   "x": 22.96,
+   "y": 117.2,
+   "area": "Tricorner",
+   "kind": "landmark",
+   "icon": "industry",
+   "match": [
+    "kane industries",
+    "kane chemical",
+    "kane chemicals",
+    "kane chemical works"
+   ],
+   "bio": "The Kane family's chemical company: an 1890s brick headquarters with KANE in iron letters on the roof, a tank farm behind it on the Tricorner shore, and a century of discharges into the harbour that the family lawyers have kept out of every court in the state.",
+   "note": "My mother's family. The board still sends me the minutes; I read the environmental section first.",
+   "canon": "Gotham Knights (2022) (Kane Industries on Tricorner)"
+  },
+  {
+   "name": "Tricorner Fish Market",
+   "x": 30.82,
+   "y": 127.88,
+   "area": "Tricorner",
+   "kind": "landmark",
+   "icon": "market",
+   "match": [
+    "fish market",
+    "tricorner fish market"
+   ],
+   "bio": "Gotham's wholesale fish market, an iron shed by the Tricorner wharves: trucks backing in at midnight, ice on the cobbles, the auction at three and everything gone by sunrise. Cash moves faster than the fish, and the loading-dock union has run the floor the same way since Prohibition.",
+   "note": "The boats that come in with no catch are the ones worth watching.",
+   "canon": "invented (after New York's Fulton Fish Market)"
+  },
+  {
+   "name": "World's Fair Grounds",
+   "x": 48.8,
+   "y": 76.0,
+   "area": "Robinson Park",
+   "kind": "landmark",
+   "icon": "statue",
+   "match": [
+    "world's fair grounds",
+    "worlds fair grounds",
+    "world's fair",
+    "exhibition grounds"
+   ],
+   "bio": "Where Gotham held its World's Fair: a cracked reflecting pool, a forty-foot steel globe gone to rust, and a Pavilion of Tomorrow whose tomorrow came and went. Skateboarders love it by day; so does everyone dealing in the park after dark.",
+   "note": "My father brought me to see the globe lit for the fair's anniversary. They haven't lit it since.",
+   "canon": "Gotham Knights (2022) (Robinson Park Exhibition Grounds, the old World's Fair site)"
+  },
+  {
+   "name": "Robinson Park Boathouse",
+   "x": 47.9,
+   "y": 80.9,
+   "area": "Robinson Park",
+   "kind": "spot",
+   "icon": "marina",
+   "match": [
+    "robinson park boathouse",
+    "boathouse",
+    "the boathouse"
+   ],
+   "bio": "A Victorian boathouse on the park's south lake: rowboats by the hour, a café terrace, and — after the gates are supposed to close — the most private place in Robinson Park for a conversation.",
+   "note": "Half the deals in this city start in a rowboat here. Sound carries over water; they forget that.",
+   "canon": "invented"
+  },
+  {
+   "name": "Randy's apartment",
+   "x": 69.8,
+   "y": 52.1,
+   "area": "The Bowery",
+   "kind": "spot",
+   "icon": "home",
+   "match": [
+    "randy's apartment",
+    "randy's place",
+    "randy's flat"
+   ],
+   "bio": "A fourth-floor walk-up over a laundromat on the Bowery: a mattress, a workbench, a fridge with nothing in it.",
+   "note": "He pays the rent on time and sleeps there twice a month. The rest of the time he's in the air."
+  },
+  {
+   "name": "Jason's safehouse",
+   "x": 64.9,
+   "y": 46.4,
+   "area": "Crime Alley",
+   "kind": "spot",
+   "icon": "home",
+   "match": [
+    "jason's safehouse",
+    "the safehouse",
+    "jason's place"
+   ],
+   "bio": "A gutted third floor over a pawnshop off Park Row: paperbacks, a cot, a gun safe bolted to the joists.",
+   "note": "He has four of these. This is the one he lets me know about."
+  },
+  {
+   "name": "Selina's apartment",
+   "x": 80.4,
+   "y": 101.9,
+   "area": "City Hall District",
+   "kind": "spot",
+   "icon": "home",
+   "match": [
+    "selina's apartment",
+    "selina's place",
+    "selina's penthouse"
+   ],
+   "bio": "A penthouse in an East End tower she shouldn't be able to afford: all windows, a terrace, and cats on every surface.",
+   "note": "The view's of my tower. I've never asked whether that's on purpose."
+  },
+  {
+   "name": "Hangar 9",
+   "x": -3.02,
+   "y": 123.45,
+   "area": "Gotham County",
+   "kind": "spot",
+   "icon": "airport",
+   "match": [
+    "hangar 9",
+    "the hangar",
+    "randy's hangar"
+   ],
+   "bio": "A private hangar at the end of the airport's cargo apron, leased through three shell companies.",
+   "note": "Lucius keeps the suit flying from here. Randy keeps everyone else out."
+  },
+  {
+   "name": "Daggett Industries",
+   "x": 62.8,
+   "y": 36.4,
+   "area": "New Town",
+   "kind": "landmark",
+   "icon": "tower",
+   "match": [
+    "daggett industries",
+    "daggett tower",
+    "daggettcorp",
+    "daggett"
+   ],
+   "bio": "Roland Daggett's pharmaceutical-and-everything conglomerate: a black-glass tower on Kane Avenue with a lit crown, a press office that never sleeps and a legal department bigger than most firms.",
+   "note": "Daggett once tested a 'miracle' cream on the Narrows. I've read every patent he's filed since.",
+   "canon": "Batman: The Animated Series (1992)"
+  },
+  {
+   "name": "GothCorp",
+   "x": 51.85,
+   "y": 33.6,
+   "area": "Otisburg",
+   "kind": "landmark",
+   "icon": "lab",
+   "match": [
+    "gothcorp",
+    "goth corp",
+    "boyle's company"
+   ],
+   "bio": "Ferris Boyle's cryogenics company: a white research campus behind the Otisburg towers, known for a charity gala every Christmas and for the scientist it once left for dead in its own lab.",
+   "note": "Victor Fries worked here. GothCorp's lawyers still call it an industrial accident.",
+   "canon": "Batman: The Animated Series (1992)"
+  },
+  {
+   "name": "Gotham National Bank",
+   "x": 49.8,
+   "y": 99.4,
+   "area": "Diamond District",
+   "kind": "landmark",
+   "icon": "civic",
+   "match": [
+    "gotham national bank",
+    "national bank"
+   ],
+   "bio": "The Financial District's old-money bank: a granite banking hall with brass teller cages, a vault three floors down and a mob deposit book everyone pretends doesn't exist.",
+   "note": "Half the city's dirty money sleeps here. The day it was robbed, I learned more from what they left than what they took.",
+   "canon": "The Dark Knight (2008)"
+  },
+  {
+   "name": "Gotham Merchants Bank",
+   "x": 44.6,
+   "y": 107.4,
+   "area": "Old Gotham",
+   "kind": "landmark",
+   "icon": "civic",
+   "match": [
+    "merchants bank",
+    "gotham merchants bank"
+   ],
+   "bio": "A nineteenth-century merchants' bank on Old Gotham's square: marble columns, a coffered banking hall and the city's founding charter in a case by the door.",
+   "note": "Cobblepot money came through here for years. It still does; it just knocks first now.",
+   "canon": "Batman: Arkham Origins (2013)"
+  },
+  {
+   "name": "Monarch Playing Card Company",
+   "x": 0.22,
+   "y": 87.3,
+   "area": "Ironworks",
+   "kind": "landmark",
+   "icon": "industry",
+   "match": [
+    "monarch playing card",
+    "monarch cards",
+    "the card factory",
+    "playing card company"
+   ],
+   "bio": "A shuttered playing-card works next door to Ace Chemicals: the presses sold for scrap, a faded king of hearts still painted on the brick.",
+   "note": "The robbery that went through the plant next door was meant for here. A great deal started with a deck of cards.",
+   "canon": "Batman: The Killing Joke (1988)"
+  },
+  {
+   "name": "Gotham State Penitentiary",
+   "x": -3.5,
+   "y": 35.6,
+   "area": "Gotham County",
+   "kind": "landmark",
+   "icon": "prison",
+   "match": [
+    "state penitentiary",
+    "gotham state",
+    "state pen",
+    "state prison"
+   ],
+   "bio": "The state prison on the mainland across the river from Arkham Island: granite walls, five cell blocks and an execution chamber the state stopped using in name only.",
+   "note": "Blackgate takes the city's criminals. State takes the ones the city wants forgotten.",
+   "canon": "DC comics (Gotham State Penitentiary)"
+  },
+  {
+   "name": "GCPD 12th Precinct",
+   "x": 26.8,
+   "y": 119.6,
+   "area": "Tricorner",
+   "kind": "spot",
+   "icon": "police",
+   "match": [
+    "12th precinct",
+    "twelfth precinct"
+   ],
+   "bio": "The Tricorner station house among the dockworkers' rowhouses: half its officers live within four blocks, and so does the Commissioner.",
+   "note": "Gordon walks past it every morning. He says it keeps them honest; I think it keeps him honest.",
+   "canon": "invented"
+  },
+  {
+   "name": "GCPD Harbor Patrol",
+   "x": 42.6,
+   "y": 115.2,
+   "area": "Old Gotham",
+   "kind": "spot",
+   "icon": "police",
+   "match": [
+    "harbor patrol",
+    "harbour patrol",
+    "police launch",
+    "marine unit"
+   ],
+   "bio": "The marine unit's pier below Old Gotham: two patrol launches, a dive team and a boathouse that smells of diesel and coffee.",
+   "note": "They pull more out of the river than anyone wants counted.",
+   "canon": "Gotham Central (2003)"
+  },
+  {
+   "name": "Federal Building",
+   "x": 73.6,
+   "y": 105.6,
+   "area": "City Hall District",
+   "kind": "landmark",
+   "icon": "civic",
+   "match": [
+    "federal building",
+    "fbi office",
+    "federal courthouse",
+    "us attorney"
+   ],
+   "bio": "The Federal Building off City Hall Park: the FBI field office, the U.S. Attorney and a federal courtroom on the ninth floor.",
+   "note": "The feds want the cases I give Gordon. Gordon gives them the paperwork.",
+   "canon": "invented"
+  },
+  {
+   "name": "Hall of Records",
+   "x": 77.88,
+   "y": 99.04,
+   "area": "City Hall District",
+   "kind": "landmark",
+   "icon": "civic",
+   "match": [
+    "hall of records",
+    "records office",
+    "county clerk"
+   ],
+   "bio": "Deeds, births, deaths and the city's oldest secrets in a Beaux-Arts pile behind City Hall.",
+   "note": "Every shell company in Gotham has to file here eventually.",
+   "canon": "invented"
+  },
+  {
+   "name": "The Gotham Plaza",
+   "x": 59.1,
+   "y": 65.88,
+   "area": "Upper East Side",
+   "kind": "landmark",
+   "icon": "hotel",
+   "match": [
+    "gotham plaza",
+    "the plaza",
+    "plaza hotel",
+    "palm court"
+   ],
+   "bio": "The grande dame of Gotham hotels, facing Robinson Park: a gilt lobby, the Palm Court and the ballroom where every charity gala in the city ends up.",
+   "note": "I've been photographed leaving that ballroom more often than I've been anywhere else.",
+   "canon": "invented"
+  },
+  {
+   "name": "Kane Heights Galleria",
+   "x": 4.6,
+   "y": 58.1,
+   "area": "Kane Heights",
+   "kind": "landmark",
+   "icon": "market",
+   "match": [
+    "galleria",
+    "kane heights mall",
+    "the mall"
+   ],
+   "bio": "A two-level mall off the county highway: anchor stores, a food court, a twelve-screen cinema and a car park the size of a small town.",
+   "note": "Mall walkers at dawn, teenagers by four, and a security office that pays well for quiet.",
+   "canon": "invented"
+  },
+  {
+   "name": "GCPD Air Support Unit",
+   "x": 81.6,
+   "y": 107.6,
+   "area": "City Hall District",
+   "kind": "spot",
+   "icon": "heliport",
+   "match": [
+    "air support",
+    "police helicopter",
+    "gcpd air",
+    "air unit"
+   ],
+   "bio": "The GCPD's helicopters, on the East End waterfront: two birds, a searchlight crew and a waiting list for night shifts.",
+   "note": "Their spotlight finds me about as often as I let it.",
+   "canon": "invented"
   }
  ],
  "regions": [
@@ -5676,64 +7234,94 @@
  "ferries": [
   {
    "name": "Blackgate Ferry",
-   "line": [
+   "stops": [
     [
      60.0,
      114.4
     ],
     [
-     62.0,
-     117.2
-    ],
-    [
-     64.6,
-     119.2
+     64.7,
+     117.4
     ]
    ]
   },
   {
    "name": "Statue Ferry",
-   "line": [
+   "stops": [
     [
-     46.0,
-     117.4
+     46.69,
+     116.73
     ],
     [
-     50.0,
-     124.0
+     59.07,
+     129.37
     ],
     [
-     54.0,
-     128.0
+     50.37,
+     119.37
     ],
     [
-     56.6,
-     129.4
+     46.69,
+     116.73
     ]
    ]
   },
   {
    "name": "Blüdhaven Ferry",
-   "line": [
+   "stops": [
     [
-     79.0,
-     26.0
+     75.92,
+     27.95
     ],
     [
-     86.0,
-     18.0
+     117.96,
+     3.4
+    ]
+   ]
+  },
+  {
+   "name": "Burnside Ferry",
+   "stops": [
+    [
+     74.86,
+     71.67
     ],
     [
-     96.0,
-     12.0
+     95.28,
+     70.76
+    ]
+   ]
+  },
+  {
+   "name": "Harbor Water Taxi",
+   "stops": [
+    [
+     15.27,
+     98.09
     ],
     [
-     108.0,
-     7.0
+     25.89,
+     130.77
     ],
     [
-     116.0,
-     4.0
+     46.69,
+     116.73
+    ],
+    [
+     82.0,
+     104.0
+    ],
+    [
+     46.69,
+     116.73
+    ],
+    [
+     25.89,
+     130.77
+    ],
+    [
+     15.27,
+     98.09
     ]
    ]
   }
@@ -5971,5 +7559,150 @@
    63.4,
    24.2
   ]
+ },
+ "shipping": [
+  {
+   "name": "Gotham Docks",
+   "from": [
+    30.0,
+    190.0
+   ],
+   "to": [
+    28.55,
+    130.66
+   ]
+  },
+  {
+   "name": "East End Docks",
+   "from": [
+    62.0,
+    190.0
+   ],
+   "to": [
+    82.6,
+    105.5
+   ]
+  },
+  {
+   "name": "Waterloo Docks",
+   "from": [
+    46.0,
+    190.0
+   ],
+   "to": [
+    117.96,
+    3.4
+   ]
+  }
+ ],
+ "rail_stations": {
+  "Gotham Central Line": [
+   [
+    "Union Station",
+    0.0
+   ],
+   [
+    "Coventry Junction",
+    0.47
+   ],
+   [
+    "Burnley",
+    0.74
+   ],
+   [
+    "Otisburg Yards",
+    0.86
+   ],
+   [
+    "Amusement Mile",
+    1.0
+   ]
+  ],
+  "Coast Line": [
+   [
+    "Bowery Terminal",
+    0.0
+   ],
+   [
+    "Robinsville",
+    0.075
+   ],
+   [
+    "Pioneers Point",
+    0.7
+   ],
+   [
+    "Waterloo",
+    0.87
+   ],
+   [
+    "Blüdhaven Central",
+    1.0
+   ]
+  ]
+ },
+ "golf": {
+  "name": "Bristol Country Club",
+  "coast": [
+   [
+    -13.5,
+    23.2
+   ],
+   [
+    -9.0,
+    22.9
+   ],
+   [
+    -4.2,
+    23.6
+   ],
+   [
+    -3.6,
+    26.2
+   ],
+   [
+    -6.5,
+    27.2
+   ],
+   [
+    -10.5,
+    27.5
+   ],
+   [
+    -13.8,
+    26.4
+   ]
+  ]
+ },
+ "areas": {
+  "Cherry Hills": "Century-old brownstones on the island's high north-west corner where the Kane Bridge comes in — a mixed, working neighbourhood of stoops, corner churches and basement jazz, being bought up one renovated house at a time while the Sixty-Eight Kings sell from the courts down the hill. Quieter at night than its reputation: the observatory dome lit on the heights, the trouble kept below.",
+  "Otisburg": "Glass towers and construction cranes on the north shore, the city's newest money: S.T.A.R. Labs behind its fences, the Wayne Foundation's children's centre, and the Knightsdome, which fills for Knights baseball in summer and Rogues football in autumn. Lanyards and food trucks by day, a roar on game nights, and after midnight the towers stand empty and lit like display cases.",
+  "Amusement Mile": "Gotham's faded seaside on the north shore — boardwalk, grey beach, big wheel, wooden coaster and the ferry pier to Blüdhaven — busy for three hot months and rusting for nine. Families and fishermen by day; after dark the arcades shutter, the funhouse goes quiet in the wrong way, and the Mile belongs to whoever's been squatting in the rides.",
+  "New Town": "Mid-century office blocks and newer glass along Kane Avenue, built to be the modern Gotham and now its middle-aged one: the GBC tower, the interstate bus terminal, the power station's stacks on the shore. Busy and anonymous by day; at night it's the terminal's fluorescent glow, the late buses, and the people waiting to meet them.",
+  "Burnley": "Brick walk-ups and public housing between Otisburg and the Arkham Channel, a working district where the Burnley Town Massive have run the corners for a generation and the Kane Line comes up into Burnley Square. Grandmothers, schoolkids and corner boys share the same blocks by day; after dark the corners decide who walks where.",
+  "Crime Alley": "Park Row, once the city's theatre row and now its worst street: boarded-up movie palaces, pawnshops, a night court, Leslie Thompkins's clinic and the alley the whole city knows by its nickname. Nobody walks it at night who has a choice.",
+  "The Bowery": "Gotham's last stop since the 1800s: flophouses, missions, saloons and the busiest firehouse in the city, south of Park Row along the Sprang. Breakfast lines and church bells by day; at night the doorways fill up and the fires start.",
+  "Robinsville": "A long, low spit on the Atlantic side — clapboard and brick, a Coast Line halt, the Burnside Bridge ramps and the Cape Carmine light at its tip — home to fishermen, rail workers and old families who've never crossed the bridge. At night the money arrives by limousine for the Iceberg Lounge at the spit's end, and the locals keep their curtains drawn.",
+  "Arkham Island": "A walled island of lawns, Victorian brick and razor wire where the Arkham Channel meets the Sprang, given over entirely to the asylum, its staff and its dead. Visitors come by daylight over the guarded bridge; at night the searchlights sweep the water and the island hums like it's thinking.",
+  "Coventry": "Middle-class Coventry, south of the Sprang: rowhouses, small shops and a market hall, Gotham Academy's gothic stone on the riverbank and the Coventry docks to the west, with Arkham always in view across the water. Commuters and schoolkids in blazers by day; after dark the Granton blocks are where the district keeps its bad memories.",
+  "University District": "Gotham University's quads, Gotham General's ambulance bays and the bars, bookshops and cheap sublets in between, full of students, residents and professors who never left. It never fully sleeps — the ER sees to that — and at 3 a.m. the crowd is the same three tribes, much more tired.",
+  "Upper East Side": "Museum Mile, Fifth Avenue, doormen and townhouses: the island's old money, its galleries, the Sionis family's cosmetics house and a private hospital, on streets where the loudest thing at night is a car alarm. The quiet is expensive, and the burglars here tend to have been at the same party.",
+  "Upper West Side": "The bookish side of the island: prewar apartment blocks along West End Avenue, Gotham Heights' old mansions, the city's oldest congregation and a riverside esplanade facing the mainland. Strollers and string quartets by day; at night the esplanade empties and the side streets get dark fast.",
+  "Diamond District": "Downtown Gotham's skyline — Wayne Tower, the Stock Exchange, the theatres, the grand hotels and GCPD Central with the Signal on its roof — where money is made and spent all day. After the last curtain the pavements thin out fast; the towers are lit from inside and the alleys behind them aren't lit at all.",
+  "Fashion District": "Showrooms, Lacey's, the Gazette's presses, the public library and the zoo, crammed around Fashion Avenue, with models, garment workers, reporters and tourists on the same crowded pavements. The shop windows stay lit long after the last buyer has gone home, which is when Gotham's better thieves do their window shopping.",
+  "City Hall District": "The civic heart of the island — City Hall's dome, the courts, Mercy General and the old newspaper row — with the East End's docks, freight yards and tenements crowding its eastern edge. Lawyers, clerks and protesters by day; at night the marble empties and the East End fills up.",
+  "Chinatown": "Dense and old, from under the Chinatown Expressway down to the marina: grocers and bakeries, family associations, a temple in an old movie house and walk-ups with fire escapes stacked like ladders. Busy until late and busy again by five; in between, the side streets go quiet and the expressway hums overhead.",
+  "Old Gotham": "The city's oldest streets, crooked and cobbled around the cathedral, the clocktower and the Common — brownstones, Little Italy, the ferry terminal and more gargoyles than any city needs. When the gas lamps come on along the Common, the gargoyles get company.",
+  "Tricorner": "The south-western docks — Dixon Docks' cranes, the dead naval yard, the fish market and Kane Industries' tank farm — and the rowhouses behind them, where dockworkers and half the GCPD live, the commissioner included. Diesel and fish by day; at night, the cargo nobody declares comes off the boats.",
+  "Bristol": "Gotham County's old-money suburb across the river from the island: stone walls, long drives, the Drake house, a boarding school and the church where the founding families marry and bury. Nothing happens in Bristol, and it costs a great deal to keep it that way.",
+  "Burnside": "Gotham's borough across the water, its Brooklyn: old mills turned into lofts, labs and studios, Burnside College, a flea market in a sugar refinery, coffee carts, fixed-gear bikes and a band in every basement. Young and loud by day; on Friday nights the bridge footwalk fills with people heading over, and most of the borough's crime happens on laptops.",
+  "Kane Heights": "A leafy mainland hilltop across the river from the Narrows, named for the Kanes — Martha Wayne's family — and long since home to quieter money: big houses, a country club, the racetrack on the river flats, Slaughter Swamp in the bottomland and Carmine Falcone's estate at the top of the hill. It's the safest-looking neighbourhood in Gotham, which is how the Falcones like it.",
+  "Ironworks": "The mainland's industrial shore across the river from Chinatown: Ace Chemicals' vats and catwalks, the Sionis steel mill, the Port Adams container cranes, the freight yard and a dark brewery, with workers' houses squeezed in between. Three shifts keep it loud around the clock, and whatever moves through it at night moves fast.",
+  "The Narrows": "A slum island in the Gotham River, tenements stacked on tenements under the dead monorail, joined to the city by the Trigate Bridge's lifting spans — the poorest, most dangerous few square miles in Gotham. Police come over in pairs; after dark, mostly they don't come.",
+  "Blackgate Isle": "The prison island offshore: Blackgate Penitentiary, its workshops and the city's potter's field, reached by causeway or the visitors' ferry and nothing else. Its searchlights are the last thing the Old Gotham waterfront sees at night.",
+  "Paris Island": "A small abandoned island off Old Gotham — a dead amusement park, a cold incinerator and a ruined quarantine hospital — ringed by the treacherous water harbour pilots call the Cauldron. Urban explorers come over by kayak in daylight; at night the only lights out there are ones nobody should be showing.",
+  "Justice Island": "The harbour island of the Statue of Justice: the old star fort she stands on, a padlocked armory, a ferry pier and lawns full of tourists by day. After the last ferry the island belongs to the statue, and to whoever stayed behind.",
+  "Gotham County": "The mainland across the Gotham River: rolling estates, the Wayne family's woods and the caves beneath the bluffs, the old cemetery in the hills and the airport out on the southern flats. Quiet roads and long distances; at night the only lights between the manor and the city are the bridge's.",
+  "Robinson Park": "Gotham's great park in the middle of the island: the reservoir, the botanical garden, the planetarium, the boathouse and the rusting World's Fair grounds, with lawns and woods in between. Joggers and picnickers by day; at night the gates are locked in theory, and in practice the park belongs to whoever's in it — some years, Poison Ivy."
  }
 }

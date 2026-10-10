@@ -29,6 +29,7 @@ from pathlib import Path
 
 import shapely
 import shapely.ops
+import shapely.prepared
 from shapely import affinity
 from shapely.geometry import LineString, MultiPoint, Point, Polygon, box, mapping
 from shapely.ops import split, substring, unary_union
@@ -39,12 +40,23 @@ OUT = ROOT / "web" / "map" / "gotham.geojson"
 # Buildings go in a file of their own, compact — [height, x, y, x, y, ...] in
 # hundredths — and load after the city, so the first look is quick.
 BUILDINGS = ROOT / "web" / "map" / "gotham-buildings.json"
+# The streets as a network, for the server: how someone gets from one place to
+# another — by road, over the bridges, on a ferry — instead of jumping there.
+ROADS = ROOT / "wayne" / "engine" / "roads.json"
 
 # Districts with docks and wharves along them keep their edge hard; elsewhere a
 # strip of waterfront park runs along the shore.
 NO_WATERFRONT = {"Tricorner", "Amusement Mile", "Chinatown", "City Hall District", "Robinsville"}
 # Districts with almost nothing built: parkland, asylum grounds, an abandoned funfair.
 SPARSE = {"Arkham Island", "Paris Island"}
+# What a district's buildings are like, beyond how tall: the old quarters'
+# brownstone and stone, downtown's glass, the works — and the suburbs' houses.
+OLD_QUARTERS = {"Old Gotham", "Tricorner", "Crime Alley", "The Bowery", "Burnley", "Robinsville", "Chinatown",
+                "The Narrows", "Coventry", "Cherry Hills", "Amusement Mile", "Fort Joseph", "Waterloo Docks",
+                "Port's Park", "Burnside", "University District"}
+GLASS = {"Diamond District", "Fashion District", "City Hall District", "Upper East Side", "New Town", "Otisburg",
+         "Central Business District", "Halyard Square", "Upper West Side"}
+SUBURBS = {"Bristol", "Kane Heights"}
 
 
 # --- shapes ---------------------------------------------------------------------
@@ -301,6 +313,11 @@ def junction(rb, scale):
     return Point(x, y).buffer(r, 28)
 
 
+def footprint_at(p):
+    """Where a place's building stands — its own point, unless it gives another ("at")."""
+    return p.get("at", [p["x"], p["y"]])
+
+
 def landmark_shapes(name, x, y):
     """
     The few buildings anyone would know from the skyline, each as tiers of
@@ -327,16 +344,11 @@ def landmark_shapes(name, x, y):
         yard = square(x, y, 2.0).difference(square(x, y, 1.3))
         towers = [(square(x + dx, y + dy, 0.24), 0, 34) for dx in (-1, 1) for dy in (-1, 1)]
         return [(yard, 0, 20), (square(x, y, 0.5), 0, 26)] + towers
-    if name == "Knightsdome":
-        return [(disc(x, y, 1.0).difference(disc(x, y, 0.62)), 0, 36)]
     if name == "GCPD Central":
         return [(rect(x, y, 0.95, 0.72), 0, 58), (square(x + 0.2, y - 0.1, 0.3), 58, 67)]
     if name == "City Hall":
         return [(rect(x, y, 1.15, 0.72), 0, 22), (disc(x, y, 0.3), 22, 30), (disc(x, y, 0.26), 30, 35),
                 (disc(x, y, 0.19), 35, 39), (disc(x, y, 0.1), 39, 43), (disc(x, y, 0.03), 43, 50)]
-    if name == "Ace Chemicals":
-        tanks = [(disc(x + 0.35 + 0.38 * i, y + dy, 0.16), 0, 16) for i in range(3) for dy in (-0.25, 0.25)]
-        return [(rect(x - 0.35, y, 0.9, 0.55), 0, 22), (disc(x - 0.7, y - 0.25, 0.07), 0, 54)] + tanks
     if name == "Statue of Justice":
         # Plinth, pedestal, the robe narrowing to the waist, shoulders, head —
         # and the arm raised with the scales, the sword held low at her side.
@@ -365,25 +377,381 @@ def landmark_shapes(name, x, y):
                 (box(x - 1.2, y - 0.9, x + 1.2, y + 0.9).difference(box(x - 1.12, y - 0.82, x + 1.12, y + 0.82)), 0, 3)]
     if name == "Gotham Stock Exchange":
         return [(rect(x, y, 0.9, 0.62), 0, 34), (rect(x, y + 0.38, 0.9, 0.14), 0, 26)]
-    if name == "Union Station":
-        return [(rect(x, y, 1.45, 0.56), 0, 20), (rect(x, y, 1.45, 0.3), 20, 27)]
-    if name == "Gotham University":
-        quad = [(rect(x, y - 0.5, 1.0, 0.22), 0, 18), (rect(x, y + 0.5, 1.0, 0.22), 0, 18),
-                (rect(x - 0.5, y, 0.22, 1.0), 0, 18), (rect(x + 0.5, y, 0.22, 1.0), 0, 18)]
-        return quad + [(square(x + 0.5, y - 0.5, 0.2), 0, 44)]
     if name == "Gotham Observatory":
         return [(disc(x, y, 0.3), 0, 10), (disc(x, y, 0.25), 10, 16), (disc(x, y, 0.15), 16, 20)]
-    if name == "Gotham General Hospital":
-        return [(rect(x, y, 1.1, 0.34), 0, 40), (rect(x, y, 0.34, 1.0), 0, 40)]
-    if name == "Gotham Power Station":
-        return [(rect(x, y, 1.0, 0.6), 0, 24)] + [(disc(x - 0.3 + 0.3 * i, y - 0.55, 0.1), 0, 72) for i in range(3)]
     if name == "The Funhouse":
         # Squat and wide, with a pointed turret over the clown's-mouth door.
         return [(rect(x, y, 0.95, 0.5), 0, 13), (rect(x - 0.12, y, 0.55, 0.36), 13, 18),
                 (square(x + 0.32, y, 0.2), 0, 26), (square(x + 0.32, y, 0.09), 26, 32)]
     if name == "Monarch Theatre":
         return [(rect(x, y, 0.72, 0.46), 0, 17)]
+    complex_ = COMPLEXES.get(name)
+    if complex_:
+        return [(g, base, top) for g, base, top, _kind in complex_(x, y)["tiers"]]
     return []
+
+
+def landmark_kinds(name, x, y):
+    """The style of each of a complex's tiers, in step with landmark_shapes — glass, works, a tank..."""
+    complex_ = COMPLEXES.get(name)
+    return [kind for _g, _b, _t, kind in complex_(x, y)["tiers"]] if complex_ else None
+
+
+def landmark_grounds(name, x, y):
+    """A complex's own ground: a campus's lawns and paths, a plant's yard, a stadium's car parks."""
+    complex_ = COMPLEXES.get(name)
+    return complex_(x, y).get("ground", []) if complex_ else []
+
+
+def _local(x, y, angle):
+    """Shapes drawn about (0, 0) in units, placed at (x, y) and turned to the district's grid."""
+    def place(g):
+        return affinity.rotate(affinity.translate(g, x, y), angle, origin=(x, y))
+    return place
+
+
+def gotham_university(x, y):
+    """
+    Gotham University on its hill, fronting University Avenue: the old main
+    quad — stone ranges round a lawn crossed by its paths, a gate tower, the
+    domed library at its head and the bell tower — then the glass science quad,
+    the dorms, the student union, and the stadium with its track.
+    """
+    at = _local(x, y + 0.4, -2.3)            # square to the avenue it fronts
+    tiers = [(rect(0, -0.78, 1.7, 0.24), 0, 20, "~old"), (square(0, -0.78, 0.22), 0, 34, "~old"),
+             (rect(0, 0.78, 1.7, 0.24), 0, 18, "~old"), (rect(-1.08, 0, 0.24, 1.3), 0, 18, "~old"),
+             (rect(1.15, 0, 0.44, 0.92), 0, 22, "~old"), (disc(1.15, 0, 0.21), 22, 30, "~landmark"),
+             (disc(1.15, 0, 0.15), 30, 35, "~landmark"), (disc(1.15, 0, 0.07), 35, 39, "~landmark"),
+             (square(0.95, -0.8, 0.15), 0, 56, "~old"), (square(0.95, -0.8, 0.07), 56, 67, "~landmark"),
+             (rect(2.15, -0.72, 1.0, 0.22), 0, 34, "~glass"), (rect(2.15, 0.72, 1.0, 0.22), 0, 28, "~glass"),
+             (rect(2.88, 0, 0.26, 0.92), 0, 42, "~glass"), (rect(0.6, 1.42, 0.62, 0.34), 0, 14, "")]
+    tiers += [(rect(-1.6 + 0.55 * i, 1.48, 0.42, 0.22), 0, 26, "~old") for i in range(4)]
+    tiers += [(rect(-2.86, 0.2, 0.12, 0.95), 0, 9, ""), (rect(-1.94, 0.2, 0.12, 0.95), 0, 9, "")]
+    lawns = [box(-0.85, -0.55, 0.85, 0.55), box(1.6, -0.5, 2.62, 0.5), box(-1.4, 1.05, 0.15, 1.25)]
+    paths = [LineString([(-0.85, -0.55), (0.85, 0.55)]), LineString([(-0.85, 0.55), (0.85, -0.55)]),
+             LineString([(0, -0.66), (0, 0.66)]), LineString([(-0.96, 0), (0.92, 0)]),
+             LineString([(1.38, 0), (2.74, 0)])]
+    ground = [(at(lw), "campus") for lw in lawns] + [(at(pt), "path") for pt in paths]
+    ground += [(at(g), "pitch:" + k) for g, k in pitch("track", -2.4, 0.2, 90)]
+    return {"tiers": [(at(g), b, t, k) for g, b, t, k in tiers], "ground": ground,
+            "lawn": unary_union([at(lw) for lw in lawns])}
+
+
+def ace_chemicals(x, y):
+    """
+    Ace Chemicals on the Ironworks shore: the process hall and the office with
+    the sign on it, the open vats with their catwalks, the tank farm, cracking
+    towers, two stacks, warehouses — and the pipe rack out to the outfall in
+    the river.
+    """
+    at = _local(x, y, -4)
+    tiers = [(rect(-0.9, 0.2, 1.4, 0.7), 0, 24, "~works"), (rect(-1.0, -0.66, 0.9, 0.3), 0, 18, "~works"),
+             (rect(-1.0, -0.66, 0.84, 0.04), 18, 25, "~sign")]
+    tiers += [(disc(0.5 + 0.36 * i, -0.75 + 0.36 * j, 0.13), 0, 9, "~vat") for i in range(3) for j in range(2)]
+    tiers += [(disc(1.7 + 0.56 * i, -0.92 + 0.56 * j, 0.24), 0, 19, "~tank") for i in range(2) for j in range(2)]
+    tiers += [(disc(0.62, 0.66, 0.075), 0, 48, "~works"), (disc(0.92, 0.66, 0.075), 0, 44, "~works"),
+              (disc(1.22, 0.66, 0.045), 0, 38, "~works"), (disc(-1.62, 0.62, 0.062), 0, 76, "~stack"),
+              (disc(-1.3, 0.94, 0.052), 0, 66, "~stack")]
+    for a, b in (((-0.18, -0.39), (1.38, -0.39)), ((0.5, -1.02), (0.5, -0.1)), ((1.22, -1.02), (1.22, -0.1)),
+                 ((0.86, -1.02), (0.86, 0.3))):
+        tiers.append((LineString([a, b]).buffer(0.018, cap_style="flat"), 10, 11, "~deck"))
+    # The pipe rack runs on over the expressway to the outfall at the river's edge.
+    tiers += [(LineString([(0.1, 1.12), (6.2, 1.12)]).buffer(0.035, cap_style="flat"), 6, 7.5, "~deck"),
+              (rect(-1.85, -0.3, 0.6, 0.9), 0, 12, "~works"), (rect(2.1, 0.62, 0.8, 0.45), 0, 10, "~works")]
+    yard = box(-2.25, -1.45, 2.6, 1.45)
+    return {"tiers": [(at(g), b, t, k) for g, b, t, k in tiers], "ground": [(at(yard), "works")]}
+
+
+def star_labs(x, y):
+    """S.T.A.R. Labs: the round main building under its glass dome, the ring round it, two lab wings, dishes."""
+    at = _local(x, y, 6)
+    tiers = [(disc(0, 0, 0.5).difference(disc(0, 0, 0.21)), 0, 24, "~glass"), (disc(0, 0, 0.21), 0, 31, "~landmark"),
+             (disc(0, 0, 0.86).difference(disc(0, 0, 0.79)), 6, 8, "~deck"),
+             (rect(-1.0, 0.05, 0.62, 0.36), 0, 18, "~glass"), (rect(1.02, 0.3, 0.5, 0.42), 0, 14, "~glass"),
+             (disc(0.22, -0.3, 0.07), 24, 26.5, "~pad"), (disc(-0.25, 0.28, 0.06), 24, 26, "~pad")]
+    return {"tiers": [(at(g), b, t, k) for g, b, t, k in tiers], "ground": [(at(disc(0, 0, 1.15)), "plaza")]}
+
+
+def hospital(x, y, angle, tower, scale=1.0):
+    """A city hospital: the tower with a helipad on its roof, two wings, the ER and its bay, the garage."""
+    at = _local(x, y, angle)
+    k = scale
+    tiers = [(rect(0, 0, 0.72 * k, 0.36 * k), 0, tower, ""), (disc(0, 0, 0.13), tower, tower + 0.8, "~pad"),
+             (rect(-0.56 * k, 0.22 * k, 0.3 * k, 0.9 * k), 0, tower * 0.52, ""),
+             (rect(0.56 * k, 0.22 * k, 0.3 * k, 0.9 * k), 0, tower * 0.52, ""),
+             (rect(0, 0.48 * k, 0.82 * k, 0.24 * k), 0, tower * 0.4, ""),
+             (rect(0, -0.43 * k, 0.6 * k, 0.15 * k), 0, 5, "~deck"),
+             (rect(1.28 * k, 0.12 * k, 0.6 * k, 0.46 * k), 0, 15, "~garage")]
+    return {"tiers": [(at(g), b, t, kd) for g, b, t, kd in tiers]}
+
+
+def power_station(x, y):
+    """Gotham Power Station: the brick boiler house with a chimney at each corner, its turbine hall, the switchyard."""
+    at = _local(x, y, -22)
+    tiers = [(rect(0, 0, 1.3, 0.75), 0, 38, "~old"), (rect(0, 0.6, 1.3, 0.36), 0, 26, "~old")]
+    tiers += [(disc(sx * 0.6, sy * 0.33, 0.078), 0, 98, "~stack") for sx in (-1, 1) for sy in (-1, 1)]
+    return {"tiers": [(at(g), b, t, k) for g, b, t, k in tiers], "ground": [(at(box(-0.95, 0.85, 0.95, 1.55)), "works")]}
+
+
+def knightsdome(x, y):
+    """The Knightsdome: the bowl and its roof, the plaza round it, a car park on every side."""
+    tiers = [(disc(x, y, 1.0), 0, 34, "~landmark"), (disc(x, y, 0.92), 34, 38, "~landmark"),
+             (disc(x, y, 0.76), 38, 42, "~landmark"), (disc(x, y, 0.55), 42, 45, "~landmark"),
+             (disc(x, y, 0.3), 45, 47, "~landmark")]
+    ring = disc(x, y, 2.15).difference(disc(x, y, 1.3))
+    aisles = unary_union([rect(x, y, 4.6, 0.2), rect(x, y, 0.2, 4.6)])
+    lots = [g for g in polys_of(ring.difference(aisles)) if g.area > 0.3]
+    return {"tiers": tiers, "ground": [(disc(x, y, 1.3), "plaza")] + [(g, "lot") for g in lots]}
+
+
+def union_station(x, y):
+    """Union Station: the hall, its train shed behind, and the garage."""
+    at = _local(x, y, 0)
+    tiers = [(rect(0, 0, 1.45, 0.56), 0, 20, "~old"), (rect(0, 0, 1.45, 0.3), 20, 27, "~old"),
+             (rect(0, 0.62, 1.7, 0.62), 0, 14, "~deck"), (rect(-1.25, 0.75, 0.6, 0.5), 0, 18, "~garage")]
+    return {"tiers": [(at(g), b, t, k) for g, b, t, k in tiers]}
+
+
+def _tiers(at, tiers):
+    return [(at(g), b, t, k) for g, b, t, k in tiers]
+
+
+def gothic_church(x, y, angle, nave=0.95, tower=46, spire=62):
+    """Nave, transept, the tower at the west end and its spire."""
+    at = _local(x, y, angle)
+    return {"tiers": _tiers(at, [(rect(0, 0, nave, 0.32), 0, 22, "~old"), (rect(0.15, 0, 0.3, 0.7), 0, 22, "~old"),
+                                 (square(-nave / 2 + 0.05, 0, 0.18), 0, tower, "~old"),
+                                 (square(-nave / 2 + 0.05, 0, 0.08), tower, spire, "~landmark")])}
+
+
+def steeple_church(x, y, angle):
+    """A colonial meeting house: a plain hall and a tall white steeple in stages."""
+    at = _local(x, y, angle)
+    return {"tiers": _tiers(at, [(rect(0, 0, 0.7, 0.32), 0, 16, "~old"), (square(-0.42, 0, 0.14), 0, 30, "~old"),
+                                 (square(-0.42, 0, 0.09), 30, 42, "~landmark"), (square(-0.42, 0, 0.04), 42, 58, "~landmark")])}
+
+
+def wheel(x, y, axis_deg, hub, radius, spokes=28):
+    """A big wheel standing up: rim, gondolas, hub and tower, in tiers in the air."""
+    axis = math.radians(axis_deg)
+    across = radius / 150
+    out = []
+    for k in range(spokes):
+        a = k * 2 * math.pi / spokes
+        cx, cy = x + math.cos(axis) * math.cos(a) * across, y + math.sin(axis) * math.cos(a) * across
+        z = hub + math.sin(a) * radius
+        out.append((square(cx, cy, 0.03 if k % 4 == 0 else 0.015), z - (3 if k % 4 == 0 else 0.9),
+                    z + (3 if k % 4 == 0 else 0.9), "~ride" if k % 4 == 0 else "~wheel"))
+    return out + [(square(x, y, 0.028), 0, hub + 2, "~wheel"), (disc(x, y, 0.04), hub - 2, hub + 2, "~ride")]
+
+
+def star(cx, cy, outer, inner, points=5, turn=0.0):
+    pts = []
+    for k in range(points * 2):
+        r = outer if k % 2 == 0 else inner
+        a = turn + k * math.pi / points
+        pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return Polygon(pts)
+
+
+def gotham_academy(x, y):
+    """Gotham Academy on the Coventry bank: the main hall and its clock tower, the chapel, the cloister round its garth."""
+    at = _local(x, y, 0)
+    cloister = rect(-0.5, 0.62, 0.9, 0.7).difference(rect(-0.5, 0.62, 0.6, 0.4))
+    return {"tiers": _tiers(at, [(rect(0, 0, 1.3, 0.36), 0, 24, "~old"), (square(0, -0.04, 0.22), 0, 44, "~old"),
+                                 (square(0, -0.04, 0.1), 44, 57, "~landmark"), (rect(0.85, 0.48, 0.32, 0.62), 0, 20, "~old"),
+                                 (square(0.85, 0.2, 0.07), 20, 31, "~landmark"), (cloister, 0, 12, "~old")]),
+            "ground": [(at(rect(-0.5, 0.62, 0.58, 0.38)), "campus")]}
+
+
+def brentwood_academy(x, y):
+    """Brentwood Academy: brick ranges round a quad, and the chapel with its spire."""
+    at = _local(x, y, 10)
+    quad = rect(0, 0, 1.0, 0.72).difference(rect(0, 0, 0.7, 0.46))
+    return {"tiers": _tiers(at, [(quad, 0, 16, "~old"), (rect(0.76, -0.1, 0.26, 0.5), 0, 18, "~old"),
+                                 (square(0.76, -0.3, 0.07), 18, 34, "~landmark")]),
+            "ground": [(at(rect(0, 0, 0.68, 0.44)), "campus")]}
+
+
+def burnside_college(x, y):
+    """Burnside College in the old textile mills: three long brick mills and the mill chimney."""
+    at = _local(x, y, 4)
+    return {"tiers": _tiers(at, [(rect(0, -0.46, 1.4, 0.26), 0, 22, "~old"), (rect(0, 0, 1.4, 0.26), 0, 18, "~old"),
+                                 (rect(0, 0.46, 1.4, 0.26), 0, 20, "~old"), (disc(0.86, -0.12, 0.05), 0, 42, "~stack")])}
+
+
+def fort_dumas(x, y):
+    """Fort Dumas: the star fort the Statue of Justice stands on — its walls, and the casemates' lawn inside."""
+    walls = star(x, y, 0.8, 0.5, 5, 0.3)
+    return {"tiers": [(walls.difference(walls.buffer(-0.12)), 0, 7, "~old")],
+            "ground": [(walls.buffer(-0.12).difference(disc(x, y, 0.34)), "campus")]}
+
+
+def little_paris(x, y):
+    """Little Paris, the dead amusement park: the carousel, a small wheel, the coaster's trestles, the pavilion."""
+    tiers = [(disc(x - 0.4, y + 0.1, 0.17), 0, 6, "~ride"), (disc(x - 0.4, y + 0.1, 0.1), 6, 9, "~ride"),
+             (rect(x + 0.1, y - 0.45, 0.6, 0.2), 0, 8, "~old")]
+    tiers += wheel(x + 0.45, y + 0.2, 70, 20, 16, 20)
+    for k in range(10):
+        a = k * 2 * math.pi / 10
+        tiers.append((square(x + 0.05 + 0.45 * math.cos(a), y + 0.55 + 0.2 * math.sin(a), 0.012), 0,
+                      6 + 6 * abs(math.sin(2 * a)), "~wheel"))
+    return {"tiers": tiers}
+
+
+def kane_industries(x, y):
+    """Kane Industries: the brick headquarters with KANE in iron letters on the roof, and its tank farm."""
+    at = _local(x, y, -25)
+    tiers = [(rect(0, 0, 0.9, 0.4), 0, 22, "~old"), (rect(0, 0, 0.6, 0.03), 22, 27, "~sign")]
+    tiers += [(disc(0.85 + 0.36 * (k % 3), -0.3 + 0.6 * (k // 3), 0.15), 0, 14, "~tank") for k in range(6)]
+    return {"tiers": _tiers(at, tiers), "ground": [(at(box(-0.55, -0.55, 1.75, 0.55)), "works")]}
+
+
+def port_adams(x, y):
+    """Port Adams Container Terminal: boxes stacked in rows on the quay, gantry cranes along the water."""
+    at = _local(x, y, -4)
+    tiers = []
+    # A long quay between the expressway and the river: stacks in rows along it,
+    # the gantries on the water's edge with their booms out over the ships.
+    for r in range(8):
+        for c in range(3):
+            tiers.append((rect(-0.42 + c * 0.38, -1.4 + r * 0.4, 0.33, 0.11), 0, (3, 6, 9, 6)[(r + c) % 4], "~container"))
+    for k in range(4):
+        cy = -1.2 + k * 0.8
+        tiers += [(square(0.62, cy - 0.08, 0.035), 0, 38, "~crane"), (square(0.62, cy + 0.08, 0.035), 0, 38, "~crane"),
+                  (rect(0.95, cy, 0.85, 0.05), 38, 42, "~crane")]
+    return {"tiers": _tiers(at, tiers), "ground": [(at(box(-0.66, -1.65, 0.7, 1.6)), "works")]}
+
+
+def worlds_fair(x, y):
+    """The old World's Fair grounds: the steel globe on its plinth, the reflecting pool, the pavilion."""
+    tiers = [(disc(x, y, 0.15), 0, 3, "~old"), (disc(x, y, 0.07), 3, 6, "~works"), (disc(x, y, 0.1), 6, 10, "~works"),
+             (disc(x, y, 0.115), 10, 15, "~works"), (disc(x, y, 0.1), 15, 19, "~works"), (disc(x, y, 0.07), 19, 22, "~works"),
+             (rect(x, y - 0.7, 0.8, 0.28), 0, 10, "~old")]
+    return {"tiers": tiers, "ground": [(rect(x, y + 0.62, 1.1, 0.26), "pool")]}
+
+
+def gotham_downs(x, y):
+    """Gotham Downs: the dirt oval, the infield, the old grandstand, the stables."""
+    at = _local(x, y, 8)
+    outer = box(-0.75, -0.42, 0.75, 0.42).union(Point(-0.75, 0).buffer(0.42)).union(Point(0.75, 0).buffer(0.42))
+    tiers = [(rect(0, -0.62, 1.2, 0.16), 0, 18, ""), (rect(0, -0.62, 1.2, 0.05), 18, 21, "~old")]
+    tiers += [(rect(-0.6 + 0.4 * k, 0.66, 0.32, 0.12), 0, 6, "~old") for k in range(4)]
+    return {"tiers": _tiers(at, tiers),
+            "ground": [(at(outer.buffer(0.18)), "grounds"), (at(outer.difference(outer.buffer(-0.11))), "pitch:dirt"),
+                       (at(outer.buffer(-0.11)), "pitch:turf")]}
+
+
+def slaughter_swamp(x, y):
+    """Slaughter Swamp: black water and marsh where the Kane spreads out below the heights."""
+    marsh = blob(x, y, 2.0, 4100)
+    ponds = [blob(x + dx, y + dy, r, 4200 + k) for k, (dx, dy, r) in
+             enumerate(((-0.6, 0.3, 0.4), (0.5, -0.5, 0.32), (0.8, 0.7, 0.26), (-0.2, -0.9, 0.22), (-1.0, -0.4, 0.2)))]
+    return {"tiers": [], "ground": [(marsh, "marsh")] + [(p_.intersection(marsh.buffer(-0.2)), "pool") for p_ in ponds]}
+
+
+def ferry_terminal(x, y):
+    """The Gotham Ferry Company's terminal: the green-iron hall and its clock tower, its slips out into the harbour."""
+    return {"tiers": [(rect(x, y, 1.0, 0.42), 0, 14, "~copper"), (square(x - 0.32, y - 0.08, 0.13), 0, 27, "~copper")],
+            "ground": [(rect(x - 0.25, y + 0.75, 0.16, 0.8), "pier"), (rect(x + 0.25, y + 0.75, 0.16, 0.8), "pier")]}
+
+
+COMPLEXES = {
+    "Gotham University": gotham_university,
+    "Ace Chemicals": ace_chemicals,
+    "S.T.A.R. Labs": star_labs,
+    "Gotham General Hospital": lambda x, y: hospital(x, y, 174, 72, 1.1),     # its garage away from Broadway
+    "Mercy Hospital": lambda x, y: hospital(x, y, 20, 48, 0.85),
+    "Gotham Power Station": power_station,
+    "Knightsdome": knightsdome,
+    "Union Station": union_station,
+    "Gotham Academy": gotham_academy,
+    "Brentwood Academy": brentwood_academy,
+    "Burnside College": burnside_college,
+    "Fort Dumas": fort_dumas,
+    "Little Paris": little_paris,
+    "Kane Industries": kane_industries,
+    "Port Adams Container Terminal": port_adams,
+    "World's Fair Grounds": worlds_fair,
+    "Gotham Downs": gotham_downs,
+    "Slaughter Swamp": slaughter_swamp,
+    "Gotham Ferry Terminal": ferry_terminal,
+    "Sacred Martyr Church": lambda x, y: gothic_church(x, y, -14),
+    "First Church of Gotham City": lambda x, y: steeple_church(x, y, 28),
+    "Our Lady of the Narrows": lambda x, y: gothic_church(x, y, 22, nave=0.7, tower=30, spire=40),
+    "Narrows Monorail Station": lambda x, y: {"tiers": _tiers(_local(x, y, 22), [
+        (rect(0, 0, 1.1, 0.16), 10, 12, "~deck"), (rect(0, 0, 0.8, 0.2), 12, 14.5, "~works"),
+        (rect(-1.35, 0, 0.5, 0.07), 10.5, 11.5, "~deck"), (rect(1.35, 0, 0.5, 0.07), 10.5, 11.5, "~deck")]
+        + [(square(dx, dy, 0.06), 0, 10, "~works") for dx in (-1.5, 1.5) for dy in (-0.12, 0.12)])},
+    "Narrows Precinct House": lambda x, y: {"tiers": [(rect(x, y, 0.6, 0.42), 0, 16, "~old"),
+                                                      (disc(x + 0.2, y - 0.1, 0.025), 16, 40, "~works")]},
+    "Hamilton Hill High School": lambda x, y: {"tiers": _tiers(_local(x, y, 12), [
+        (rect(0, 0, 0.9, 0.3), 0, 16, ""), (rect(0.3, 0.38, 0.3, 0.5), 0, 16, ""), (rect(-0.52, 0.38, 0.46, 0.4), 0, 12, "~works")])},
+    "Pinkney Orphanage": lambda x, y: {"tiers": _tiers(_local(x, y, 12), [
+        (rect(0, -0.3, 1.0, 0.22), 0, 20, "~old"), (rect(-0.39, 0.06, 0.22, 0.6), 0, 18, "~old"),
+        (rect(0.39, 0.06, 0.22, 0.6), 0, 18, "~old"), (square(0, -0.3, 0.16), 0, 34, "~old"),
+        (square(0, -0.3, 0.07), 34, 45, "~landmark")])},
+    "Lacey Towers": lambda x, y: {"tiers": [(square(x, y, 0.5), 0, 64, "~old"), (square(x, y, 0.38), 64, 92, "~old"),
+                                            (square(x, y, 0.26), 92, 112, "~old"), (square(x, y, 0.12), 112, 124, "~landmark")]},
+    "Paris Island Incinerator": lambda x, y: {"tiers": [(rect(x, y, 0.7, 0.4), 0, 18, "~old"),
+                                                        (disc(x + 0.46, y, 0.06), 0, 61, "~stack")]},
+    "Paris Island Quarantine Hospital": lambda x, y: {"tiers": [(rect(x, y + dy, 0.62, 0.14), 0, 10, "~old")
+                                                                for dy in (-0.3, 0, 0.3)] + [(rect(x - 0.25, y, 0.12, 0.74), 0, 8, "~old")]},
+    "Cherry Hills Library": lambda x, y: {"tiers": _tiers(_local(x, y, 18), [
+        (rect(0, 0, 0.55, 0.38), 0, 14, "~old"), (rect(0, -0.24, 0.3, 0.1), 0, 12, "~old"),
+        (disc(0, 0, 0.12), 14, 19, "~landmark")])},
+    "GBC Broadcast Center": lambda x, y: {"tiers": _tiers(_local(x, y, -22), [
+        (square(0, 0, 0.42), 0, 118, "~glass"), (square(0, 0, 0.26), 118, 126, "~glass"),
+        (disc(0, 0, 0.022), 126, 176, "~works")])},
+    "New Town Bus Terminal": lambda x, y: {"tiers": _tiers(_local(x, y, -22), [
+        (rect(0, 0, 1.5, 0.6), 0, 18, "~works"), (rect(0.92, 0, 0.32, 0.5), 6, 8, "~deck")])},
+    "Arkham Mansion": lambda x, y: {"tiers": [(rect(x, y, 0.85, 0.36), 0, 16, "~old"), (rect(x + 0.35, y + 0.3, 0.3, 0.4), 0, 14, "~old"),
+                                              (square(x - 0.3, y - 0.1, 0.18), 0, 28, "~old"), (square(x - 0.3, y - 0.1, 0.08), 28, 37, "~landmark")]},
+    "Arkham Botanical Gardens": lambda x, y: {"tiers": [(rect(x, y, 0.9, 0.4), 0, 12, "~glass"), (disc(x, y, 0.24), 12, 18, "~glass"),
+                                                        (disc(x, y, 0.13), 18, 21, "~glass")]},
+    "Wayne Mining Building": lambda x, y: {"tiers": _tiers(_local(x, y, 28), [
+        (rect(0, 0, 0.55, 0.4), 0, 46, "~old"), (rect(0, 0, 0.45, 0.3), 46, 53, "~copper")])},
+    "Wayne Center for Children": lambda x, y: {"tiers": _tiers(_local(x, y, 6), [
+        (rect(0, 0, 0.8, 0.4), 0, 12, "~glass"), (rect(0.3, 0.32, 0.3, 0.3), 0, 8, "~glass")])},
+    "Solomon Wayne Courthouse": lambda x, y: {"tiers": _tiers(_local(x, y, -14), [
+        (rect(0, 0, 0.8, 0.5), 0, 20, "~old"), (rect(0, -0.32, 0.5, 0.14), 0, 16, "~old"), (disc(0, 0, 0.16), 20, 26, "~landmark"),
+        (disc(0, 0, 0.1), 26, 29, "~landmark"), (disc(0, 0, 0.04), 29, 33, "~landmark")])},
+    "Gotham City Morgue": lambda x, y: {"tiers": _tiers(_local(x, y, 25), [(rect(0, 0, 0.5, 0.36), 0, 12, "~works")])},
+    "Elliot Memorial Hospital": lambda x, y: hospital(x, y, -13, 40, 0.75),
+    "Gotham Public Library": lambda x, y: {"tiers": _tiers(_local(x, y, -10), [
+        (rect(0, 0, 1.3, 0.6), 0, 24, "~old"), (rect(0, 0, 0.6, 0.35), 24, 30, "~old"), (rect(0, -0.42, 1.0, 0.16), 0, 3, "~old")])},
+    "Lacey's": lambda x, y: {"tiers": _tiers(_local(x, y, -10), [
+        (rect(0, 0, 0.9, 0.7), 0, 46, "~old"), (rect(0, -0.36, 0.6, 0.03), 46, 50, "~sign")])},
+    "Gotham Globe": lambda x, y: {"tiers": _tiers(_local(x, y, 20), [
+        (rect(0, 0, 0.5, 0.5), 0, 78, "~old"), (square(0, 0, 0.36), 78, 92, "~old"), (disc(0, 0, 0.11), 92, 95, "~landmark"),
+        (disc(0, 0, 0.16), 95, 101, "~landmark"), (disc(0, 0, 0.11), 101, 105, "~landmark")])},
+    "GCFD Headquarters": lambda x, y: {"tiers": [(rect(x, y, 0.5, 0.35), 0, 14, "~old"),
+                                                 (square(x + 0.2, y - 0.1, 0.12), 0, 26, "~old")]},
+    "Daggett Industries": lambda x, y: {"tiers": _tiers(_local(x, y, -22), [
+        (square(0, 0, 0.5), 0, 150, "~glass"), (square(0, 0, 0.38), 150, 170, "~glass"), (square(0, 0, 0.3), 170, 178, "~lit")])},
+    "GothCorp": lambda x, y: {"tiers": _tiers(_local(x, y, 6), [
+        (rect(0, 0, 1.0, 0.4), 0, 22, "~glass"), (rect(-0.6, 0.32, 0.4, 0.34), 0, 14, "~glass"),
+        (disc(0.62, 0.42, 0.12), 0, 12, "~tank"), (disc(0.9, 0.42, 0.12), 0, 12, "~tank")])},
+    "Gotham National Bank": lambda x, y: {"tiers": _tiers(_local(x, y, 6), [
+        (rect(0, 0, 0.7, 0.55), 0, 30, "~old"), (rect(0, -0.33, 0.5, 0.1), 0, 22, "~old")])},
+    "Gotham Merchants Bank": lambda x, y: {"tiers": [(rect(x, y, 0.6, 0.5), 0, 24, "~old"), (disc(x, y, 0.12), 24, 29, "~landmark")]},
+    "Monarch Playing Card Company": lambda x, y: {"tiers": _tiers(_local(x, y, -4), [
+        (rect(0, 0, 1.1, 0.5), 0, 16, "~old"), (disc(0.45, -0.15, 0.045), 0, 36, "~stack")])},
+    "Gotham State Penitentiary": lambda x, y: {"tiers": [
+        (square(x, y, 2.2).difference(square(x, y, 2.04)), 0, 10, "~old"), (square(x, y, 0.5), 0, 20, "~old")]
+        + [(rect(x, y + dy, 1.4, 0.22), 0, 16, "~old") for dy in (-0.75, -0.42, 0.42, 0.75)]
+        + [(square(x + sx * 1.06, y + sy * 1.06, 0.13), 0, 24, "~old") for sx in (-1, 1) for sy in (-1, 1)]},
+    "Federal Building": lambda x, y: {"tiers": _tiers(_local(x, y, 20), [(rect(0, 0, 0.6, 0.5), 0, 72, "")])},
+    "Hall of Records": lambda x, y: {"tiers": _tiers(_local(x, y, 20), [
+        (rect(0, 0, 0.8, 0.5), 0, 22, "~old"), (rect(0, 0, 0.5, 0.3), 22, 26, "~old")])},
+    "The Gotham Plaza": lambda x, y: {"tiers": _tiers(_local(x, y, -13), [
+        (rect(0, 0, 0.8, 0.5), 0, 64, "~old"), (rect(0, 0, 0.7, 0.4), 64, 74, "~copper")])},
+    "Kane Heights Galleria": lambda x, y: {"tiers": _tiers(_local(x, y, 8), [
+        (rect(0, 0, 2.0, 1.0), 0, 14, "~works"), (rect(0, 0, 0.6, 0.9), 14, 19, "~glass")]),
+        "ground": [(_local(x, y, 8)(rect(0, -1.15, 2.6, 0.9)), "lot"), (_local(x, y, 8)(rect(0, 1.15, 2.6, 0.9)), "lot")]},
+    "Tricorner Fish Market": lambda x, y: {"tiers": _tiers(_local(x, y, -25), [
+        (rect(0, 0, 1.6, 0.4), 0, 10, "~works"), (rect(1.0, 0.4, 0.4, 0.3), 0, 8, "~works")])},
+}
 
 
 # --- terrain ---------------------------------------------------------------------------
@@ -395,6 +763,473 @@ TERRAIN = ROOT / "web" / "map" / "terrain"
 HILLS = [(38.0, 25.5, 6.5, 46), (21.0, 92.0, 5.5, 34), (27.0, 66.5, 4.5, 20), (33.5, 46.0, 4.0, 24),
          (44.0, 72.0, 5.0, 9), (28.0, 124.0, 4.0, 11), (4.0, 20.0, 8.0, 72), (131.0, -17.0, 6.0, 42),
          (69.0, 122.6, 2.2, 14), (57.6, 130.4, 1.0, 6)]
+
+
+# --- water: routes that keep off the land ---------------------------------------
+
+class Waters:
+    """
+    The open water as a grid, to find routes across it that keep off the land —
+    ferries between their piers, ships in from the sea. A route is the shortest
+    way round, smoothed: the Statue Ferry swings round Paris Island instead of
+    sailing through it, and nothing is drawn by hand to cross a headland.
+    """
+
+    def __init__(self, land, box=(-45.0, -45.0, 165.0, 195.0), step=0.5, clearance=0.5):
+        import numpy as np
+        x0, y0, x1, y1 = box
+        self.x0, self.y0, self.step, self.land = x0, y0, step, land
+        self.nx, self.ny = int((x1 - x0) / step) + 1, int((y1 - y0) / step) + 1
+        gx, gy = np.meshgrid(x0 + np.arange(self.nx) * step, y0 + np.arange(self.ny) * step)
+        self.wet = (~shapely.contains_xy(land.buffer(clearance), gx.ravel(), gy.ravel())).tolist()
+        self.near = sorted(((di, dj) for di in range(-24, 25) for dj in range(-24, 25)),
+                           key=lambda o: o[0] * o[0] + o[1] * o[1])
+
+    def _cell(self, x, y):
+        i0, j0 = round((x - self.x0) / self.step), round((y - self.y0) / self.step)
+        for di, dj in self.near:
+            i, j = i0 + di, j0 + dj
+            if 0 <= i < self.nx and 0 <= j < self.ny and self.wet[j * self.nx + i]:
+                return j * self.nx + i
+        return None
+
+    def route(self, a, b):
+        """[a, ..., b] through the water — the ends may be on a pier or a quay."""
+        import heapq
+        start, goal = self._cell(*a), self._cell(*b)
+        if start is None or goal is None:
+            return [tuple(a), tuple(b)]
+        nx, gi, gj = self.nx, goal % self.nx, goal // self.nx
+        best, came, heap = {start: 0.0}, {}, [(0.0, start)]
+        moves = [(1, 0, 1.0), (-1, 0, 1.0), (0, 1, 1.0), (0, -1, 1.0),
+                 (1, 1, 1.414), (1, -1, 1.414), (-1, 1, 1.414), (-1, -1, 1.414)]
+        while heap:
+            _, k = heapq.heappop(heap)
+            if k == goal:
+                break
+            i, j, base = k % nx, k // nx, best[k]
+            for di, dj, c in moves:
+                ii, jj = i + di, j + dj
+                if 0 <= ii < nx and 0 <= jj < self.ny:
+                    kk = jj * nx + ii
+                    if self.wet[kk] and base + c < best.get(kk, 1e18):
+                        best[kk], came[kk] = base + c, k
+                        heapq.heappush(heap, (base + c + math.hypot(ii - gi, jj - gj), kk))
+        if goal != start and goal not in came:
+            return [tuple(a), tuple(b)]
+        cells = [goal]
+        while cells[-1] != start:
+            cells.append(came[cells[-1]])
+        pts = [tuple(a)] + [(self.x0 + (k % nx) * self.step, self.y0 + (k // nx) * self.step)
+                            for k in reversed(cells)] + [tuple(b)]
+        line = LineString(pts)
+        # Straight where it can be, curving round the land where it can't —
+        # checked clear of the shore once smoothed, away from its own two piers.
+        for tol in (1.6, 1.0, 0.6, 0.3, 0.0):
+            simple = list((line.simplify(tol) if tol else line).coords)
+            smooth = LineString(chaikin(simple, 2, closed=False)) if len(simple) > 2 else LineString(simple)
+            ends = min(1.2, smooth.length / 3)
+            if not substring(smooth, ends, smooth.length - ends).intersects(self.land):
+                return [(round(x, 2), round(y, 2)) for x, y in smooth.coords]
+        return [(round(x, 2), round(y, 2)) for x, y in line.coords]
+
+
+# --- the city's grounds: pitches, courts, golf, parking ---------------------------
+
+def pitch(kind, cx, cy, angle):
+    """
+    A playing field as its markings, in map units (one is ~150 m), turned to
+    `angle`: [(geometry, part)] — the turf, then the lines. Soccer and American
+    football are rectangles with their own markings; a baseball diamond is a
+    fan with its infield; a court is small and hard.
+    """
+    def turn(g):
+        return affinity.rotate(affinity.translate(g, cx, cy), angle, origin=(cx, cy))
+    parts = []
+    if kind == "soccer":                         # 105 x 68 m
+        w, h = 0.70, 0.45
+        parts += [(box(-w / 2, -h / 2, w / 2, h / 2), "turf"), (box(-w / 2, -h / 2, w / 2, h / 2).exterior, "line"),
+                  (LineString([(0, -h / 2), (0, h / 2)]), "line"), (Point(0, 0).buffer(0.061).exterior, "line")]
+        for side in (-1, 1):
+            parts.append((box(min(side * w / 2, side * (w / 2 - 0.11)), -0.135, max(side * w / 2, side * (w / 2 - 0.11)),
+                              0.135).exterior, "line"))
+            parts.append((box(min(side * w / 2, side * (w / 2 - 0.037)), -0.061, max(side * w / 2, side * (w / 2 - 0.037)),
+                              0.061).exterior, "line"))
+    elif kind == "football":                     # 110 x 49 m, a yard line every ten
+        w, h = 0.73, 0.33
+        parts += [(box(-w / 2, -h / 2, w / 2, h / 2), "turf"), (box(-w / 2, -h / 2, w / 2, h / 2).exterior, "line")]
+        for k in range(1, 12):
+            x = -w / 2 + k * w / 12
+            parts.append((LineString([(x, -h / 2), (x, h / 2)]), "line"))
+    elif kind == "track":                        # a 400 m oval, and a football field inside it
+        a, rad = 0.28, 0.305
+        oval = box(-a, -rad, a, rad).union(Point(-a, 0).buffer(rad)).union(Point(a, 0).buffer(rad))
+        parts += [(oval, "track"), (oval.buffer(-0.062), "turf"), (oval.buffer(-0.062).exterior, "line")]
+        parts += [(g, k) for g, k in pitch("football", 0, 0, 0) if k == "line"]
+    elif kind == "baseball":                     # a fan: the infield diamond and the outfield
+        r = 0.62
+        fan = Polygon([(0, 0)] + [(r * math.cos(a), -r * math.sin(a))
+                                  for a in [math.radians(45 + k * 90 / 16) for k in range(17)]])
+        diamond = Polygon([(0, 0), (0.12, -0.12), (0, -0.24), (-0.12, -0.12)])
+        parts += [(fan, "turf"), (diamond.buffer(0.05), "dirt"), (diamond.exterior, "line"),
+                  (LineString([(0, 0), (r * math.cos(math.radians(45)), -r * math.sin(math.radians(45)))]), "line"),
+                  (LineString([(0, 0), (-r * math.cos(math.radians(45)), -r * math.sin(math.radians(45)))]), "line")]
+        parts = [(affinity.translate(g, 0, 0.3), k) for g, k in parts]
+    elif kind in ("basketball", "tennis"):       # 28 x 15 m; 24 x 11 m — and its neighbours
+        w, h = (0.19, 0.1) if kind == "basketball" else (0.16, 0.075)
+        for k in (-1, 0, 1):
+            dx = k * (w + 0.04)
+            parts += [(box(dx - w / 2, -h / 2, dx + w / 2, h / 2), "court"),
+                      (box(dx - w / 2, -h / 2, dx + w / 2, h / 2).exterior, "line"),
+                      (LineString([(dx, -h / 2), (dx, h / 2)]), "line")]
+    return [(turn(g), part) for g, part in parts if not g.is_empty]
+
+
+def bays(lot, angle, aisle=0.12):
+    """A car park's rows: lines along it, drawn dashed as stalls, an aisle apart."""
+    c = lot.centroid
+    flat = affinity.rotate(lot, -angle, origin=c)
+    minx, miny, maxx, maxy = flat.bounds
+    rows = []
+    y = miny + aisle / 2
+    while y < maxy:
+        row = LineString([(minx - 1, y), (maxx + 1, y)]).intersection(flat.buffer(-0.03))
+        for part in lines_of(row):
+            if part.length > 0.1:
+                rows.append(affinity.rotate(part, angle, origin=c))
+        y += aisle
+    return rows
+
+
+def _along(a, b, f):
+    return (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+
+
+def oriented(cx, cy, w, h, angle):
+    """A w x h rectangle centred on (cx, cy), its long side turned to `angle` degrees."""
+    return affinity.rotate(box(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2), angle, origin=(cx, cy))
+
+
+def airport_layout(spec):
+    """
+    Archie Goodwin International as an airport rather than two strips and a
+    slab: the terminal and its concourses in the wedge between the runways,
+    gates with jet bridges, taxiways alongside both runways, approach lights
+    out past the thresholds; landside a frontage road, the parking garage, the
+    long-stay lots and a hotel; across the main runway the cargo apron, its
+    hangars, the private hangars and the fuel farm; the tower where it can see
+    both runways. Returns {"ground": [(geom, layer)], "buildings": [(geom, top,
+    kind, base)], "roads": [(line, cls, name)], "gates": [(x, y, heading)],
+    "lots": [(polygon, angle)]}.
+    """
+    (w1, e1), (s2, n2) = spec["runways"]
+    r1, r2 = LineString([w1, e1]), LineString([s2, n2])
+    cross = r1.intersection(r2)
+    c = (cross.x, cross.y)
+    clear = unary_union([r1.buffer(1.45), r2.buffer(1.45)])
+    out = {"ground": [], "buildings": [], "roads": [], "gates": [], "lots": []}
+    # The landside line between the runways' far ends, and the way into the wedge.
+    mx, my = _along(n2, e1, 0.5)
+    dx, dy = e1[0] - n2[0], e1[1] - n2[1]
+    span = math.hypot(dx, dy)
+    d = (dx / span, dy / span)
+    n = (-d[1], d[0]) if (c[0] - mx) * -d[1] + (c[1] - my) * d[0] > 0 else (d[1], -d[0])
+    along_deg = math.degrees(math.atan2(d[1], d[0]))
+    t = (mx - d[0] * 1.5 + n[0] * 1.8, my - d[1] * 1.5 + n[1] * 1.8)       # the terminal's middle
+    terminal = oriented(t[0], t[1], 7.0, 0.72, along_deg)
+    out["buildings"] += [(terminal, 22, "~glass", 0),
+                         (oriented(t[0] - n[0] * 0.08, t[1] - n[1] * 0.08, 6.2, 0.36, along_deg), 28, "~glass", 22)]
+    apron_parts = [terminal.buffer(0.9)]
+    for k in (-2.1, 0.0, 2.1):
+        base = (t[0] + d[0] * k + n[0] * 0.36, t[1] + d[1] * k + n[1] * 0.36)
+        length = 2.9
+        while length > 1.0:
+            tip = (base[0] + n[0] * length, base[1] + n[1] * length)
+            pier = LineString([base, tip]).buffer(0.17, cap_style="flat")
+            if not pier.buffer(0.62).intersects(clear):
+                break
+            length -= 0.2
+        out["buildings"].append((pier, 14, "~glass", 0))
+        apron_parts.append(pier.buffer(0.95))
+        # Gates down both sides: a jet bridge, and room for a plane nosed in.
+        g = 0.5
+        while g < length - 0.1:
+            for side in (1, -1):
+                at = (base[0] + n[0] * g + d[0] * side * 0.17, base[1] + n[1] * g + d[1] * side * 0.17)
+                stand = (at[0] + d[0] * side * 0.42, at[1] + d[1] * side * 0.42)
+                if not Point(stand).buffer(0.3).intersects(clear):
+                    out["buildings"].append((LineString([at, (at[0] + d[0] * side * 0.16, at[1] + d[1] * side * 0.16)])
+                                             .buffer(0.025, cap_style="flat"), 6, "~deck", 4))
+                    out["gates"].append((round(stand[0], 2), round(stand[1], 2),
+                                         round(math.degrees(math.atan2(-d[0] * side, d[1] * side)), 1)))
+            g += 0.62
+    wedge = Polygon([c, n2, e1]).buffer(0.6)
+    apron = unary_union(apron_parts).intersection(wedge).difference(clear.buffer(-0.35))
+    out["ground"].append((apron, "apron"))
+    # Taxiways: alongside each runway on the wedge side, the cargo side too, and
+    # the links between them and the runways.
+    side1 = -1 if r1.offset_curve(-1.0).distance(Point(t)) < r1.offset_curve(1.0).distance(Point(t)) else 1
+    side2 = 1 if r2.offset_curve(1.0).distance(Point(t)) < r2.offset_curve(-1.0).distance(Point(t)) else -1
+    taxi = [r1.offset_curve(side1 * 1.15), r2.offset_curve(side2 * 1.15), r1.offset_curve(-side1 * 1.3)]
+    taxi = [line.intersection(Point(c).buffer(16)).difference(Point(c).buffer(1.7)) for line in taxi]
+    links = []
+    for rw, lane in ((r1, taxi[0]), (r2, taxi[1]), (r1, taxi[2])):
+        for part in lines_of(lane):
+            for f in (0.1, 0.5, 0.9):
+                q = part.interpolate(f, normalized=True)
+                links.append(LineString([q, rw.interpolate(rw.project(q))]))
+    for part in lines_of(apron.boundary):
+        for f in (0.2, 0.55, 0.85):
+            q = part.interpolate(f, normalized=True)
+            near = min((ln for ln in taxi if not ln.is_empty), key=lambda ln: ln.distance(q))
+            if near.distance(q) < 2.0:
+                links.append(LineString([q, near.interpolate(near.project(q))]))
+    for line in taxi + links:
+        for part in lines_of(line):
+            if part.length > 0.2:
+                out["ground"].append((part, "taxiway"))
+    # Approach lights: a row of lights out past each threshold, and the edge lights.
+    for rw in (r1, r2):
+        (ax, ay), (bx, by) = rw.coords
+        L = rw.length
+        ux, uy = (bx - ax) / L, (by - ay) / L
+        out["ground"].append((LineString([(ax - ux * 0.3, ay - uy * 0.3), (ax - ux * 3.2, ay - uy * 3.2)]), "approach"))
+        out["ground"].append((LineString([(bx + ux * 0.3, by + uy * 0.3), (bx + ux * 3.2, by + uy * 3.2)]), "approach"))
+        for off in (0.36, -0.36):
+            out["ground"].append((rw.offset_curve(off), "edgelights"))
+    # Landside: the frontage road, the garage, the lots, the hotel.
+    front = LineString([(t[0] - d[0] * 3.9 - n[0] * 0.7, t[1] - d[1] * 3.9 - n[1] * 0.7),
+                        (t[0] + d[0] * 3.9 - n[0] * 0.7, t[1] + d[1] * 3.9 - n[1] * 0.7)])
+    back = LineString([(t[0] + d[0] * 3.9 - n[0] * 2.25, t[1] + d[1] * 3.9 - n[1] * 2.25),
+                       (t[0] - d[0] * 4.4 - n[0] * 2.25, t[1] - d[1] * 4.4 - n[1] * 2.25)])
+    loop = LineString(list(front.coords) + list(back.coords) + [front.coords[0]])
+    out["roads"].append((LineString(chaikin(list(loop.coords), 2, closed=False)), "secondary", "Terminal Drive"))
+    out["entry"] = back.coords[-1]
+    garage = oriented(t[0] - n[0] * 1.45, t[1] - n[1] * 1.45, 4.6, 0.95, along_deg)
+    out["buildings"].append((garage, 21, "~garage", 0))
+    for k, (fw, fh) in ((-2.5, (3.6, 1.5)), (2.4, (3.4, 1.5))):
+        lot = oriented(t[0] + d[0] * k - n[0] * 3.3, t[1] + d[1] * k - n[1] * 3.3, fw, fh, along_deg)
+        out["lots"].append((lot, along_deg))
+    hotel = (t[0] - d[0] * 5.4 - n[0] * 1.6, t[1] - d[1] * 5.4 - n[1] * 1.6)
+    out["buildings"] += [(oriented(hotel[0], hotel[1], 0.9, 0.36, along_deg + 90), 48, "~glass", 0)]
+    # The tower: airside, at the end of the terminal, where it sees both runways.
+    spots = [(t[0] + d[0] * a + n[0] * b, t[1] + d[1] * a + n[1] * b)
+             for a in (-4.2, 4.2, -3.8, 3.8, -3.4) for b in (0.9, 0.5, 0.0, -0.4)]
+    tw = next((q for q in spots if not Point(q).buffer(0.45).intersects(clear)
+               and not Point(q).buffer(0.25).intersects(terminal)), spots[-1])
+    out["buildings"] += [(disc(tw[0], tw[1], 0.12), 58, "~landmark", 0), (disc(tw[0], tw[1], 0.2), 66, "~landmark", 58),
+                         (disc(tw[0], tw[1], 0.03), 76, "~landmark", 66)]
+    # Across the main runway: cargo, the hangars, the private hangars, the fuel farm.
+    south = 1 if side1 == -1 else -1
+    r1_deg = math.degrees(math.atan2(e1[1] - w1[1], e1[0] - w1[0]))
+    ux, uy = (e1[0] - w1[0]) / r1.length, (e1[1] - w1[1]) / r1.length
+    nx_, ny_ = -uy * south, ux * south
+    if nx_ * 0 + ny_ < 0:
+        nx_, ny_ = -nx_, -ny_
+    mid = r1.interpolate(r1.project(Point(c)) + 6.4)
+    cargo_c = (mid.x + nx_ * 3.4, mid.y + ny_ * 3.4)
+    cargo = oriented(cargo_c[0], cargo_c[1], 8.6, 2.0, r1_deg)
+    out["ground"].append((cargo, "apron"))
+    for k in range(4):
+        hx = cargo_c[0] + ux * (-3.0 + k * 1.75) + nx_ * 1.55
+        hy = cargo_c[1] + uy * (-3.0 + k * 1.75) + ny_ * 1.55
+        out["buildings"].append((oriented(hx, hy, 1.45, 0.95, r1_deg), 27 if k < 3 else 16, "~works", 0))
+    out["buildings"].append((oriented(cargo_c[0] + ux * 4.6 + nx_ * 1.4, cargo_c[1] + uy * 4.6 + ny_ * 1.4,
+                                      2.0, 0.8, r1_deg), 16, "~works", 0))
+    for k in range(5):
+        px_ = cargo_c[0] + ux * (5.6 + k * 0.72) + nx_ * 0.2
+        py_ = cargo_c[1] + uy * (5.6 + k * 0.72) + ny_ * 0.2
+        out["buildings"].append((oriented(px_, py_, 0.58, 0.5, r1_deg), 11, "~works", 0))
+    out["hangar"] = (round(cargo_c[0] + ux * 8.48 + nx_ * 0.2, 2), round(cargo_c[1] + uy * 8.48 + ny_ * 0.2, 2))
+    fuel = (cargo_c[0] - ux * 5.6 + nx_ * 2.1, cargo_c[1] - uy * 5.6 + ny_ * 2.1)
+    for k in range(6):
+        out["buildings"].append((disc(fuel[0] + (k % 3) * 0.42, fuel[1] + (k // 3) * 0.42, 0.17), 13, "~tank", 0))
+    cargo_end = (cargo_c[0] + ux * 9.6 + nx_ * 2.6, cargo_c[1] + uy * 9.6 + ny_ * 2.6)
+    out["roads"].append((LineString([(cargo_c[0] - ux * 4.4 + nx_ * 2.6, cargo_c[1] - uy * 4.4 + ny_ * 2.6), cargo_end]),
+                         "secondary", "Cargo Road"))
+    # Round the far end of the main runway, clear of its lights, to the terminal's front.
+    round_end = [cargo_end, (e1[0] + ux * 4.2 + nx_ * 1.8, e1[1] + uy * 4.2 + ny_ * 1.8),
+                 (e1[0] + ux * 4.6 - nx_ * 1.2, e1[1] + uy * 4.6 - ny_ * 1.2), tuple(front.coords[-1])]
+    out["roads"].append((LineString(chaikin(round_end, 2, closed=False)), "secondary", "Perimeter Road"))
+    out["clear"] = clear
+    return out
+
+
+def _noded(lines):
+    """Every crossing made a junction — on a fine grid first, so a road meeting another meets it exactly."""
+    return shapely.node(shapely.set_precision(lines, 0.001))
+
+
+def reaching(a, b, past=0.03):
+    """A line from a to b carried a hair past b, so it truly crosses the road it meets and joins it there."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    n = math.hypot(dx, dy) or 1
+    return LineString([a, (b[0] + dx / n * past, b[1] + dy / n * past)])
+
+
+def _pieces(lines):
+    """The road network's separate pieces: (junctions, {piece: [junction indices]})."""
+    ids, nodes, parent = {}, [], []
+
+    def node(pt):
+        key = (round(pt[0], 2), round(pt[1], 2))
+        if key not in ids:
+            ids[key] = len(nodes)
+            nodes.append(key)
+            parent.append(len(parent))
+        return ids[key]
+
+    def root(k):
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+    for seg in _noded(shapely.MultiLineString([list(ln.coords) for ln in lines])).geoms:
+        a, b = root(node(seg.coords[0])), root(node(seg.coords[-1]))
+        if a != b:
+            parent[a] = b
+    groups = {}
+    for k in range(len(nodes)):
+        groups.setdefault(root(k), []).append(k)
+    return nodes, groups
+
+
+def connections(lines, land, islands, blocked):
+    """
+    The joins that make the roads one network: every dead end that stops just
+    short of a road meets it; every piece cut off from the rest — a town's
+    grid that never reaches the highway, a bridge that lands beside a street —
+    gets the shortest spur over dry land to the nearest other piece, until
+    they're one; and an island with no streets of its own gets a drive from its
+    landing to each building on it. Returns [(line, class)] to draw and build
+    round like any other road.
+    """
+    import numpy as np
+    out, made = [], set()
+
+    def join(a, b, cls):
+        key = tuple(sorted(((round(a[0], 2), round(a[1], 2)), (round(b[0], 2), round(b[1], 2)))))
+        if key not in made and key[0] != key[1]:
+            made.add(key)
+            out.append((LineString([a, b]), cls))
+    dry = land.buffer(0.05)
+    for landing, targets in islands:
+        # Each building's door: the edge of its footprint nearest the landing.
+        doors = [shapely.ops.nearest_points(Point(landing), foot.buffer(0.18).boundary)[1] for foot in targets]
+        reached = [Point(landing)]
+        todo = list(range(len(doors)))
+        while todo:
+            best = None
+            for k in todo:
+                for r in reached:
+                    leg = LineString([r, doors[k]])
+                    if dry.contains(leg) and not leg.intersects(blocked.buffer(-0.12)):
+                        if best is None or leg.length < best[0]:
+                            best = (leg.length, k, r)
+            if best is None:
+                break
+            join((best[2].x, best[2].y), (doors[best[1]].x, doors[best[1]].y), "drive")
+            reached.append(doors[best[1]])
+            todo.remove(best[1])
+    every = [ln for ln, _ in lines if ln.length > 0.05]
+    noded = list(_noded(shapely.MultiLineString([list(ln.coords) for ln in every + [ln for ln, _ in out]])).geoms)
+    ends = {}
+    for seg in noded:
+        for pt in (seg.coords[0], seg.coords[-1]):
+            key = (round(pt[0], 2), round(pt[1], 2))
+            ends[key] = ends.get(key, 0) + 1
+    tree = shapely.STRtree(noded)
+    for (x, y), degree in ends.items():
+        if degree != 1:
+            continue
+        here = Point(x, y)
+        best = None
+        for idx in tree.query(here.buffer(0.5)):
+            seg = noded[int(idx)]
+            d = seg.distance(here)
+            if d > 0.02 and d < 0.5 and (best is None or d < best[0]):
+                best = (d, seg)
+        if best:
+            q = shapely.ops.nearest_points(here, best[1])[1]
+            if dry.contains(LineString([here, q])) and not LineString([here, q]).intersects(blocked):
+                join((x, y), reaching((x, y), (q.x, q.y)).coords[-1], "street")
+    # Whatever's still in pieces: each joined to its nearest neighbour over dry land.
+    for _ in range(14):
+        nodes, groups = _pieces(every + [ln for ln, _ in out])
+        if len(groups) <= 1:
+            break
+        xy = np.array(nodes)
+        joined = False
+        for members in sorted(groups.values(), key=len)[:-1]:
+            if len(members) < 2:
+                continue
+            mine = set(members)
+            others = np.array([k for k in range(len(nodes)) if k not in mine])
+            best = None
+            for k in members:
+                x, y = xy[k]
+                d = np.hypot(xy[others, 0] - x, xy[others, 1] - y)
+                for o in np.argsort(d)[:6]:
+                    if d[o] > 6.0:
+                        break
+                    spur = LineString([(x, y), tuple(xy[others[o]])])
+                    if (best is None or d[o] < best[0]) and dry.contains(spur) and not spur.intersects(blocked):
+                        best = (d[o], (x, y), tuple(xy[others[o]]))
+                        break
+            if best:
+                join(best[1], best[2], "secondary" if best[0] > 0.6 else "street")
+                joined = True
+        if not joined:
+            break
+    return out
+
+
+def road_graph(lines, ferries, places, land):
+    """
+    Every road noded where it meets another, as {"nodes": [[x, y]], "edges":
+    [[a, b, class]], "ferries": [[a, b, [[x, y], ...]]], "places": {name: node}}.
+    A place's node is the nearest it can reach without crossing water.
+    """
+    import numpy as np
+    noded = _noded(shapely.MultiLineString([list(ln.coords) for ln, _ in lines if ln.length > 0.05]))
+    index = shapely.STRtree([ln for ln, _ in lines])
+    classes = [c for _, c in lines]
+    nodes, ids, edges = [], {}, []
+
+    def node(pt):
+        key = (round(pt[0], 2), round(pt[1], 2))
+        if key not in ids:
+            ids[key] = len(nodes)
+            nodes.append(list(key))
+        return ids[key]
+    for seg in noded.geoms:
+        coords = list(seg.coords)
+        if len(coords) < 2 or seg.length < 0.01:
+            continue
+        mid = seg.interpolate(0.5, normalized=True)
+        near = index.query_nearest(mid)
+        cls = classes[int(near[0])] if len(near) else "street"
+        a, b = node(coords[0]), node(coords[-1])
+        if a != b:
+            edges.append([a, b, cls] + ([[[round(x, 2), round(y, 2)] for x, y in coords[1:-1]]] if len(coords) > 2 else []))
+    xy = np.array(nodes)
+    wet_free = land.buffer(0.08)
+
+    def reach(x, y, most=4.0):
+        order = np.argsort((xy[:, 0] - x) ** 2 + (xy[:, 1] - y) ** 2)[:40]
+        for k in order:
+            nx_, ny_ = xy[k]
+            if math.hypot(nx_ - x, ny_ - y) > most:
+                break
+            if wet_free.contains(LineString([(x, y), (nx_, ny_)])):
+                return int(k)
+        return int(order[0])
+    links = []
+    for name, stops in ferries:
+        for a, b in zip(stops, stops[1:], strict=False):
+            links.append([reach(*a, most=3.0), reach(*b, most=3.0), name])
+    return {"nodes": nodes, "edges": edges, "ferries": links,
+            "places": {p["name"]: reach(p["x"], p["y"]) for p in places}}
 
 
 def _png(path, rgb):
@@ -477,12 +1312,16 @@ def build():
     src = json.loads(SOURCE.read_text())
     features, buildings = [], []
 
+    built = []
+
     def building(geom, h, kind="", base=0):
         for poly in polys_of(shapely.set_precision(geom, 0.01)):
             ring = list(poly.exterior.coords)[:-1]
             if len(ring) >= 3:
                 row = [int(h), int(base)] + [round(v * 100) for pt in ring for v in pt]
                 buildings.append(row + ([kind] if kind else []))
+                if base == 0:
+                    built.append(poly)
 
     def add(geom, layer, **props):
         if geom is None or geom.is_empty:
@@ -599,20 +1438,42 @@ def build():
                     break
     parks.append(Polygon(chaikin(roughen(src["estate"], 88, amp=0.6, levels=2), 3)).buffer(0).difference(water_cut))
     park_names.append("Wayne Estate")
+    # The big complexes' own ground — a campus's lawns are parkland, a plant's
+    # yard, a stadium's car parks and plaza keep the streets and blocks off.
+    grounds = [(g, layer) for pl in src["places"] for g, layer in landmark_grounds(pl["name"], *footprint_at(pl))]
+    for g, layer in grounds:
+        if layer == "campus":
+            parks.append(g.difference(water_cut))
+            park_names.append("")
+    ground_block = unary_union([g for g, layer in grounds if layer in ("plaza", "lot", "works", "grounds", "marsh")]
+                               or [Point(0, 0).buffer(0)])
+    golf = None
+    if src.get("golf"):
+        golf = Polygon(chaikin(roughen(src["golf"]["coast"], 77, amp=0.4), 3)).buffer(0).difference(water_cut)
+        parks.append(golf)
+        park_names.append(src["golf"]["name"])
     park_union = unary_union(parks)
+    # The big parks — the railway goes under these, and through the strips by the water.
+    big_parks = unary_union([p for p, nm in zip(parks, park_names, strict=True) if nm and p.area > 20]
+                            or [Point(0, 0).buffer(0)])
     for p, name in zip(parks, park_names, strict=True):
         add(p.difference(water_cut), "park", n=name)       # a lake in a park is water, not lawn
     for p in plazas:
         add(p, "plaza")
     # Ponds in the bigger parks — never under a landmark.
-    standing = unary_union([t[0] for pl in src["places"] for t in landmark_shapes(pl["name"], pl["x"], pl["y"])]
-                           or [Point(0, 0)]).buffer(0.5)
+    ponds = []
+    # What stands on the ground: a monorail platform or a pipe rack in the air doesn't cut the street under it.
+    footprints = unary_union([t[0] for pl in src["places"] for t in landmark_shapes(pl["name"], *footprint_at(pl))
+                              if t[1] < 4 and t[0].area >= 0.02]
+                             or [Point(0, 0)])
+    standing = footprints.buffer(0.5)
     for i, p in enumerate(parks[:2]):
         c = p.representative_point()
         for k in range(2):
             pond = blob(c.x + pr.uniform(-2, 2), c.y + pr.uniform(-3, 3), pr.uniform(0.3, 0.6), 900 + i * 5 + k)
             if p.buffer(-0.3).contains(pond) and not pond.intersects(water_cut) and not pond.intersects(standing):
                 add(pond, "water", n="")
+                ponds.append(pond)
     plaza_union = unary_union(plazas)
 
     outer = {d["name"] for d in ds if "limit" in d or "city" in d}
@@ -663,9 +1524,9 @@ def build():
                 spoke = LineString([(x0, y0), (rb["at"][0] + math.cos(a) * rb["r"] * 3.4,
                                                rb["at"][1] + math.sin(a) * rb["r"] * 3.4)])
                 named.append((spoke.intersection(land), "secondary", ""))
-    # Rail runs under the parks, not across them.
+    # Rail runs under the big parks, not across them.
     named = [(p, c, n) for ln, c, n in named
-             for p in (lines_of(ln.difference(park_union)) if c == "rail" else [ln]) if p.length > 0.2]
+             for p in (lines_of(ln.difference(big_parks)) if c == "rail" else [ln]) if p.length > 0.2]
     # A grid street that would run alongside an avenue for a stretch gives way
     # to it: two roads drawn on top of each other read as a mess, not a city.
     avenues = unary_union([ln for ln, c, _ in named if c in ("primary", "highway")] + secondary).buffer(0.32)
@@ -686,14 +1547,36 @@ def build():
         sand = sand.buffer(0.15).buffer(-0.15)
     # Nothing drives straight across a roundabout: everything meets the ring.
     holes = unary_union([junction(rb, 0.97) for rb in src.get("roundabouts", [])] + [sand.buffer(0.05)])
-    streets = [(p, c) for s, c in streets for p in lines_of(s.difference(holes).difference(plaza_union))
+    # And the city's streets give way to its landmarks: a grid street that ran
+    # through Wayne Tower now stops at the plaza round it.
+    plazas_round = footprints.buffer(0.22).union(ground_block.buffer(0.08))
+    streets = [(p, c) for s, c in streets
+               for p in lines_of(s.difference(holes).difference(plaza_union).difference(plazas_round))
                if p.length > 0.2]
-    secondary = [p for s in secondary for p in lines_of(s.difference(holes)) if p.length > 0.2]
+    secondary = [p for s in secondary for p in lines_of(s.difference(holes).difference(plazas_round)) if p.length > 0.2]
     named = [(p, c, n) for ln, c, n in named
              for p in (lines_of(ln.difference(holes)) if n not in [rb["name"] for rb in src.get("roundabouts", [])]
                        else [ln]) if p.length > 0.15]
     bridges = [(span(curve(b["line"], 2), land), b["name"]) for b in src["bridges"]]
     bridges = [(line, name) for line, name in bridges if line is not None]
+    # A road that runs into water carries on over it: wherever one crosses a river
+    # with no bridge drawn, it gets one — the expressway over the Kane's mouth.
+    spans_ = unary_union([line.buffer(0.8) for line, _ in bridges]) if bridges else Point(0, 0).buffer(0)
+    for road in src["roads"]:
+        if road["class"] == "rail":
+            continue
+        full = curve(road["line"])
+        for wet in lines_of(full.difference(land)):
+            if wet.length < 0.2 or wet.length > 14 or wet.intersects(spans_):
+                continue
+            a = max(0.0, full.project(Point(wet.coords[0])) - 0.3)
+            b = min(full.length, full.project(Point(wet.coords[-1])) + 0.3)
+            if a > b:
+                a, b = b, a
+            bridges.append((substring(full, a, b), f"{road['name']} Bridge"))
+    air = airport_layout(src["airport"]) if src.get("airport") else None
+    if air:
+        named += air["roads"]
 
     # The sprawl: past the towns the mainland goes on — lanes and low houses
     # thinning out into the dark, a city that doesn't stop at its limits.
@@ -701,9 +1584,12 @@ def build():
     town_union = unary_union(list(towns.values()))
     open_land = unary_union([m.difference(water_cut) for m in mainland.values()])
     airfield = Point(0, 0).buffer(0)
-    if src.get("airport"):
-        airfield = unary_union([Polygon(src["airport"]["apron"]).buffer(1.2)]
-                               + [LineString(rw).buffer(1.4) for rw in src["airport"]["runways"]])
+    if air:
+        # The whole airport, airside and land: no sprawl on the runways or in the car parks.
+        airfield = unary_union([g.buffer(1.0) for g, layer in air["ground"] if layer == "apron"]
+                               + [LineString(rw).buffer(1.6) for rw in src["airport"]["runways"]]
+                               + [g.buffer(0.5) for g, *_ in air["buildings"]] + [lot.buffer(0.4) for lot, _ in air["lots"]]
+                               + [ln.buffer(0.4) for ln, _, _ in air["roads"]])
     fringe = (open_land.intersection(town_union.buffer(7.5)).difference(town_union.buffer(0.15))
               .difference(park_union).difference(airfield))
     lanes, lr, claimed = [], random.Random(1500), Point(0, 0).buffer(0)
@@ -716,14 +1602,43 @@ def build():
                 far = part.centroid.distance(town_union)
                 if lr.random() < 1.05 - far / 7.5:          # thinner the further out
                     lanes.append(part.simplify(0.03))
+    # The lanes give way to what stands out there too — the prison's walls, the mall, the track.
+    lanes = [p for ln in lanes for p in lines_of(ln.difference(plazas_round)) if p.length > 0.2]
 
     # Each bridge's ends run on to the nearest road, so nothing dead-ends at a bank.
     network = unary_union([ln for ln, c, _ in named if c != "rail"] + secondary + [s for s, _ in streets])
     for line, _name in list(bridges):
         for end in (Point(line.coords[0]), Point(line.coords[-1])):
             near = shapely.ops.nearest_points(end, network)[1] if not network.is_empty else None
-            if near is not None and 0.15 < end.distance(near) < 3.0:
-                named.append((LineString([end, near]), "primary", ""))
+            if near is not None and 0.15 < end.distance(near) < 6.0 and land.buffer(0.08).contains(LineString([end, near])):
+                named.append((reaching((end.x, end.y), (near.x, near.y)), "primary", ""))
+    # And then the whole network joined up: dead ends to the road beside them,
+    # stranded pieces to the rest, the bare islands' drives from their landings.
+    landings = {}
+    for line, _name in bridges:
+        for end in (line.coords[0], line.coords[-1]):
+            for area in SPARSE:
+                if areas.get(area) is not None and areas[area].buffer(0.3).contains(Point(end)):
+                    landings[area] = end
+    for ferry in src.get("ferries", []):
+        for stop in ferry.get("stops") or []:
+            for area in SPARSE:
+                if area not in landings and areas.get(area) is not None and areas[area].buffer(1.2).contains(Point(stop)):
+                    q = shapely.ops.nearest_points(Point(stop), areas[area].buffer(-0.3))[1]
+                    landings[area] = (q.x, q.y)
+    islands = []
+    for area in landings:
+        feet = [unary_union([t[0] for t in landmark_shapes(pl["name"], *footprint_at(pl))])
+                for pl in src["places"] if pl["area"] == area and pl["kind"] != "district"]
+        islands.append((landings[area], [f for f in feet if not f.is_empty]))
+    joins = connections([(ln, c) for ln, c, _ in named if c != "rail"] + [(s_, "secondary") for s_ in secondary]
+                        + [(s_, c) for s_, c in streets] + [(s_, "lane") for s_ in lanes]
+                        + [(ln, "bridge") for ln, _ in bridges], land, islands, footprints.buffer(0.08))
+    # The spurs and the island drives are roads to draw; a dead end's step to the
+    # road beside it is too short to see — it joins the network, not the map.
+    named += [(ln, c, "") for ln, c in joins if c != "street"]
+    unseen_joins = [ln for ln, c in joins if c == "street"]
+    print(f"{len(joins)} joins in the road network ({len(joins) - len(unseen_joins)} drawn)")
     for s, c in streets:
         add(s, "road", c=c)
     for s in lanes:
@@ -736,24 +1651,68 @@ def build():
     for line, name in bridges:
         add(line, "road", c="bridge", n=name)
 
-    # Below and around it: the subway, the ferries, the airport.
+    # Below and around it: the subway, its stations — and the trains' lines as
+    # wholes, with where they run in tunnel and where they cross the water.
     for line in src.get("subway", []):
         pts = [(st[1], st[2]) for st in line["stations"]]
-        add(curve(pts, 3), "subway", n=line["name"], col=line["color"])
+        route_ = curve(pts, 3)
+        add(route_, "subway", n=line["name"], col=line["color"],
+            st=[round(route_.project(Point(st[1], st[2])) / route_.length, 4) for st in line["stations"]])
         for st in line["stations"]:
             add(Point(st[1], st[2]), "station", n=st[0], col=line["color"], line=line["name"])
+    for road in src["roads"]:
+        if road["class"] != "rail":
+            continue
+        full = curve(road["line"])
+        length = full.length
+
+        def spans(geom, whole=full, total=length):
+            out = []
+            for part in lines_of(geom):
+                a, b = whole.project(Point(part.coords[0])) / total, whole.project(Point(part.coords[-1])) / total
+                out.append([round(min(a, b), 4), round(max(a, b), 4)])
+            return sorted(out)
+        tunnels = spans(full.intersection(big_parks))
+        # A crossing in tunnel (under the Reservoir) is no bridge.
+        crossings = [c for c in spans(full.difference(land))
+                     if not any(a - 0.002 <= c[0] and c[1] <= b + 0.002 for a, b in tunnels)]
+        stops = [[n, f] for n, f in src.get("rail_stations", {}).get(road["name"], [])]
+        add(full, "railroute", n=road["name"], tun=tunnels, br=crossings, st=stops)
+        for a, b in crossings:
+            add(substring(full, a * length, b * length), "railbridge", n=road["name"])
+        for n, f in stops:
+            q = full.interpolate(f * length)
+            add(Point(q.x, q.y), "railstation", n=n, line=road["name"])
+    # Ferries between their piers and ships in from the sea, by way of the water.
+    waters = Waters(land)
     for ferry in src.get("ferries", []):
-        add(curve(ferry["line"], 2), "ferry", n=ferry["name"])
-    airport = src.get("airport")
-    if airport:
-        add(Polygon(airport["apron"]), "apron")
-        for a, b in airport["runways"]:
+        stops = ferry.get("stops") or [ferry["line"][0], ferry["line"][-1]]
+        pts, marks = [], [0.0]
+        for a, b in zip(stops, stops[1:], strict=False):
+            leg = waters.route(a, b)
+            pts += leg if not pts else leg[1:]
+            marks.append(LineString(pts).length)
+        total = LineString(pts).length
+        add(LineString(pts), "ferry", n=ferry["name"], st=[round(m / total, 4) for m in marks])
+    for lane in src.get("shipping", []):
+        add(LineString(waters.route(lane["from"], lane["to"])), "lane", n=lane["name"])
+    if air:
+        # The airport: runways with their markings and lights, the taxiways,
+        # aprons, the terminal and its gates, the car parks and the cargo side.
+        for a, b in src["airport"]["runways"]:
             strip = LineString([a, b])
             add(strip.buffer(0.42, cap_style="flat"), "runway")
             add(strip, "runway_line")
-        building(Polygon(airport["terminal"]), 18, "~landmark")
-        building(disc(-12.8, 121.4, 0.14), 48, "~landmark")
-        building(disc(-12.8, 121.4, 0.22), 54, "~landmark", base=48)
+        for g, layer in air["ground"]:
+            add(g, layer)
+        for g, top, kind, base in air["buildings"]:
+            building(g, top, kind, base=base)
+        for lot, angle in air["lots"]:
+            add(lot, "lot")
+            for row in bays(lot, angle):
+                add(row, "bay")
+        for gx, gy, heading in air["gates"]:
+            add(Point(gx, gy), "gate", r=heading)
 
     # Piers along the docks, pointing out to the water.
     for zone in src["piers"]:
@@ -779,8 +1738,12 @@ def build():
 
     # Container yards at the docks: their own ground, boxes stacked in rows.
     yards = []
+    roadbed = unary_union([s_.buffer(0.12 if c == "avenue" else 0.09) for s_, c in streets]
+                          + [s_.buffer(0.15) for s_ in secondary]
+                          + [ln.buffer(0.24 if c == "highway" else 0.2 if c == "primary" else 0.15) for ln, c, _ in named])
     for i, yard in enumerate(src.get("yards", [])):
-        ground = blob(yard["at"][0], yard["at"][1], yard["r"], 1100 + i).intersection(land).difference(water_cut)
+        ground = (blob(yard["at"][0], yard["at"][1], yard["r"], 1100 + i).intersection(land)
+                  .difference(water_cut).difference(roadbed))
         if ground.is_empty:
             continue
         yards.append(ground)
@@ -802,11 +1765,29 @@ def build():
     reserved = []
     for name in places_by:
         p = places_by[name]
-        tiers = landmark_shapes(name, p["x"], p["y"])
-        for shape, base, top in tiers:
-            building(shape, top, "~landmark", base=base)
+        tiers = landmark_shapes(name, *footprint_at(p))
+        kinds = landmark_kinds(name, *footprint_at(p)) or ["~landmark"] * len(tiers)
+        for (shape, base, top), kind in zip(tiers, kinds, strict=True):
+            building(shape, top, kind, base=base)
         if tiers:
-            reserved.append(unary_union([t[0] for t in tiers]).buffer(0.4))
+            reserved.append(unary_union([t[0] for t in tiers]).buffer(0.4 if name not in COMPLEXES else 0.18))
+    reserved.append(ground_block.buffer(0.05))
+    for g, layer in grounds:
+        if layer in ("plaza", "works", "grounds", "marsh"):
+            add(g, {"plaza": "plaza", "works": "works", "grounds": "plaza", "marsh": "marsh"}[layer])
+        elif layer == "pool":
+            add(g, "water", n="")
+        elif layer == "pier":
+            add(g, "pier")
+        elif layer == "lot":
+            add(g, "lot")
+            for row in bays(g, 0):
+                add(row, "bay")
+        elif layer == "path":
+            add(g, "path")
+        elif layer.startswith("pitch:"):
+            part = layer.split(":", 1)[1]
+            add(g, "pitch_line" if part == "line" else "pitch", k=part)
     # Amusement Mile: Gotham's one beach along the open shore, the boardwalk
     # behind it, and on the Mile the big wheel and the old wooden coaster —
     # built in the air, so in 3D the wheel stands up and the coaster climbs.
@@ -863,6 +1844,8 @@ def build():
     cores = src.get("cores", []) + [[d["at"][0], d["at"][1], 0.55, 2.6] for d in ds]
     count = 0
     lots = []           # (district, centroid, height, area) — for venues and rooftops
+    roofs = {}          # centroid -> the footprint itself, so what sits on a roof stays on it
+    yard_trees = []     # suburban yards, planted with the parks below
     for i, (name, area) in enumerate(areas.items()):
         g = grid_of[name]
         r = random.Random(500 + i)
@@ -870,12 +1853,15 @@ def build():
             continue
         ground = area.difference(park_union).difference(water_cut).difference(cuts)
         ground = ground.difference(land.boundary.buffer(0.3))
+        suburb = name in SUBURBS
         for blk in polys_of(ground):
             if blk.area < 0.08:
                 continue
-            most = 1.6 if g.get("industrial") else 0.6 if g["tall"] >= 30 else 0.45
+            most = 1.6 if g.get("industrial") else 0.6 if g["tall"] >= 30 else 0.26 if suburb else 0.45
             for lot in subdivide(blk, most, r):
-                foot = lot.buffer(-0.06, join_style="mitre")
+                # A house sits back on its lot, with a yard round it; in town a
+                # building fills its lot to the pavement.
+                foot = lot.buffer(-0.1 if suburb else -0.06, join_style="mitre")
                 for piece in polys_of(foot):
                     if piece.area < 0.05:
                         continue
@@ -887,11 +1873,24 @@ def build():
                         h *= r.uniform(2.0, 3.6)            # the odd tower, anywhere
                     if g.get("industrial"):
                         h = r.choice((7, 9, 11, 14))        # sheds and works, not towers
-                    # Some windows lit, some dark: the city at night.
+                    if suburb:
+                        h = r.choice((5, 6, 6, 7, 8, 9))    # two storeys, three at most
+                    # Some windows lit, some dark: the city at night — and each
+                    # quarter's own stuff: stone, glass, steel.
                     h = round(max(4, min(260, h)))
-                    building(piece.simplify(0.04), h, "~lit" if r.random() < 0.14 else "")
+                    style = ("~lit" if r.random() < 0.14 else "~works" if g.get("industrial")
+                             else "~glass" if name in GLASS and h >= 40 else "~old" if name in OLD_QUARTERS
+                             else "~house" if suburb else "")
+                    building(piece.simplify(0.04), h, style)
                     lots.append((name, piece.centroid, h, piece.area))
+                    roofs[id(lots[-1][1])] = piece
                     count += 1
+                    if suburb and r.random() < 0.7:
+                        # A tree in the yard, behind the house.
+                        yard = lot.difference(piece.buffer(0.05))
+                        if not yard.is_empty and yard.area > 0.02:
+                            spot = yard.representative_point()
+                            yard_trees.append((spot.x, spot.y))
 
     # Houses along the lanes out in the sprawl: low, scattered, fewer the further out.
     hr = random.Random(1700)
@@ -920,10 +1919,13 @@ def build():
     rr = random.Random(1300)
     for _d, c, h, area in lots:
         if 14 <= h <= 70 and area > 0.08 and rr.random() < 0.07:
-            building(disc(c.x + rr.uniform(-0.05, 0.05), c.y + rr.uniform(-0.05, 0.05), 0.055), h + 7, "~tank", base=h)
+            tank = disc(c.x + rr.uniform(-0.05, 0.05), c.y + rr.uniform(-0.05, 0.05), 0.055)
+            if roofs[id(c)].buffer(-0.01).contains(tank):         # on the roof, not over its edge
+                building(tank, h + 7, "~tank", base=h)
     for _d, c, h, area in sorted(lots, key=lambda lot: -lot[2])[:36]:
-        if area > 0.12:
-            building(disc(c.x, c.y, 0.17), h + 0.8, "~pad", base=h)
+        pad = disc(c.x, c.y, 0.17)
+        if area > 0.12 and roofs[id(c)].buffer(-0.01).contains(pad):
+            building(pad, h + 0.8, "~pad", base=h)
     # Building sites with their cranes, where the city is still growing.
     growing = {"New Town", "Otisburg", "Burnside", "Central Business District", "Upper East Side", "Fashion District"}
     sites = [lot for lot in lots if lot[0] in growing and lot[3] > 0.2]
@@ -957,8 +1959,28 @@ def build():
                     "Grace Chapel"], {"Old Gotham": 2, "Tricorner": 1, "Coventry": 1, "Burnley": 1, "Bristol": 1}),
         "fire": (["Engine 9", "Engine 23", "Ladder 4", "Engine 41", "Ladder 17"],
                  {"Old Gotham": 1, "New Town": 1, "Upper West Side": 1, "Robinsville": 1, "Burnside": 1}),
-        "school": (["Gotham Heights High", "Robinson Academy", "PS 117", "St. Mary's School", "Brentwood Prep"],
+        "school": (["Gotham Heights High", "Robinson High", "PS 117", "St. Mary's School", "Cherry Hills Prep"],
                    {"Upper West Side": 1, "Coventry": 1, "Cherry Hills": 1, "Kane Heights": 1, "Bristol": 1}),
+        # And how people live between the work and the night: coffee, the gym,
+        # a film, a room for the night, something to buy.
+        "cafe": (["Common Grounds", "The Daily Grind", "Kettle & Crow", "Grindhouse Coffee", "Perk", "The Roastery",
+                  "Black Cat Café", "Steam", "Cup of Joe's", "Moka", "Third Wave", "Café Lune", "Drip", "Pour House"],
+                 {"Burnside": 3, "University District": 2, "Old Gotham": 1, "Upper West Side": 1, "Fashion District": 1,
+                  "Diamond District": 1, "Coventry": 1, "Cherry Hills": 1, "Avalon Heights": 1, "Halyard Square": 1}),
+        "gym": (["Iron Works Gym", "Knuckle House", "Peak Fitness", "Southpaw Boxing", "Wildcat Gym", "The Body Shop",
+                 "Crossfire"], {"Burnside": 1, "New Town": 1, "Upper East Side": 1, "Tricorner": 1, "Fashion District": 1,
+                               "Central Business District": 1}),
+        "cinema": (["The Paramount", "Odeon Gotham", "Starlite Drive-In", "The Bijou", "Cineplex 12", "The Rex", "Majestic"],
+                   {"Diamond District": 1, "New Town": 1, "Burnside": 1, "Fashion District": 1, "Old Gotham": 1,
+                    "Kane Heights": 1, "Halyard Square": 1}),
+        "hotel": (["The Regency", "Hotel Ventura", "The Excelsior", "Harbor Inn", "Hotel Noir", "The Belvedere",
+                   "The Ashcroft", "Night & Day Motel"], {"Diamond District": 2, "Fashion District": 1, "Upper East Side": 1,
+                                                          "City Hall District": 1, "Old Gotham": 1,
+                                                          "Central Business District": 1, "New Town": 1}),
+        "shop": (["Vintage Vault", "Gotham Books", "The Record Room", "Ellison's Jewelers", "Rook & Pawn",
+                  "Bluebird Boutique", "Madame Lacroix", "Second Story Books", "Hart & Sons Tailors"],
+                 {"Fashion District": 3, "Burnside": 2, "Diamond District": 1, "Upper East Side": 1, "Old Gotham": 1,
+                  "Chinatown": 1}),
     }
     by_district = {}
     for lot in lots:
@@ -974,25 +1996,130 @@ def build():
                 name, c, h, area = vr.choice(by_district[district])
                 add(Point(round(c.x, 2), round(c.y, 2)), "venue", n=pool.pop(), k=kind, a=district)
 
-    # Trees, through the parks.
+    # Where the city plays: ball fields and pitches in the parks, courts in the
+    # small ones — none on a pond, a landmark, a path or another field.
+    fields = [g for g, layer in grounds if layer.startswith("pitch:") and layer != "pitch:line"]
+    fr = random.Random(2100)
+    keep_off = unary_union([water_cut, footprints.buffer(0.35), ground_block, unary_union(ponds or [Point(0, 0).buffer(0)]),
+                            unary_union([ln.buffer(0.3) for ln, c, _ in named if c != "rail"]),
+                            unary_union([Point(pl["x"], pl["y"]).buffer(0.7) for pl in src["places"]])])
+
+    def place_fields(area, kinds):
+        minx, miny, maxx, maxy = area.bounds
+        inner = area.buffer(-0.25)
+        for kind in kinds:
+            for _ in range(160):
+                cx, cy = fr.uniform(minx, maxx), fr.uniform(miny, maxy)
+                if not inner.contains(Point(cx, cy)):
+                    continue
+                parts = pitch(kind, cx, cy, fr.uniform(0, 180))
+                turf = unary_union([g for g, k in parts if k != "line"])
+                if (inner.contains(turf) and not turf.buffer(0.1).intersects(keep_off)
+                        and not any(turf.buffer(0.12).intersects(f) for f in fields)):
+                    for g, k in parts:
+                        add(g, "pitch_line" if k == "line" else "pitch", k=k)
+                    fields.append(turf)
+                    break
+    plan = {"Robinson Park": ["baseball", "baseball", "soccer", "soccer", "tennis", "basketball"],
+            "Burnside Park": ["soccer", "baseball", "basketball"], "Old Gotham Common": ["basketball", "tennis"]}
+    for park, name in zip(parks, park_names, strict=True):
+        if name in plan:
+            place_fields(park, plan[name])
+        elif not name and park.area > 1.2:
+            place_fields(park, [fr.choice(["soccer", "basketball", "baseball", "tennis", "basketball"])])
+    # The country club: nine fairways back and forth across it, greens, bunkers,
+    # tees and the clubhouse — the woods left standing between the holes.
+    if golf is not None:
+        gr = random.Random(2200)
+        minx, miny, maxx, maxy = golf.bounds
+        inner = golf.buffer(-0.3)
+        x, row = minx + 0.9, 0
+        while x < maxx - 0.7 and row < 9:
+            top, bottom = miny + 0.7, maxy - 0.7
+            tee = (x, (top if row % 2 == 0 else bottom) + gr.uniform(-0.15, 0.15))
+            green = (x + gr.uniform(0.35, 0.8), (bottom if row % 2 == 0 else top) + gr.uniform(-0.25, 0.25))
+            fairway = LineString([tee, green]).buffer(0.17).intersection(inner)
+            if not fairway.is_empty and fairway.area > 0.3:
+                add(fairway, "golf", k="fairway")
+                add(disc(green[0], green[1], 0.11), "golf", k="green")
+                add(square(tee[0], tee[1], 0.08), "golf", k="tee")
+                for _ in range(2):
+                    b = blob(green[0] + gr.uniform(-0.28, 0.28), green[1] + gr.uniform(-0.22, 0.22), 0.07, 2300 + row)
+                    if not b.intersects(disc(green[0], green[1], 0.12)):
+                        add(b, "golf", k="bunker")
+                fields.append(fairway.union(disc(green[0], green[1], 0.2)))
+            x += 1.08
+            row += 1
+        club = golf.representative_point()
+        ex = golf.bounds[2] - 0.6
+        building(rect(ex, club.y, 0.5, 0.26), 11, "~old")
+        fields.append(rect(ex, club.y, 0.9, 0.6))
+
+    # Trees, through the parks — wholly inside them, crown and all, so none
+    # leans out over a pavement or a roof at the park's edge.
     trees = []
     tr = random.Random(77)
-    paths = unary_union([ln.buffer(0.22) for ln, c, _ in named] + [s_.buffer(0.18) for s_ in secondary]
-                        + [s_.buffer(0.14) for s_, _ in streets] + [ln.buffer(0.25) for ln, _ in bridges]
-                        + reserved)
+    fields_union = shapely.prepared.prep(unary_union(fields).buffer(0.08)) if fields else None
+    # Clear of every road by its width and a whole crown — a tree placed by its
+    # trunk alone still spread over the kerb — and of every lane and the boardwalk.
+    crown = 0.14
+    paths = unary_union([ln.buffer(0.22 + crown) for ln, c, _ in named]
+                        + [s_.buffer(0.18 + crown) for s_ in secondary]
+                        + [s_.buffer(0.14 + crown) for s_, _ in streets] + [ln.buffer(0.25 + crown) for ln, _ in bridges]
+                        + [s_.buffer(0.1 + crown) for s_ in lanes] + reserved)
+    paths = shapely.prepared.prep(paths)
     for park in polys_of(park_union):
         minx, miny, maxx, maxy = park.bounds
+        inside = shapely.prepared.prep(park.buffer(-0.13))
         step = 0.34
         y = miny
         while y < maxy:
             x = minx
             while x < maxx:
                 px, py = x + tr.uniform(-0.12, 0.12), y + tr.uniform(-0.12, 0.12)
-                if tr.random() < 0.72 and park.contains(Point(px, py)) and not water_cut.contains(Point(px, py)) \
-                        and not paths.contains(Point(px, py)):
+                pt = Point(px, py)
+                if tr.random() < 0.72 and inside.contains(pt) and not water_cut.contains(pt) \
+                        and not paths.contains(pt) and not (fields_union and fields_union.contains(pt)):
                     trees.append([round(px * 100), round(py * 100), tr.randint(7, 19), tr.randint(6, 13)])
                 x += step
             y += step
+    # Tree-lined streets where the city is leafy: the suburbs, the brownstone
+    # quarters, the boulevards — every tree on the pavement, clear of the road,
+    # the houses and each other.
+    leafy = SUBURBS
+    footprint_tree = shapely.STRtree(built)
+    road_room = shapely.prepared.prep(cuts.buffer(0.02))
+    sr_ = random.Random(91)
+    planted = 0
+    for name, area in areas.items():
+        if name not in leafy:
+            continue
+        here = shapely.prepared.prep(area.buffer(-0.1))
+        for line, cls in streets:
+            if not here.contains(line.interpolate(0.5, normalized=True)):
+                continue
+            off = 0.2 if cls == "avenue" else 0.16
+            for side in (off, -off):
+                edge = line.offset_curve(side)
+                if edge.is_empty:
+                    continue
+                d_ = sr_.uniform(0.04, 0.1)
+                while d_ < edge.length:
+                    q = edge.interpolate(d_)
+                    r = sr_.randint(4, 6)
+                    crown = q.buffer(r / 100)
+                    if (here.contains(q) and not road_room.intersects(crown) and not water_cut.contains(q)
+                            and not footprint_tree.query(crown, predicate="intersects").size):
+                        trees.append([round(q.x * 100), round(q.y * 100), sr_.randint(6, 10), r])
+                        planted += 1
+                    d_ += sr_.uniform(0.24, 0.34)
+    print(f"{planted} street trees")
+    for x, y in yard_trees:
+        h, r = tr.randint(6, 12), tr.randint(5, 9)
+        crown = Point(x, y).buffer(r / 100)
+        if (not paths.contains(Point(x, y)) and not road_room.intersects(crown)
+                and not footprint_tree.query(crown, predicate="intersects").size):
+            trees.append([round(x * 100), round(y * 100), h, r])
 
     # Water that catches the light.
     import numpy as np
@@ -1011,6 +2138,14 @@ def build():
                      ("Justice Island", (57.6, 132.8))):
         add(Point(at), "area_label", n=name)
 
+    # The network for getting about: every road but the railways, the bridges, the ferries.
+    graph = road_graph([(ln, c) for ln, c, _ in named if c != "rail"] + [(s_, "secondary") for s_ in secondary]
+                       + [(s_, c) for s_, c in streets] + [(s_, "lane") for s_ in lanes]
+                       + [(ln, "bridge") for ln, _ in bridges] + [(ln, "street") for ln in unseen_joins],
+                       [(f["name"], f.get("stops") or [f["line"][0], f["line"][-1]]) for f in src.get("ferries", [])],
+                       src["places"], land)
+    ROADS.write_text(json.dumps(graph, ensure_ascii=False, separators=(",", ":")))
+    print(f"road network: {len(graph['nodes'])} junctions, {len(graph['edges'])} roads ({ROADS.stat().st_size / 1e6:.2f} MB)")
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps({"type": "FeatureCollection", "features": features},
                               ensure_ascii=False, separators=(",", ":")))

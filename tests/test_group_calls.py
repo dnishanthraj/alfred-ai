@@ -24,6 +24,9 @@ class Member:
     def mark_call_start(self):
         pass
 
+    def call_messages(self):
+        return list(self.history.messages)
+
     def keep_heard(self):
         pass
 
@@ -206,6 +209,8 @@ def test_someone_chases_a_question_she_hasnt_read(private_data, monkeypatch):
             return iter(book.values())
 
     console = web.Console.__new__(web.Console)
+
+    console._adding, console._dropped_adds, console._closing = set(), set(), set()
     console.directory, console.clients, console._tasks = Directory(), {object()}, set()
     console._init_groups()
     chased = []
@@ -265,7 +270,8 @@ def test_where_they_are_comes_from_their_plan_or_home(private_data, monkeypatch)
     dick = SimpleNamespace(id="nightwing", name="Dick", full_name="Dick Grayson")
     reply = ('{"plan": [{"from": "00:00", "to": "23:59", "doing": "patrol", "status": "online", '
              '"where": "Crime Alley rooftops", "with": ["Dick"]}]}')
-    monkeypatch.setattr(initiative.ollama, "chat", lambda **kw: {"message": {"content": reply}})
+    from wayne.engine import model as llm
+    monkeypatch.setattr(llm.ollama, "chat", lambda **kw: {"message": {"content": reply}})
     plan = initiative.day_plan(tim, people=[tim, dick])
     assert plan[0]["where"] == "Crime Alley rooftops" and plan[0]["with"] == ["nightwing"]
     whereabouts = presence.of(tim)
@@ -362,7 +368,8 @@ def test_what_they_follow_reaches_a_conversation_about_it(private_data, monkeypa
                            options={})
     monkeypatch.setattr(culture, "google_search",
                         lambda q, n: [{"title": "Box office", "snippet": "Verity opened at number one."}])
-    monkeypatch.setattr(culture.ollama, "chat", lambda **kw: {
+    from wayne.engine import model as llm
+    monkeypatch.setattr(llm.ollama, "chat", lambda **kw: {
         "message": {"content": '{"items": ["Verity opened at number one this weekend"]}'}})
     assert culture.stale(dick)
     assert culture.refresh(dick) == ["Verity opened at number one this weekend"]
@@ -575,3 +582,30 @@ def test_company_never_gives_away_someone_who_keeps_their_whereabouts_private(pr
     jason.set_activity("grabbing food in Crime Alley", "busy", 60, where="Crime Alley", company=["nightwing"])
     assert dick.whereabouts()[1] == ["redhood"]         # they know who they're with
     assert dick.public()["with"] == []                  # but Bruce's console doesn't say
+
+
+def test_assigning_a_case_sends_them_on_their_way_by_road(private_data, monkeypatch):
+    import wayne.frontends.web as web
+    from wayne.engine import cases, incidents
+    tim = SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake", initiative={"takes_orders": 1.0}, texting_pace={},
+                          routine=(), shares_status=True, home="Houseboat, Gotham Marina", beat=())
+    jason = SimpleNamespace(id="redhood", name="Jason", full_name="Jason Todd", initiative={"takes_orders": 1.0},
+                            texting_pace={}, routine=(), shares_status=False, home="Jason's safehouse", beat=())
+    console = web.Console.__new__(web.Console)
+    console._adding, console._dropped_adds, console._closing, console._tasks = set(), set(), set(), set()
+    console.directory = SimpleNamespace(get={"robin": tim, "redhood": jason}.get)
+    events = []
+
+    async def broadcast(e):
+        events.append(e)
+    console.broadcast = broadcast
+    console._presence_changed = lambda c: asyncio.sleep(0)
+    monkeypatch.setattr(incidents, "get", lambda rid: dict(REPORT, id=rid))
+    monkeypatch.setattr(cases, "FIELD", ("robin", "redhood"))
+    case = asyncio.run(console.assign_case("r1", "robin", tell=False))
+    assert case and case["status"] == "assigned"
+    doing = presence.of(tim).now()
+    assert "on the way to the armed robbery at GCPD Central" in doing["doing"]
+    assert presence.of(tim).whereabouts()[0] == "GCPD Central"           # heading there, so the map shows the trip
+    asyncio.run(console.assign_case("r2", "redhood", tell=False))
+    assert presence.of(jason).get("seen")["how"] == "on a case"           # he can't see Jason — but he knows this

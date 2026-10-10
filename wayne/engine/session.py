@@ -31,9 +31,10 @@ from collections import deque
 
 import ollama
 
-from .. import config, delivery, events
+from .. import config, delivery, events, operator
 from ..memory import History, Story, Vault
-from . import culture, grapevine, groupchat, guards, initiative, presence, prompting, world
+from ..memory.texts import TextLog
+from . import culture, grapevine, groupchat, guards, initiative, places, presence, prompting, world
 from .search import format_search_results, google_search, is_factual_lookup
 
 # Searches run on a worker so the holding line can be written meanwhile.
@@ -48,6 +49,63 @@ _PRE_SEARCH_PHRASES = [
     "Give me a moment.",
 ]
 
+
+# Asking for a reaction: "at least thumbs up my message", "heart it", "react so I know".
+ASKS_REACTION = re.compile(r"(?i)\b(thumbs?[ -]?up|give (it|me) a (like|heart)|(like|heart|react to) (my|this|that|the) "
+                            r"(message|text)|heart (it|this|that)|react (so|if|to)|tap ?back)\b")
+
+
+def _tapback_note(contact, group=False, asked=False):
+    """The offer of a reaction, in their own habit — and what each one says."""
+    faves = " ".join((contact.texting_style or {}).get("tapbacks") or ["❤️", "👍", "😂"])
+    where = "the latest message" if group else "his text"
+    meaning = ("Pick the one that says what you mean: 👍 got it / fine, ❤️ warmth, 😂 that's funny, "
+               "‼️ big news or emphasis, ❓ only when you genuinely don't follow.")
+    if asked:
+        return (f"He's asked you to react to his message. If you'd do it, include [react: emoji] — {meaning} "
+                f"(yours are usually {faves}). A text as well, or instead, if you'd rather.")
+    return (f"You could react to {where} instead ({faves} are yours) — when there's nothing to add, a "
+            f"reaction can be the whole answer, and often where it ends: reply with only [react: emoji]. {meaning} "
+            "Or put [react: emoji] with a text. Or neither, if you'd just write.")
+
+
+_GOTHAM = None
+
+
+def _gotham_words():
+    """Gotham's own names — its places, its rogues, its trouble — as one pattern, built once."""
+    global _GOTHAM
+    if _GOTHAM is None:
+        from . import places
+        words = {n.lower() for n in places.names() if len(n) > 3}
+        words |= {"gotham", "blüdhaven", "bludhaven", "gcpd", "bpd", "the scanner", "iceberg lounge", "joker",
+                  "riddler", "penguin", "two-face", "scarecrow", "bane", "poison ivy", "mr. freeze", "harley",
+                  "killer croc", "hush", "black mask", "ra's al ghul", "zsasz", "falcone", "maroni", "court of owls"}
+        _GOTHAM = re.compile(r"\b(" + "|".join(re.escape(w) for w in sorted(words, key=len, reverse=True)) + r")\b")
+    return _GOTHAM
+
+
+# Titles and shortenings whose full stop doesn't end a sentence.
+_ABBREVIATION = re.compile(r"(?i)(?<![\w.])(mr|mrs|ms|mx|dr|prof|rev|st|jr|sr|det|insp|lt|sgt|capt|cmdr|col|gen|"
+                           r"commr|gov|sen|rep|hon|vs|mt|no|e\.g|i\.e|a\.m|p\.m)\.$")
+
+
+def capped(heard, keep=10):
+    """
+    What's been said on a call since they last spoke, kept to the last few lines
+    — twenty turns of listening came to forty lines in the prompt, and a turn
+    bigger than the whole history budget saved into history.
+    """
+    heard = list(heard)
+    if len(heard) <= keep:
+        return heard
+    return [f"(earlier on the call: {len(heard) - keep} more lines)"] + heard[-keep:]
+
+
+def operator_name():
+    return operator.name()
+
+
 # Stored in place of the operator's turn when a call connects, so history stays
 # a well-formed alternation. Never shown, and superseded on the next call.
 #
@@ -56,11 +114,6 @@ _PRE_SEARCH_PHRASES = [
 # conversation, and it duly emitted [SEARCH: link established] — then reported
 # back on an IT company of that name. Placeholders should look like something
 # a person would say.
-def operator_name():
-    from .. import operator
-    return operator.name()
-
-
 def _link_marker(contact):
     return f"{contact.name}?"
 
@@ -210,15 +263,38 @@ _SEARCH_MARKER_COMPLETE = re.compile(r"\[\s*SEARCH\s*:\s*([^\]\n]+?)\s*(?:\]|\n)
 # was read as a marker and spoken as "Re".
 _SEARCH_MARKER = re.compile(r"(?:\[\s*|^\s*)SEARCH\s*:\s*([^\]\n]+?)\s*\]?\s*$", re.M)
 
-# Something he asked them, privately, to go and say or do in a group chat.
-_GROUP_TASK = re.compile(r"\[\s*group\s*:\s*([^|\]]+)\|([^\]]+)\]", re.I)
+# Something he asked them, privately, to go and say or do in a group chat —
+# "[group: Family | ...]", or with a dash or colon where the bar should be.
+_GROUP_TASK = re.compile(r"\[\s*group\s*:\s*([^|\]—–]+?)\s*(?:\||—|–|\s-\s|:)\s*([^\]]+)\]", re.I)
 
 # A text they've chosen not to answer yet, or at all.
 _REPLY_CHOICE = re.compile(r"\[\s*(later|no reply)\s*\]", re.I)
 # Taking a report off the scanner: "[take: Diamond District]".
 _TAKE = re.compile(r"\[\s*take\s*:\s*([^\]]+)\]", re.I)
-# A tapback on his text, with or instead of a reply.
-_TEXT_REACT = re.compile(r"\[\s*react\s*:\s*([^\]]{1,8})\]", re.I)
+# The message a reply quotes, as a phone does: "[reply: Tim]" in a group,
+# "[reply: the car thing]" for one of his texts.
+_QUOTE = re.compile(r"\[\s*(?:reply|re|replying)(?:\s+to)?\s*:\s*([^\]]{1,80})\]", re.I)
+# A tapback on his text, with or instead of a reply — an emoji, or its name.
+_TEXT_REACT = re.compile(r"\[\s*react\s*:\s*([^\]]{1,24})\]", re.I)
+_EMOJI_NAMES = {"heart": "❤️", "love": "❤️", "thumbs up": "👍", "thumbsup": "👍", "like": "👍",
+                "thumbs down": "👎", "dislike": "👎", "laugh": "😂", "haha": "😂", "lol": "😂",
+                "exclamation": "‼️", "emphasis": "‼️", "question": "❓", "question mark": "❓"}
+# The transcript's own notes about a message — "(by text)" on what he texted — copied
+# into a reply: Barbara texted "(by text) I'm working.", and the note hid that it
+# repeated her last text word for word.
+_TRANSCRIPT_NOTE = re.compile(r"\(\s*(?:by|via)\s+(?:text|call|phone)\s*\)\s*|\(\s*texted\s*\)\s*", re.I)
+# Any marker of the console's still in the text once the known ones are read — never shown.
+_LEFTOVER_MARKER = re.compile(r"\[\s*(react|reply|group|take|add|dm|leave|remove|later|no reply|hang ?up)\b[^\]]*\]",
+                              re.I)
+_HALF_MARKER = re.compile(r"\[\s*(react|repl|group|take|add|dm|leave|remove|later|no|hang)\b[^\]]*$", re.I)
+
+
+def _tapback_emoji(said):
+    """'❤️' as it is; 'thumbs up' as 👍; anything else that isn't an emoji, nothing."""
+    said = said.strip()
+    if said.lower() in _EMOJI_NAMES:
+        return _EMOJI_NAMES[said.lower()]
+    return said[:8] if said and not re.search(r"[A-Za-z]", said) else ""
 
 # Someone on a call ringing someone else in: [add: Jason].
 _CALL_ADD = re.compile(r"\[\s*add\s*:\s*([^\]]+)\]", re.I)
@@ -439,16 +515,27 @@ class ContactSession:
                 continue        # half a marker so far
             tapback = _TEXT_REACT.search(buffer)
             if tapback:
-                self._text_react = tapback.group(1).strip()
+                self._text_react = _tapback_emoji(tapback.group(1)) or None
                 buffer = _TEXT_REACT.sub("", buffer)
             elif "[react" in buffer.lower() and "]" not in buffer[buffer.lower().rfind("[react"):]:
                 continue        # half a tapback so far
+            quoting = _QUOTE.search(buffer)
+            if quoting:
+                self._text_quote = self._text_quote or quoting.group(1).strip()
+                buffer = _QUOTE.sub("", buffer)
+            elif "[repl" in buffer.lower() and "]" not in buffer[buffer.lower().rfind("[repl"):]:
+                continue        # half a quote so far
             if re.fullmatch(r"\W*no reply\W*", buffer.strip(), re.I) and len(buffer) < 16:
                 buffer = "[no reply]"           # said in words rather than as the marker
             choice = _REPLY_CHOICE.search(buffer)
             if choice:
                 self._reply_choice = "none" if "no" in choice.group(1).lower() else "later"
                 buffer = _REPLY_CHOICE.sub("", buffer)
+            # Whatever marker is left (one meant for elsewhere, or half-made) is
+            # never spoken or sent: a whole one goes, half of one waits.
+            buffer = _TRANSCRIPT_NOTE.sub("", _LEFTOVER_MARKER.sub("", buffer))
+            if _HALF_MARKER.search(buffer):
+                continue
 
             # Watched for the whole reply, not just its opening. He may write
             # the marker straight away, or say "I'll see what I can find" and
@@ -575,6 +662,10 @@ class ContactSession:
         """
         for i, char in enumerate(text):
             if char in _BOUNDARY and i + 1 < len(text) and text[i + 1].isspace():
+                if char == "." and _ABBREVIATION.search(text[:i + 1]):
+                    # "Mr." isn't the end of anything: cut there, "Mr." and "Wayne"
+                    # went to the voice as two clips, with a pause between.
+                    continue
                 if char == "…" or text[max(0, i - 2):i + 1] == "...":
                     # An ellipsis is a pause, not an ending, when the thought
                     # carries on in lowercase — "You sound... tired." Cut there,
@@ -674,7 +765,7 @@ class ContactSession:
         self._last_call = None
         payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
 
-        greeting = "Online. I'm here when you're ready."
+        greeting = "Hello?"      # only if both tries came back empty: a person picking up, not a system
         try:
             # Two attempts. The opening line is generated with no conversation
             # behind it, which is exactly when the model furnishes some — "pull
@@ -833,7 +924,14 @@ class ContactSession:
                     "and without pretending you hadn't noticed the earlier ones."
                 )
 
-        if _SHARED_PAST.search(prompt) and self._in_the_game(prompt):
+        if _SHARED_PAST.search(prompt) and operator.roleplay():
+            # He plays Bruce: a past they share is the world's — Alfred taught
+            # him to ride a bike — not something to deny for want of a stored fact.
+            notes.append(
+                "He's reaching for something from your past together. If it fits who you both are "
+                "and what you'd know, go with it and build on it lightly; if it doesn't, say it "
+                "doesn't ring a bell — don't ask whether it happened.")
+        elif _SHARED_PAST.search(prompt) and self._in_the_game(prompt):
             # "You don't remember our son, Randy?" — said as Bruce — got "I
             # don't have a son", because the rule against inventing his real
             # past fired inside the game too. In the game his lead is the truth.
@@ -979,7 +1077,7 @@ class ContactSession:
 
     def _plain(self, text):
         """Markers that only mean something to the engine, never said or sent."""
-        text = _SEARCH_MARKER_COMPLETE.sub("", text or "")
+        text = _TRANSCRIPT_NOTE.sub("", _SEARCH_MARKER_COMPLETE.sub("", text or ""))
         text = _SEARCH_MARKER.sub("", text)
         return _HANG_UP.sub("", text).strip()
 
@@ -1115,7 +1213,7 @@ class ContactSession:
             context.append(lately)
         style = f" ({self.contact.texting})" if self.contact.texting else ""
         if task:
-            ask = (f"Bruce asked you privately to do this in the group: {task}. Do it now, in your own "
+            ask = (f"{operator_name()} asked you privately to do this in the group: {task}. Do it now, in your own "
                    "words, as you would — don't mention that he asked unless you'd naturally say so.")
         elif chase:
             ask = (f"{operator_name()} asked {chase['name']} something in here {chase['ago']} and they "
@@ -1133,12 +1231,15 @@ class ContactSession:
             ask = (("Nobody's said anything for a while. " if quiet else "")
                    + f"Start something in the group — {opening}. One or two short texts.")
         else:
-            ask = ("Read what's actually going on — what Bruce means, and what you know of everyone "
+            ask = (f"Read what's actually going on — what {operator_name()} means, and what you know of everyone "
                    "here — then write your next message to the group, the way you text in a group: "
                    "reply to whoever you're answering, react, or keep it to a word. You don't have "
-                   "to address Bruce.")
+                   f"to address {operator_name()}.")
             ask += (" You were asked directly: answer." if must else
                     " If you wouldn't actually say anything here, reply with exactly SKIP.")
+            ask += (" If you're answering one message in particular that's been talked over since — "
+                    "his or anyone's — start with [reply: their first name] (or [reply: name: a few of "
+                    "its words]) and your phone quotes it.")
             others = [c for c in book if c.id not in group.members and c.id != self.contact.id]
             ask += (" If you'd genuinely walk out of this chat now — you've had enough, it isn't your "
                     "place, it's over for you — end with [leave]. If he asks you to remove someone, end with [remove: their first name]. If he "
@@ -1151,10 +1252,10 @@ class ContactSession:
                 "here.")
         ask += (" Most messages tag nobody; tag someone only to pull in someone who isn't already "
                 f"talking — never the person you're replying to — and only as {tags}, exactly; "
-                "@everyone pings the whole chat, for the rare thing all of them need. If you'd just react to "
-                "the latest message instead of writing anything — the way you actually do, if you "
-                "do — reply with only [react: emoji], usually one of ❤️ 👍 👎 😂 ‼️ ❓; you can also put "
-                "[react: emoji] with a text.")
+                "@everyone pings the whole chat, for the rare thing all of them need.")
+        lately = sum(1 for m in group.messages()[-6:] if (m.get("reactions") or {}).get(self.contact.id))
+        if not chase and not opening and initiative.tapback_offer(self.contact, group=True, lately=lately):
+            ask += " " + _tapback_note(self.contact, group=True)
         instruction = ("[REFERENCE — context only]\n" + "\n".join(context) + "\n[END REFERENCE]\n\n"
                        + ask + f" As texts{style}; never write a line for anyone else, no stage cues.")
         payload = prompting.build_payload(self.contact, self.history.for_model(), instruction,
@@ -1163,18 +1264,22 @@ class ContactSession:
             text = self._chat_once(payload, temperature=0.9, num_predict=110)
         except Exception:
             return ""
+        quoting = _QUOTE.search(text)
+        text = _QUOTE.sub("", text)
         # What they do to the group, not what they say in it.
         self._group_actions = {
+            "reply": quoting.group(1).strip() if quoting else None,
             "leave": bool(re.search(r"\[\s*leave\s*\]", text, re.I)),
             "add": [m.strip() for m in re.findall(r"\[\s*add\s*:\s*([^\]]+)\]", text, re.I)],
             "remove": [m.strip() for m in re.findall(r"\[\s*remove\s*:\s*([^\]]+)\]", text, re.I)],
-            "react": next(iter(re.findall(r"\[\s*react\s*:\s*([^\]]{1,8})\]", text, re.I)), "").strip(),
+            "react": _tapback_emoji(next(iter(re.findall(r"\[\s*react\s*:\s*([^\]]{1,24})\]", text, re.I)), "")),
             "dm": next(iter(re.findall(r"\[\s*dm\s*:\s*([^\]]+)\]", text, re.I)), "").strip()}
         text = re.sub(r"\[\s*(leave|(add|remove|react|dm)\s*:[^\]]*)\]", "", text, flags=re.I)
+        text = _LEFTOVER_MARKER.sub("", text)
         text = re.sub(r"\s*\[[^\]]{0,14}\]", "", text)     # a marker half-written: "[]", "[react]"
         text = self._plain(text)
-        if re.match(r"\W*skip\b", text, re.I) and not must:
-            return ""
+        if re.match(r"\W*skip\b", text, re.I):
+            return ""           # owed an answer or not, the word itself is never posted
         if not text.strip(" .") and (self._group_actions["react"] or self._group_actions["dm"]):
             return ""           # a tapback, or a word to him privately, and nothing to say here
         # A line written for someone else ("Tim: lol") is theirs to write, not this one's.
@@ -1188,8 +1293,8 @@ class ContactSession:
                 speaker = label.group(1).strip().lower()
                 if speaker in {self.contact.name.lower(), self.contact.full_name.lower()}:
                     line = label.group(2)
-                elif any(speaker == book.get(m).name.lower() for m in group.members
-                         if book.get(m)) or speaker == operator_name().lower():
+                elif any(speaker in (book.get(m).name.lower(), book.get(m).full_name.lower())
+                         for m in group.members if book.get(m)) or speaker == operator_name().lower():
                     continue
             lines.append(line)
         text = "\n".join(guards.cap_length(line, 3) for line in lines[:4])
@@ -1214,9 +1319,13 @@ class ContactSession:
             context.append(background)
         style = f" ({self.contact.texting})" if self.contact.texting else ""
         if why == "chase":
-            ask = ("He's left your last text on read. What you do about it is yours: chase it the way "
-                   "you would, come at it from a new angle, or let it go and text him about something "
-                   "else entirely. If you'd honestly just leave it, reply with exactly SKIP.")
+            # Whether he's seen it shows on their phone, as it would: read and
+            # ignored is one thing, not even opened is another.
+            state = (f"He read your last text {about[5:]} and hasn't answered."
+                     if about.startswith("read ") else "He hasn't even opened your last text.")
+            ask = (f"{state} What you do about it is yours: chase it the way you would, come at it from "
+                   "a new angle, or let it go and text him about something else entirely. If you'd "
+                   "honestly just leave it, reply with exactly SKIP.")
         elif why in ("declined", "missed"):
             ask = (f"You just rang him and he {'declined the call' if why == 'declined' else 'did not pick up'}. "
                    f"You were calling about: {about}. Text him instead, the way you would.")
@@ -1341,6 +1450,12 @@ class ContactSession:
         if not prompt:
             return
 
+        # Answering one of the others on a call (see Call.answered): their line
+        # is heard like any other, but it isn't his — no reading his distress,
+        # his goodbye or his repetition into it, and nothing looked up for it.
+        from_contact = via == "from_contact"
+        if from_contact:
+            via = None
         # On a call with others the model reads the conversation as it was
         # heard — who said what since this contact last spoke — and the
         # operator's line is announced once by the call, not by each contact.
@@ -1360,11 +1475,11 @@ class ContactSession:
             if handled:
                 return
 
-        awareness = self._awareness(prompt, interrupted, confidence)
+        awareness = [] if from_contact else self._awareness(prompt, interrupted, confidence)
         texting = via == "text"
         self._reply_choice, self._deferred, self._group_task = None, None, None
         self._meant_group = None
-        self._text_react = None
+        self._text_react = self._text_quote = None
         self._take_case = None
         length, self._turn_cap = None, None
         if via is None:
@@ -1378,15 +1493,19 @@ class ContactSession:
             awareness.append(f"He's sent you {self.pestered} texts in a row in the last few minutes. "
                              "React to that the way you would.")
             self.pestered = 0
+        # Where they are and who with, every turn — not only in the greeting, or
+        # "where are you?" two turns in was made up on the spot.
+        here = presence.of(self.contact).note()
+        if here and via != "text_on_call":
+            awareness.append(here)
         if texting:
             state = presence.of(self.contact).now()
             if state["status"] == presence.BUSY and state["doing"]:
-                awareness.append(
-                    f"You're {state['doing']} — reading this between things. Reply briefly, "
-                    "or tell him you'll get back to him.")
+                awareness.append("You're reading this between things. Reply briefly, or tell him "
+                                 "you'll get back to him.")
             elif state["doing"] and state["source"] in ("routine", "conversation"):
                 # Patrol is when they're most reachable — and least chatty.
-                awareness.append(f"You're {state['doing']}; texting between things, so keep it short.")
+                awareness.append("You're texting between things, so keep it short.")
             # Theirs to decide, whatever their status: answer now, sit on it, or not at all.
             pace = self.contact.texting_pace or {}
             habit = ("You do this a lot." if pace.get("on_read", 0) + pace.get("ghost", 0) >= 0.4 else
@@ -1416,17 +1535,36 @@ class ContactSession:
             if tapped:
                 awareness.append("Since you last texted: " + "; ".join(tapped) + ".")
                 self.tapbacks_seen = []
-            awareness.append(
-                "If you'd react to his text instead of writing back, or as well — the way you do, "
-                "if you do — include [react: emoji], usually one of ❤️ 👍 👎 😂 ‼️ ❓.")
-            awareness.append(
-                "You've read it. If you'd genuinely leave him on read for a while right now — mood, "
-                "pride, busy, making a point — begin with [later] and write what you'd eventually send; "
-                "if you wouldn't answer at all, reply exactly [no reply]. " + habit)
+            # A reaction is a habit, not a reflex: on the table for some texts,
+            # as often as they're the type — and an answer in itself, often
+            # where an exchange ends.
+            lately = sum(1 for m in TextLog(self.contact.id).page(limit=6)
+                         if m["from"] == "me" and (m.get("reactions") or {}).get("them"))
+            asked = bool(ASKS_REACTION.search(prompt))
+            if asked or initiative.tapback_offer(self.contact, lately=lately):
+                awareness.append(_tapback_note(self.contact, asked=asked))
+            if "\n" in prompt.strip():
+                awareness.append("He sent several texts. If you're answering one of them in particular — "
+                                 "not his last — you can start with [reply: a few of its words] and your "
+                                 "phone quotes it above your answer.")
+            if getattr(self, "left_on_read", False):
+                # It already sat unanswered a good while (see Console._answer_texts):
+                # that was the leaving-on-read. Now they answer — or don't at all.
+                self.left_on_read = False
+                awareness.append("You've had this a while and left it. Answer it now the way you would — "
+                                 "or if you still wouldn't, reply exactly [no reply].")
+            else:
+                awareness.append(
+                    "You've read it. If you'd genuinely leave him on read for a while right now — mood, "
+                    "pride, busy, making a point — begin with [later] and write what you'd eventually send; "
+                    "if you wouldn't answer at all, reply exactly [no reply]. " + habit)
         if via == "text_on_call":
+            outsider = self.call and any(groupchat.outside(m.contact.id) for m in self.call.members if m is not self)
             awareness.append(
                 "He's just texted you this while you're on the call together — it's on "
-                "your phone. Acknowledge it on the call, briefly, and use it.")
+                "your phone. Acknowledge it on the call, briefly, and use it"
+                + (" — but someone on the line doesn't know about the masks: if it's about any of "
+                   "that, keep it vague out loud." if outsider and not groupchat.outside(self.contact.id) else "."))
         elif via == "text":
             # A text is answered as a text: short, written, in their own style.
             awareness.append(
@@ -1435,6 +1573,8 @@ class ContactSession:
                                               else "") + ", no stage cues. "
                 "Several short texts go on separate lines.")
             length = initiative.length_hint(self.contact, prompt) or None
+            if length and "a word or two" in length:
+                awareness = [n for n in awareness if not n.startswith("Your last few replies have been a word")]
         if self.call:
             awareness.append(self.call.note_for(self, follow_up))
         elif via is None and self._said_this_call() >= 2:
@@ -1451,31 +1591,40 @@ class ContactSession:
         # Weather with nowhere attached and nowhere known: ask, don't search.
         placeless = (_WEATHERISH.search(prompt) and not config.LOCATION
                      and not re.search(r"\b(in|at|for) [A-Z]", prompt))
-        if self.contact.can_search and not self._can_look() and is_factual_lookup(prompt):
+        if self.contact.can_search and not self._can_look():
             state = presence.of(self.contact).now()
             awareness.append(
                 f"You're away from any screen right now ({state['doing'] or 'out'}) — you can't "
                 "look anything up. Answer from what you know, or say you'll check when you can.")
-        lately = culture.note(self.contact, prompt)
+        lately = "" if from_contact else culture.note(self.contact, prompt)
         if lately:
             awareness.append(lately)
-        tracker = self._tracker(prompt)
+        # The places he names, as the city knows them.
+        city = "" if from_contact else places.note(prompt)
+        if city:
+            awareness.append(city)
+        # With someone on the line who doesn't know about the masks, nothing of
+        # the cases, the tracker or the scanner is put in their mouths — the
+        # "don't mention patrols" warning sat beside "your case is yours to talk about".
+        guarded = bool(self.call and not groupchat.outside(self.contact.id)
+                       and any(groupchat.outside(m.contact.id) for m in self.call.members if m is not self))
+        tracker = "" if guarded or from_contact else self._tracker(prompt)
         if tracker:
             awareness.append(tracker)
-        work = self._casework(prompt)
+        work = "" if guarded or from_contact else self._casework(prompt)
         if work:
             awareness.append(work)
         leaning = self._leaning_on()
         if leaning:
             awareness.append(leaning)
         known = ""
-        if (self._can_look() and is_factual_lookup(prompt) and not covered
+        if (self._can_look() and is_factual_lookup(prompt) and not covered and not from_contact
                 and not placeless and not follow_up and not self._about_people(prompt)):
             yield events.state(events.SEARCHING)
             search_context = yield from self._run_search(
                 prompt, hold_for=None if via == "text" or not self.contact.search_aloud else prompt)
         elif (is_factual_lookup(prompt) and not covered and not placeless and not follow_up
-              and not self._about_people(prompt)):
+              and not from_contact and not self._about_people(prompt)):
             # Nobody at a screen still knows things. The answer is found quietly
             # and handed over as what they might know — theirs to use if someone
             # like them would, never as a lookup: Dick knows the score, Jason
@@ -1581,6 +1730,12 @@ class ContactSession:
             return ""
         from ..contacts import directory
         book = directory()
+        others = [c.name for c in book if c.id != self.contact.id]
+        asking_after = (re.search(r"(?i)\b(everyone|everybody|the family|the others|anyone|the kids|the team|"
+                                  r"scanner|police|reports?|crime|trouble|quiet tonight)\b", prompt)
+                        or any(re.search(rf"(?i)\b{re.escape(n)}\b", prompt) for n in others))
+        if not asking_after:
+            return ""
         lines, dark = [], []
         for other in book:
             if other.id == self.contact.id:
@@ -1604,13 +1759,20 @@ class ContactSession:
                            r"should (i|we)|would you|are you|you think|remember when)\b")
 
     def _about_people(self, prompt):
-        """A question about someone in his life, or about how things will go — not the web's."""
+        """
+        A question about someone in his life, about how things will go, or about
+        Gotham itself — not the web's. Asked what happened in Crime Alley
+        tonight, a search brought back a wiki's plot summary, handed over as
+        live intel; what's true in Gotham is the scanner, the case board and
+        what they've seen.
+        """
         from ..contacts import directory
         names = {operator_name().lower(), "bruce", "batman", "alfred", "family"}
         for c in directory():
             names.update({c.name.lower(), c.full_name.lower(), c.id})
         low = (prompt or "").lower()
-        return bool(self._PEOPLE_Q.search(low)) or any(re.search(rf"\b{re.escape(n)}\b", low) for n in names)
+        return (bool(self._PEOPLE_Q.search(low)) or bool(_gotham_words().search(low))
+                or any(re.search(rf"\b{re.escape(n)}\b", low) for n in names))
 
     def _leaning_on(self):
         """
@@ -1639,9 +1801,10 @@ class ContactSession:
         return ("You've leaned on these lately — reach for something else this time: "
                 + "; ".join(f"\"{w}\"" for w in worn[:4]) + ".")
 
-    _CRIMEY = re.compile(r"(?i)\b(case|scanner|report|robbery|shooting|shots|body|kidnap|gang|riot|"
-                         r"hostage|take (it|that|this|one)|handle|deal with|check (it|that) out|go to|"
-                         r"head (to|over)|on it|working|crime|call(ed)? in|dispatch)\b")
+    # Talk of trouble on the scanner — not "go to bed", "working late" or "on it".
+    _CRIMEY = re.compile(r"(?i)\b(cases?|scanner|reports?|robbery|robberies|shooting|shots|body|bodies|"
+                         r"kidnap\w*|gang|riot|hostage|crime|dispatch|called in|take (that|this) one|"
+                         r"check (it|that) out|on the scanner)\b")
 
     def _casework(self, prompt):
         """
@@ -1706,7 +1869,7 @@ class ContactSession:
         heard, or "what did you make of what Lucius said?" draws a blank.
         """
         if self.heard:
-            self.history.record_exchange("\n".join(self.heard), "Mm.")
+            self.history.record_exchange("\n".join(capped(self.heard)), "Mm.")
             self.heard = []
 
     def _said_this_call(self):
@@ -1719,49 +1882,12 @@ class ContactSession:
         they last spoke, each line labelled with who said it, then — unless
         they are answering someone else — the operator's own line.
         """
-        lines = list(self.heard)
+        lines = capped(self.heard)
         if not follow_up:
             label = " (texted you, privately)" if via == "text_on_call" else ""
             lines.append(f"{self.call.operator}{label}: {prompt}")
         self.heard = []
         return "\n".join(lines)
-
-    def _consider_search(self, prompt):
-        """
-        One short pass in which the contact decides what to do with a request
-        that looks like a lookup. Returns a query if he chose to go and look,
-        or None if he has already said his piece — in which case that reply is
-        emitted here and the turn is over.
-        """
-        vault_block = self.vault.as_block(prompt)
-        user_turn = prompting.compose_user_turn(prompt, vault_block, contact=self.contact)
-        payload = prompting.build_payload(self.contact, self.history.for_model(), user_turn)
-
-        yield events.state(events.THINKING)
-        try:
-            text = self._chat_once(payload)
-        except Exception as exc:
-            yield events.notice(f"Connection severed: {exc}", "error")
-            yield events.state(events.IDLE)
-            return None
-
-        match = _SEARCH_MARKER.search(text)
-        if match:
-            query = match.group(1).strip()
-            # A marker plus commentary means the commentary was never meant to
-            # be heard; the lookup is the whole of the intent.
-            return query or prompt
-
-        reply = guards.apply(text, prompt, self.contact.max_reply_sentences,
-                             self.already_greeted, self.contact.forbidden_address)
-        yield events.reply_start()
-        for i, sentence in enumerate(guards.split_sentences(reply)):
-            if sentence.strip():
-                yield events.sentence(i, sentence.strip())
-        self.history.record_exchange(prompt, reply)
-        yield events.reply_end(reply)
-        yield events.state(events.IDLE)
-        return None
 
     def _deflection(self):
         """
@@ -1865,8 +1991,10 @@ class ContactSession:
         if story:
             fact = self.story.memorize(story.group(1))
             yield from self._acknowledge(
-                prompt, f"In the game you play with him, this is now part of your story: "
-                        f"\"{fact}\". It's true in the game from here on.")
+                prompt, (f"This is now part of your story with him: \"{fact}\". It's true from here on."
+                         if operator.roleplay() else
+                         f"In the game you play with him, this is now part of your story: "
+                         f"\"{fact}\". It's true in the game from here on."))
             return True
         story = _STORY_FORGET.match(prompt)
         if story:

@@ -25,10 +25,8 @@ import random
 import re
 import time
 
-import ollama
-
 from .. import operator
-from . import culture, grapevine, places, presence, world
+from . import culture, grapevine, model, places, presence, world
 
 
 def afterthought(session, exchanges, by="text"):
@@ -42,6 +40,8 @@ def afterthought(session, exchanges, by="text"):
     def line(m):
         if m["role"] == "user" and m["content"].startswith("(Nothing from him"):
             return f"({contact.name} texted first)"
+        if m["role"] == "user" and re.match(r"^\(?[A-Z][\w .'’-]{1,30}\)?[:)]", m["content"]):
+            return m["content"]         # heard on a group call: already says who said each line
         return f"{operator.name() if m['role'] == 'user' else contact.name}: {m['content']}"
     # Context, then the exchange that's new. Asked about all of it, the pass
     # re-found a promise already kept and scheduled it again.
@@ -57,7 +57,7 @@ def afterthought(session, exchanges, by="text"):
     instruction = (
         f"It's {now}. Here is the latest of a conversation {'by text' if by == 'text' else 'on a call'} "
         f"between {operator.full_name()} and {contact.full_name}:\n\n" + "\n".join(lines) + "\n\n"
-        f"Answer two questions about {contact.name}, from the newest exchange only — never guess, "
+        f"Answer these questions about {contact.name}, from the newest exchange only — never guess, "
         f"and never report something from the earlier lines that has already happened.\n"
         f"1. Is {contact.name} now going off to do something, or in the middle of something, that "
         f"keeps them away from their phone — an errand {operator.name()} gave them, a meeting, "
@@ -83,9 +83,9 @@ def afterthought(session, exchanges, by="text"):
         'or null, "worried": "what about him worries them, in a few words" or null'
         + (', "case_closed": "how it ended, in a few words" or null' if case else '') + '}')
     try:
-        reply = ollama.chat(model=contact.model, think=False, format="json",
-                            options={**contact.options, "temperature": 0, "num_predict": 160},
-                            messages=[{"role": "user", "content": instruction}])["message"]["content"]
+        reply = model.ask(contact.model, [{"role": "user", "content": instruction}],
+                          {**contact.options, "temperature": 0, "num_predict": 160},
+                          think=model.thinking(contact), fmt="json", purpose=f"{contact.id}'s afterthought")
         found = json.loads(reply)
     except Exception:
         return None
@@ -155,12 +155,24 @@ def tapback_odds(contact, emoji):
     return max(0.0, min(0.7, odds))
 
 
+def tapback_offer(contact, group=False, lately=0):
+    """
+    Whether a reaction is on the table for this message at all — their habit,
+    not every message: Alfred writes it out, Cass would rather send a face.
+    More in a group, where a reply buzzes everyone; less again straight after
+    they've just reacted (`lately`: how many of his last few they already did).
+    """
+    odds = float((contact.texting_style or {}).get("tapback", 0.15))
+    if group:
+        odds = min(0.8, odds * 1.6)
+    return random.random() < odds * 0.35 ** lately
+
+
 def _people(names, contact):
     """["Cass", "barbara"] → their ids: whoever of his circle that names."""
     from ..contacts import directory
-    names = {str(n).strip().lower() for n in names} if isinstance(names, list) else set()
-    return [p.id for p in directory() if p.id != contact.id
-            and (p.name.lower() in names or p.id in names or p.full_name.lower() in names)]
+    found = [directory().find(str(n)) for n in names] if isinstance(names, list) else []
+    return list(dict.fromkeys(p.id for p in found if p is not None and p.id != contact.id))
 
 
 def _until_morning(now=None):
@@ -221,10 +233,10 @@ def status_line(contact, state):
         f"under your name. {situation} The way you text ({contact.texting}). A few words at most, "
         "or a single emoji — whatever you'd actually put. Reply with only the line itself.")
     try:
-        reply = ollama.chat(model=contact.model, think=False,
-                            options={**contact.options, "temperature": 0.9, "num_predict": 24},
-                            messages=[{"role": "system", "content": contact.system},
-                                      {"role": "user", "content": instruction}])["message"]["content"]
+        reply = model.ask(contact.model, [{"role": "system", "content": contact.system},
+                                          {"role": "user", "content": instruction}],
+                          {**contact.options, "temperature": 0.9, "num_predict": 24},
+                          think=model.thinking(contact), purpose=f"{contact.id}'s status line")
     except Exception:
         return ""
     line = reply.strip().splitlines()[0].strip().strip('"').strip() if reply.strip() else ""
@@ -249,7 +261,8 @@ def day_plan(contact, when=None, others="", people=()):
     instruction = (
         f"It's {day}. Sketch your day today and tonight as loose blocks of time, the way your "
         "life actually runs — sleep, work, patrol if you'd go out tonight, and two or three "
-        "things that are yours today: errands, people, plans, a whim. Times are approximate and "
+        "things that are yours today: errands, people, plans, a whim. The masks come out after "
+        "dark: by day you live your own life, not the work. Times are approximate and "
         "needn't fill the day. Each block's status: online (phone in hand, on comms), idle "
         "(around, phone down), busy (occupied — a glance at most), offline (asleep or "
         "unreachable). Where: the actual place, as it would show on a map to someone else "
@@ -266,10 +279,10 @@ def day_plan(contact, when=None, others="", people=()):
         '{"plan": [{"from": "HH:MM", "to": "HH:MM", "doing": "under eight words, as you\'d say it", '
         '"status": "online|idle|busy|offline", "where": "place", "with": []}]}')
     try:
-        reply = ollama.chat(model=contact.model, think=False, format="json",
-                            options={**contact.options, "temperature": 0.9, "num_predict": 700},
-                            messages=[{"role": "system", "content": contact.system},
-                                      {"role": "user", "content": instruction}])["message"]["content"]
+        reply = model.ask(contact.model, [{"role": "system", "content": contact.system},
+                                          {"role": "user", "content": instruction}],
+                          {**contact.options, "temperature": 0.9, "num_predict": 700},
+                          think=model.thinking(contact), fmt="json", purpose=f"{contact.id}'s day plan")
     except Exception:
         return []
     try:
@@ -287,10 +300,14 @@ def day_plan(contact, when=None, others="", people=()):
         try:
             start = _hours(b["from"])
             end = _hours(b["to"])
+            if end >= 23.98:
+                end = 24.0      # "23:59" means the end of the day, not a minute short of it
         except (KeyError, ValueError, TypeError):
             continue
         status = b.get("status") if b.get("status") in _STATUSES else "busy"
         doing = str(b.get("doing") or "").strip()[:70]
+        if places.is_patrol(doing) and 7 <= start < 18:
+            continue        # nobody patrols at noon: daylight is their own life, unless a case calls
         where = _on_the_map(str(b.get("where") or ""))
         names = b.get("with") if isinstance(b.get("with"), list) else []
         company = [p.id for p in people if p.id != contact.id
@@ -403,7 +420,9 @@ def length_hint(contact, prompt="", rng=random):
     if not weights:
         return ""
     kinds = [k for k in _LENGTHS if weights.get(k)]
-    pick = rng.choices(kinds, weights=[weights[k] for k in kinds])[0]
+    # In a dry spell the short end of their own spread; in a flowing hour, the long.
+    lean = presence.engagement(contact)
+    pick = rng.choices(kinds, weights=[weights[k] * lean ** (i - 1.5) for i, k in enumerate(kinds)])[0]
     order = list(_LENGTHS)
     if _SERIOUS.search(prompt or "") and order.index(pick) < order.index("few"):
         pick = "few" if "few" in weights else pick

@@ -59,12 +59,16 @@
     police: '#9fd8ff', hospital: '#9fd8ff', civic: '#9fd8ff',
     garden: C.good, water: C.edge, beach: '#e0c48a', cemetery: C.faint, statue: C.lit, lighthouse: C.lit, airport: '#9fd8ff',
     // The night's own colours: neon for the clubs, amber for the bars.
-    club: '#c77dff', bar: '#e0a43a', diner: '#5fd0c4', fire: C.alert, school: '#9fd8ff'
+    club: '#c77dff', bar: '#e0a43a', diner: '#5fd0c4', fire: C.alert, school: '#9fd8ff',
+    // The day's own colours: coffee, the gym, the pictures, shopping, home.
+    cafe: '#d9a06b', gym: '#7fd1a8', cinema: '#e07fb0', shop: '#e8c86a', market: '#e0a43a', library: '#9fd8ff',
+    heliport: '#9fd8ff', home: C.lit
   };
   var ICON_KINDS = ['tower', 'manor', 'police', 'hospital', 'asylum', 'prison', 'church', 'theatre', 'university',
                     'museum', 'industry', 'station', 'stadium', 'lab', 'nightlife', 'civic', 'news', 'zoo', 'marina',
                     'naval', 'dock', 'clock', 'garden', 'water', 'cemetery', 'circus', 'statue', 'lighthouse',
-                    'airport', 'observatory', 'hotel', 'club', 'bar', 'diner', 'fire', 'school', 'beach'];
+                    'airport', 'observatory', 'hotel', 'club', 'bar', 'diner', 'fire', 'school', 'beach',
+                    'market', 'library', 'heliport', 'gym', 'home', 'cafe', 'cinema', 'shop'];
 
   function glyph(kind) {
     var p = new Path2D();
@@ -105,6 +109,22 @@
       case 'diner': p.moveTo(-7, -2); p.lineTo(5, -2); p.lineTo(4, 6); p.lineTo(-6, 6); p.closePath(); p.moveTo(5, 0); p.quadraticCurveTo(9, 0, 8, 3); p.lineTo(4.6, 3.4); p.moveTo(-3, -5); p.quadraticCurveTo(-1, -8, -3, -10); p.moveTo(1, -5); p.quadraticCurveTo(3, -8, 1, -10); break;
       case 'fire': p.moveTo(0, -10); p.bezierCurveTo(6, -4, 8, 2, 4, 8); p.quadraticCurveTo(0, 11, -4, 8); p.bezierCurveTo(-8, 2, -4, -2, -2, -5); p.quadraticCurveTo(-1, 0, 1, 1); p.quadraticCurveTo(2, -4, 0, -10); break;
       case 'school': p.moveTo(-9, -3); p.lineTo(0, -8); p.lineTo(9, -3); p.lineTo(0, 2); p.closePath(); p.rect(-6, 0, 12, 8); break;
+      case 'market': p.moveTo(-10, -2); p.lineTo(-8, -8); p.lineTo(8, -8); p.lineTo(10, -2); p.closePath();
+        [-5, 0, 5].forEach(function (x) { p.moveTo(x, -8); p.lineTo(x * 1.25, -2); }); p.rect(-8, -2, 16, 10); p.rect(-3, 3, 6, 5); break;
+      case 'library': p.moveTo(0, -5); p.quadraticCurveTo(-5, -8, -10, -6); p.lineTo(-10, 7); p.quadraticCurveTo(-5, 5, 0, 8);
+        p.quadraticCurveTo(5, 5, 10, 7); p.lineTo(10, -6); p.quadraticCurveTo(5, -8, 0, -5); p.lineTo(0, 8); break;
+      case 'heliport': p.arc(0, 0, 9.5, 0, Math.PI * 2); p.moveTo(-4, -5); p.lineTo(-4, 5); p.moveTo(4, -5); p.lineTo(4, 5);
+        p.moveTo(-4, 0); p.lineTo(4, 0); break;
+      case 'gym': p.rect(-10, -4, 3, 8); p.rect(-7, -6, 3, 12); p.rect(4, -6, 3, 12); p.rect(7, -4, 3, 8); p.moveTo(-4, 0); p.lineTo(4, 0); break;
+      case 'home': p.moveTo(-8, 8); p.lineTo(-8, -1); p.lineTo(0, -8); p.lineTo(8, -1); p.lineTo(8, 8); p.closePath();
+        p.rect(-2.5, 2, 5, 6); p.moveTo(4, -4.5); p.lineTo(4, -9); p.lineTo(6.5, -9); p.lineTo(6.5, -2.3); break;
+      case 'cafe': p.moveTo(-7, -2); p.lineTo(5, -2); p.lineTo(4, 7); p.lineTo(-6, 7); p.closePath(); p.moveTo(5, 0);
+        p.quadraticCurveTo(9.5, 0, 8.5, 3.5); p.lineTo(4.4, 4); p.moveTo(-9, 9); p.lineTo(7, 9);
+        p.moveTo(-3, -5); p.quadraticCurveTo(-1, -8, -3, -11); p.moveTo(1, -5); p.quadraticCurveTo(3, -8, 1, -11); break;
+      case 'cinema': p.rect(-9, -3, 18, 11); p.moveTo(-9, -3); p.lineTo(-7, -9); p.lineTo(9, -6.5); p.lineTo(9, -3);
+        [-4, 1, 6].forEach(function (x) { p.moveTo(x, -3); p.lineTo(x + 1.6, -7.6); }); break;
+      case 'shop': p.moveTo(-8, -3); p.lineTo(8, -3); p.lineTo(9, 9); p.lineTo(-9, 9); p.closePath(); p.moveTo(-4, -3);
+        p.lineTo(-4, -5); p.quadraticCurveTo(0, -11, 4, -5); p.lineTo(4, -3); break;
       default: p.arc(0, 0, 4, 0, Math.PI * 2);
     }
     return p;
@@ -170,6 +190,74 @@
     ctx.beginPath(); ctx.ellipse(0, -2, 3.4, 5.6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, 3.5); ctx.lineTo(0, 11); ctx.moveTo(-2.6, 11); ctx.lineTo(2.6, 11); ctx.stroke();
     ctx.fillStyle = '#ff3b3b'; ctx.beginPath(); ctx.arc(0, 0.5, 1.2, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // A train of three cars, its headlight on; a container ship, deck stacked;
+  // a tug; a sailboat; the harbour launch; an airliner; helicopters in their
+  // liveries — all drawn pointing north for the map to turn.
+  function train(ctx) {
+    ctx.fillStyle = 'rgba(255, 236, 170, 0.35)';
+    ctx.beginPath(); ctx.moveTo(-3, -16); ctx.lineTo(3, -16); ctx.lineTo(5, -22); ctx.lineTo(-5, -22); ctx.fill();
+    [-14, -4, 6].forEach(function (y, i) {
+      ctx.fillStyle = i ? '#cfe4f4' : '#e8f6ff'; ctx.strokeStyle = '#02050a'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-3.2, y, 6.4, 9, 1.6) : ctx.rect(-3.2, y, 6.4, 9); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#4fa8e0'; ctx.fillRect(-2.2, y + 2, 4.4, 1.2); ctx.fillRect(-2.2, y + 5, 4.4, 1.2);
+    });
+    ctx.fillStyle = '#fff3c4'; ctx.beginPath(); ctx.arc(0, -13.6, 1.1, 0, Math.PI * 2); ctx.fill();
+  }
+  function ship(ctx) {
+    ctx.fillStyle = 'rgba(143, 211, 255, 0.18)';
+    ctx.beginPath(); ctx.moveTo(-4, 16); ctx.lineTo(-9, 24); ctx.lineTo(9, 24); ctx.lineTo(4, 16); ctx.fill();
+    ctx.fillStyle = '#1c2c3c'; ctx.strokeStyle = '#8fb9d8'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, -22); ctx.quadraticCurveTo(5, -14, 5, -6); ctx.lineTo(5, 17); ctx.lineTo(-5, 17);
+    ctx.lineTo(-5, -6); ctx.quadraticCurveTo(-5, -14, 0, -22); ctx.closePath(); ctx.fill(); ctx.stroke();
+    var boxes = ['#c97a3a', '#3a7aa8', '#a83a3a', '#58c08a', '#c9a23a', '#7a5aa8'];
+    for (var r = 0; r < 6; r++) for (var c = 0; c < 2; c++) {
+      ctx.fillStyle = boxes[(r * 2 + c) % boxes.length]; ctx.fillRect(-4 + c * 4.1, -10 + r * 3.6, 3.7, 3.1);
+    }
+    ctx.fillStyle = '#e8f6ff'; ctx.fillRect(-4, 12, 8, 3.4);
+  }
+  function tug(ctx) {
+    ctx.fillStyle = '#26323f'; ctx.strokeStyle = '#bfe6ff'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, -8); ctx.quadraticCurveTo(4, -4, 4, 2); ctx.quadraticCurveTo(4, 7, 0, 7);
+    ctx.quadraticCurveTo(-4, 7, -4, 2); ctx.quadraticCurveTo(-4, -4, 0, -8); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e0574f'; ctx.fillRect(-2, -2, 4, 4);
+  }
+  function sail(ctx) {
+    ctx.fillStyle = '#d8ecfa'; ctx.strokeStyle = '#02050a'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(0, -6); ctx.quadraticCurveTo(2.4, 0, 1.8, 6); ctx.lineTo(-1.8, 6); ctx.quadraticCurveTo(-2.4, 0, 0, -6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)'; ctx.beginPath(); ctx.moveTo(0.3, -5); ctx.lineTo(6, 3); ctx.lineTo(0.3, 3.4); ctx.closePath(); ctx.fill();
+  }
+  function launch(ctx) {
+    ctx.fillStyle = '#e8f6ff'; ctx.strokeStyle = '#02050a'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, -9); ctx.quadraticCurveTo(4, -3, 3.4, 7); ctx.lineTo(-3.4, 7); ctx.quadraticCurveTo(-4, -3, 0, -9); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#3a6fd8'; ctx.fillRect(-2.2, -1, 4.4, 4);
+    ctx.fillStyle = '#5aa8ff'; ctx.beginPath(); ctx.arc(0, -1.5, 1.3, 0, Math.PI * 2); ctx.fill();
+  }
+  function airliner(ctx, shadow) {
+    ctx.beginPath();
+    ctx.moveTo(0, -14); ctx.quadraticCurveTo(1.8, -12, 1.8, -7); ctx.lineTo(1.8, -3); ctx.lineTo(13, 3); ctx.lineTo(13, 5);
+    ctx.lineTo(1.8, 2); ctx.lineTo(1.6, 8); ctx.lineTo(5, 11); ctx.lineTo(5, 12.6); ctx.lineTo(0, 11.4);
+    ctx.lineTo(-5, 12.6); ctx.lineTo(-5, 11); ctx.lineTo(-1.6, 8); ctx.lineTo(-1.8, 2); ctx.lineTo(-13, 5); ctx.lineTo(-13, 3);
+    ctx.lineTo(-1.8, -3); ctx.lineTo(-1.8, -7); ctx.quadraticCurveTo(-1.8, -12, 0, -14); ctx.closePath();
+    if (shadow) { ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'; ctx.fill(); return; }
+    ctx.fillStyle = '#e8f3fb'; ctx.strokeStyle = 'rgba(2, 5, 10, 0.9)'; ctx.lineWidth = 1;
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ff3b3b'; ctx.beginPath(); ctx.arc(-12.6, 4, 0.9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#58c08a'; ctx.beginPath(); ctx.arc(12.6, 4, 0.9, 0, Math.PI * 2); ctx.fill();
+  }
+  function livery(body, beacon) {
+    return function (ctx) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.beginPath(); ctx.ellipse(2.5, 1.5, 4, 6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(200, 230, 255, 0.12)'; ctx.strokeStyle = 'rgba(210, 236, 255, 0.7)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(0, -2, 10.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-10, -2); ctx.lineTo(10, -2); ctx.moveTo(0, -12.5); ctx.lineTo(0, 8.5); ctx.stroke();
+      ctx.fillStyle = body; ctx.strokeStyle = '#bfe6ff'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.ellipse(0, -2, 3.4, 5.6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, 3.5); ctx.lineTo(0, 11); ctx.moveTo(-2.6, 11); ctx.lineTo(2.6, 11); ctx.stroke();
+      ctx.fillStyle = beacon; ctx.beginPath(); ctx.arc(0, 0.5, 1.2, 0, Math.PI * 2); ctx.fill();
+    };
   }
 
   // A report on the scanner: a warning triangle, amber to red with how bad it is.
@@ -258,11 +346,47 @@
         { id: 'plaza-edge', type: 'line', source: 'city', filter: is('plaza'),
           paint: { 'line-color': '#2f6f9c', 'line-width': 0.6, 'line-opacity': 0.5 } },
         { id: 'apron', type: 'fill', source: 'city', filter: is('apron'), paint: { 'fill-color': '#0e1f2e' } },
+        { id: 'lot', type: 'fill', source: 'city', filter: is('lot'), paint: { 'fill-color': '#0f1c28', 'fill-opacity': 0.95 } },
+        { id: 'lot-edge', type: 'line', source: 'city', filter: is('lot'),
+          paint: { 'line-color': '#2f6f9c', 'line-width': 0.6, 'line-opacity': 0.45 } },
+        // A car park's stalls: rows drawn as ticks across each one.
+        { id: 'bay', type: 'line', source: 'city', filter: is('bay'), minzoom: 14.2,
+          paint: { 'line-color': '#3d6a8c', 'line-width': z([14.2, 1.2, 16, 4, 18, 14]), 'line-dasharray': [0.08, 0.55],
+                   'line-opacity': 0.75 } },
+        { id: 'works', type: 'fill', source: 'city', filter: is('works'), paint: { 'fill-color': '#12171c', 'fill-opacity': 0.95 } },
+        { id: 'works-edge', type: 'line', source: 'city', filter: is('works'),
+          paint: { 'line-color': '#6b5326', 'line-width': 0.8, 'line-dasharray': [3, 2], 'line-opacity': 0.55 } },
+        { id: 'taxiway', type: 'line', source: 'city', filter: is('taxiway'), layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': '#152a3b', 'line-width': z([11, 0.8, 14, 4.5, 16, 18, 18, 72]) } },
+        { id: 'taxiway-line', type: 'line', source: 'city', filter: is('taxiway'), minzoom: 13.4,
+          paint: { 'line-color': '#c9a23a', 'line-width': z([13.4, 0.4, 17, 1.4]), 'line-opacity': 0.75 } },
         { id: 'runway', type: 'fill', source: 'city', filter: is('runway'), paint: { 'fill-color': '#15293a' } },
         { id: 'runway-line', type: 'line', source: 'city', filter: is('runway_line'),
           paint: { 'line-color': '#8fb9d8', 'line-width': z([11, 0.4, 15, 1.6]), 'line-dasharray': [4, 4], 'line-opacity': 0.7 } },
+        // The lights: down both edges of each runway, and the approach lights out past its ends.
+        { id: 'edgelights', type: 'line', source: 'city', filter: is('edgelights'), minzoom: 12.4,
+          paint: { 'line-color': '#e8f6ff', 'line-width': z([12.4, 1, 16, 3]), 'line-dasharray': [0.2, 3.2], 'line-opacity': 0.8 } },
+        { id: 'approach', type: 'line', source: 'city', filter: is('approach'), minzoom: 11.6,
+          paint: { 'line-color': '#fff1c4', 'line-width': z([11.6, 1.2, 16, 4]), 'line-dasharray': [0.25, 1.6], 'line-opacity': 0.9,
+                   'line-blur': 0.6 } },
         { id: 'park-edge', type: 'line', source: 'city', filter: is('park'),
           paint: { 'line-color': C.parkEdge, 'line-width': 0.8, 'line-opacity': 0.4 } },
+        // Slaughter Swamp: black water and reeds.
+        { id: 'marsh', type: 'fill', source: 'city', filter: is('marsh'), paint: { 'fill-color': '#0a1f1b', 'fill-opacity': 0.92 } },
+        { id: 'marsh-edge', type: 'line', source: 'city', filter: is('marsh'),
+          paint: { 'line-color': '#2f6f5a', 'line-width': 0.8, 'line-dasharray': [1, 2], 'line-opacity': 0.5 } },
+        // The country club: fairways, greens, tees and bunkers.
+        { id: 'golf', type: 'fill', source: 'city', filter: is('golf'),
+          paint: { 'fill-color': ['match', ['get', 'k'], 'green', '#1f7a52', 'tee', '#1a6a48', 'bunker', '#4d4128', '#14523a'],
+                   'fill-opacity': 0.95 } },
+        // Where the city plays: the turf, the diamond's dirt, the courts and the track — and their lines.
+        { id: 'pitch', type: 'fill', source: 'city', filter: is('pitch'),
+          paint: { 'fill-color': ['match', ['get', 'k'], 'dirt', '#3a2a1a', 'court', '#123047', 'track', '#3a2420', '#0f3b2c'],
+                   'fill-opacity': 0.95 } },
+        { id: 'pitch-line', type: 'line', source: 'city', filter: is('pitch_line'), minzoom: 13.6,
+          paint: { 'line-color': '#d6ecf8', 'line-width': z([13.6, 0.4, 16, 1, 18, 2.4]), 'line-opacity': 0.6 } },
+        { id: 'path', type: 'line', source: 'city', filter: is('path'), minzoom: 13.8,
+          paint: { 'line-color': '#4e8f72', 'line-width': z([13.8, 0.5, 17, 2.6]), 'line-dasharray': [2, 1.2], 'line-opacity': 0.6 } },
         // Ponds in the parks (rivers and lakes are simply where the land isn't).
         { id: 'water', type: 'fill', source: 'city', filter: is('water'), paint: { 'fill-color': C.water } },
         { id: 'water-edge', type: 'line', source: 'city', filter: is('water'),
@@ -291,11 +415,38 @@
       })).concat([
         { id: 'ferry', type: 'line', source: 'city', filter: is('ferry'),
           paint: { 'line-color': '#3a7aa8', 'line-width': z([10, 0.6, 15, 1.4]), 'line-dasharray': [1, 3], 'line-opacity': 0.75 } },
+        // The shipping channels in from the sea: marked faintly, as on a chart.
+        { id: 'shipping', type: 'line', source: 'city', filter: is('lane'), minzoom: 10.5,
+          paint: { 'line-color': '#1d4766', 'line-width': z([10.5, 0.6, 15, 1.6]), 'line-dasharray': [6, 5], 'line-opacity': 0.45 } },
         { id: 'pier', type: 'fill', source: 'city', filter: is('pier'), paint: { 'fill-color': '#163650', 'fill-opacity': 0.95 } },
         // The ferries on their routes, a wake behind them.
         { id: 'boat', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'ferry'], minzoom: 11,
           layout: { 'icon-image': 'gm-boat', 'icon-size': z([11, 0.7, 15, 1.1, 18, 1.5]), 'icon-rotate': ['get', 'r'],
                     'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        { id: 'ship', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'ship'], minzoom: 10.5,
+          layout: { 'icon-image': 'gm-ship', 'icon-size': z([10.5, 0.55, 15, 1.2, 18, 2.4]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        { id: 'tug', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'tug'], minzoom: 12,
+          layout: { 'icon-image': 'gm-tug', 'icon-size': z([12, 0.6, 16, 1.2]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        { id: 'sail', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'sail'], minzoom: 12.4,
+          layout: { 'icon-image': 'gm-sail', 'icon-size': z([12.4, 0.6, 16, 1.3]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        { id: 'patrol', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'patrol'], minzoom: 11.6,
+          layout: { 'icon-image': 'gm-launch', 'icon-size': z([11.6, 0.6, 16, 1.2]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        // Underground: the subway's tunnels under the street grid, its trains as light
+        // passing beneath — seen between the roads, never riding over the roofs.
+        { id: 'subway', type: 'line', source: 'city', filter: is('subway'), minzoom: 11.9,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': ['get', 'col'], 'line-width': z([11.6, 1, 14, 2.4, 17, 5]), 'line-dasharray': [1.6, 1.2],
+                   'line-opacity': z([11.6, 0, 12.4, 0.42]) } },
+        { id: 'metro-glow', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'metro'], minzoom: 11.6,
+          paint: { 'circle-radius': z([11.6, 4, 15, 10, 18, 22]), 'circle-color': ['get', 'col'], 'circle-opacity': 0.4,
+                   'circle-blur': 1, 'circle-pitch-alignment': 'map' } },
+        { id: 'metro', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'metro'], minzoom: 11.6,
+          paint: { 'circle-radius': z([11.6, 1.6, 15, 3.4, 18, 7]), 'circle-color': '#e8f6ff', 'circle-opacity': 0.8,
+                   'circle-blur': 0.4, 'circle-pitch-alignment': 'map' } },
         { id: 'coast', type: 'line', source: 'city', filter: is('land'),
           paint: { 'line-color': C.edge, 'line-width': z([10, 0.8, 14, 1.6, 17, 3]), 'line-opacity': 0.75 } },
         // Roads, quietest first. Widths grow with the zoom, as on any good map.
@@ -326,20 +477,21 @@
         { id: 'primary', type: 'line', source: 'city', filter: road('primary'),
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: { 'line-color': C.primary, 'line-width': z([10, 0.7, 14, 2.4, 16, 6, 18, 18]) } },
+        // The railways, drawn as railways: a dark bed with the sleepers across it —
+        // nothing like a road, and nothing like the coloured lines underground.
+        { id: 'railbridge', type: 'line', source: 'city', filter: is('railbridge'), layout: { 'line-cap': 'butt' },
+          paint: { 'line-color': '#0d2133', 'line-width': z([10, 2.2, 14, 6, 17, 16]) } },
+        { id: 'railbridge-truss', type: 'line', source: 'city', filter: is('railbridge'), minzoom: 13,
+          paint: { 'line-color': '#4f7896', 'line-width': z([13, 2, 17, 12]), 'line-dasharray': [0.3, 0.6], 'line-opacity': 0.45 } },
+        { id: 'rail-bed', type: 'line', source: 'city', filter: road('rail'),
+          paint: { 'line-color': '#1d2c3a', 'line-width': z([10, 1, 14, 2.4, 17, 6]), 'line-opacity': 0.9 } },
         { id: 'rail', type: 'line', source: 'city', filter: road('rail'),
-          paint: { 'line-color': '#5f86a6', 'line-width': z([10, 0.6, 14, 1.4, 17, 3]), 'line-dasharray': [3, 2.2], 'line-opacity': 0.8 } },
-        // Underground, faintly: the subway, its lines in their own colours.
-        { id: 'subway', type: 'line', source: 'city', filter: is('subway'), minzoom: 11.9,
-          layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: { 'line-color': ['get', 'col'], 'line-width': z([11.6, 1, 14, 2.4, 17, 4]),
-                   'line-opacity': z([11.6, 0, 12.4, 0.55]) } },
-        // The trains on them, there and back (see movers()).
-        { id: 'train-glow', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'subway'], minzoom: 11.6,
-          paint: { 'circle-radius': z([11.6, 5, 15, 11, 18, 18]), 'circle-color': ['get', 'col'], 'circle-opacity': 0.45,
-                   'circle-blur': 1 } },
-        { id: 'train', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'subway'], minzoom: 11.6,
-          paint: { 'circle-radius': z([11.6, 2, 15, 3.8, 18, 6]), 'circle-color': '#f2f9ff',
-                   'circle-stroke-color': ['get', 'col'], 'circle-stroke-width': z([11.6, 1, 15, 1.8]) } },
+          paint: { 'line-color': '#7a9bb8', 'line-width': z([10, 0.6, 14, 1.6, 17, 4.5]), 'line-dasharray': [0.25, 0.9],
+                   'line-opacity': 0.85 } },
+        // A train on the surface: three cars, their headlight on (see gothamtraffic.js).
+        { id: 'train-car', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'train'], minzoom: 11.4,
+          layout: { 'icon-image': 'gm-train', 'icon-size': z([11.4, 0.4, 15, 0.9, 18, 2.4]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
         // The skyway stands above the street: its shadow falls beside it.
         { id: 'skyway-shadow', type: 'line', source: 'city', filter: ['all', road('highway'), ['has', 'e']],
           paint: { 'line-color': '#000', 'line-width': z([10, 2, 14, 5, 17, 14]), 'line-translate': [4, 5],
@@ -355,6 +507,9 @@
           paint: { 'line-color': C.highway, 'line-width': z([10, 1, 14, 2.6, 16, 6, 18, 18]) } },
         // The city in three dimensions: every block, its height from its district.
         // Footprints first, as lit outlines — the hologram's crisp edges at street level.
+        { id: 'parked', type: 'symbol', source: 'city', filter: ['all', is('gate'), ['!=', ['%', ['id'], 5], 0]], minzoom: 12.8,
+          layout: { 'icon-image': 'gm-plane', 'icon-size': z([12.8, 0.35, 15, 0.75, 18, 2.6]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
         { id: 'footprint', type: 'line', source: 'buildings', minzoom: 13.6,
           paint: { 'line-color': ['case', ['has', 'n'], C.lit, '#2f6f9c'], 'line-width': z([13.4, 0.3, 16, 1, 18, 1.6]),
                    'line-opacity': z([13.4, 0, 14.2, 0.55]) } },
@@ -365,6 +520,14 @@
             'fill-extrusion-color': ['match', ['get', 'k'], '~landmark', '#7ccaf5', '~deck', '#2a6a94',
               '~container', ['match', ['%', ['get', 'h'], 2], 0, '#6b5326', '#2f5068'], '~lit', '#3a86bd',
               '~tank', '#3d5568', '~pad', '#8fd3ff', '~crane', '#c9a23a', '~ride', '#ff5fa2', '~wheel', '#e8d7b0',
+              // Each quarter's own stuff: the old town's stone and brownstone, downtown's
+              // glass, the works' steel, the suburbs' painted houses.
+              '~old', ['interpolate', ['linear'], ['get', 'h'], 0, '#13171f', 30, '#1c2230', 70, '#283044'],
+              '~glass', ['interpolate', ['linear'], ['get', 'h'], 40, '#123a5c', 120, '#1f5f92', 260, '#3f9ee2'],
+              '~works', ['interpolate', ['linear'], ['get', 'h'], 0, '#181d21', 14, '#262c31'],
+              '~house', '#1b2733',
+              // The works' own: acid in the vats, a lit sign, brick stacks, garages, a copper roof gone green.
+              '~vat', '#5fd08a', '~sign', '#ffd27f', '~stack', '#4a3430', '~garage', '#22313d', '~copper', '#3f8f7a',
               ['interpolate', ['linear'], ['get', 'h'], 0, '#081521', 25, '#0b2133', 60, '#10334d', 120, '#184d73', 240, '#2f78ad']],
             'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 12.6, 0, 13.8, ['get', 'h']],
             'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 12.6, 0, 13.8, ['get', 'b']],
@@ -381,8 +544,20 @@
         // Their trunks, only close enough to see under the crowns.
         { id: 'trunks', type: 'fill-extrusion', source: 'trees', minzoom: 15, filter: ['==', ['get', 'p'], 0],
           paint: { 'fill-extrusion-color': '#13261f', 'fill-extrusion-height': ['get', 'top'], 'fill-extrusion-opacity': 1 } },
+        // Aircraft: the shadow on the ground, falling further off as it climbs, then the plane.
+        { id: 'plane-shadow', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'plane-shadow'], minzoom: 10.5,
+          layout: { 'icon-image': 'gm-plane-shadow', 'icon-size': z([10.5, 0.5, 15, 1.1, 18, 2.6]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        { id: 'plane', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'plane'], minzoom: 10.5,
+          layout: { 'icon-image': 'gm-plane', 'icon-rotate': ['get', 'r'], 'icon-rotation-alignment': 'map',
+                    'icon-size': ['interpolate', ['linear'], ['zoom'], 10.5, ['+', 0.5, ['*', 0.35, ['get', 's']]],
+                                  15, ['+', 1.1, ['*', 0.6, ['get', 's']]], 18, ['+', 2.6, ['*', 1.2, ['get', 's']]]],
+                    'icon-allow-overlap': true, 'icon-ignore-placement': true } },
         // Where someone has been.
-        { id: 'trail', type: 'line', source: 'trail', filter: ['==', ['geometry-type'], 'LineString'],
+        { id: 'trail-ahead', type: 'line', source: 'trail', filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'k'], 'ahead']],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': ['get', 'color'], 'line-width': 2, 'line-dasharray': [0.2, 2], 'line-opacity': 0.75 } },
+        { id: 'trail', type: 'line', source: 'trail', filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get', 'k'], 'ahead']],
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: { 'line-color': ['get', 'color'], 'line-width': 2.4, 'line-dasharray': [1.5, 1.8], 'line-opacity': 0.9 } },
         { id: 'trail-stop', type: 'circle', source: 'trail', filter: ['==', ['geometry-type'], 'Point'],
@@ -429,9 +604,23 @@
         { id: 'heli', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'heli'], minzoom: 11,
           layout: { 'icon-image': 'gm-heli', 'icon-size': z([11, 0.8, 15, 1.2, 18, 1.6]), 'icon-rotate': ['get', 'r'],
                     'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        { id: 'chopper', type: 'symbol', source: 'movers', minzoom: 11,
+          filter: ['in', ['get', 'm'], ['literal', ['heli-news', 'heli-med', 'heli-civ']]],
+          layout: { 'icon-image': ['concat', 'gm-', ['get', 'm']], 'icon-size': z([11, 0.7, 15, 1.1, 18, 1.5]),
+                    'icon-rotate': ['get', 'r'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true,
+                    'icon-ignore-placement': true } },
+        { id: 'beam', type: 'fill', source: 'movers', filter: ['==', ['get', 'm'], 'beam'],
+          paint: { 'fill-color': '#fff1c4', 'fill-opacity': ['get', 'o'] } },
         { id: 'station', type: 'circle', source: 'city', filter: is('station'), minzoom: 12.6,
           paint: { 'circle-radius': z([12.6, 2, 15, 4, 18, 6]), 'circle-color': C.void,
                    'circle-stroke-color': ['get', 'col'], 'circle-stroke-width': z([12.6, 1, 15, 2]) } },
+        { id: 'railstation', type: 'circle', source: 'city', filter: is('railstation'), minzoom: 11.8,
+          paint: { 'circle-radius': z([11.8, 2.4, 15, 5, 18, 7]), 'circle-color': '#e8f6ff',
+                   'circle-stroke-color': '#02050a', 'circle-stroke-width': z([11.8, 1, 15, 2]) } },
+        { id: 'railstation-label', type: 'symbol', source: 'city', filter: is('railstation'), minzoom: 13.8,
+          layout: { 'text-field': ['get', 'n'], 'text-font': ['Noto Sans Medium'], 'text-size': 10.5, 'text-offset': [0, 1.2],
+                    'text-anchor': 'top', 'text-optional': true },
+          paint: { 'text-color': '#e8f6ff', 'text-halo-color': C.void, 'text-halo-width': 1.5 } },
         { id: 'station-label', type: 'symbol', source: 'city', filter: is('station'), minzoom: 14.6,
           layout: { 'text-field': ['get', 'n'], 'text-font': ['Noto Sans Regular'], 'text-size': 10, 'text-offset': [0, 1.1],
                     'text-anchor': 'top', 'text-optional': true },
@@ -475,7 +664,14 @@
                     'text-field': ['step', ['zoom'], '', 14.4, ['get', 'n']], 'text-font': ['Noto Sans Regular'],
                     'text-size': 11, 'text-offset': [0, 1.5], 'text-anchor': 'top', 'text-optional': true,
                     'text-max-width': 9 },
-          paint: { 'text-color': '#b9d3e6', 'text-halo-color': C.void, 'text-halo-width': 1.6 } }
+          paint: { 'text-color': '#b9d3e6', 'text-halo-color': C.void, 'text-halo-width': 1.6 } },
+        { id: 'spot', type: 'symbol', source: 'city', minzoom: 14.2,
+          filter: ['all', is('place'), ['==', ['get', 'k'], 'spot']],
+          layout: { 'icon-image': ['concat', 'gm-', ['get', 'i']], 'icon-size': z([14.2, 0.5, 16, 0.75, 18, 0.95]),
+                    'icon-allow-overlap': false, 'icon-padding': 2,
+                    'text-field': ['step', ['zoom'], '', 15.4, ['get', 'n']], 'text-font': ['Noto Sans Italic'],
+                    'text-size': 10.5, 'text-offset': [0, 1.35], 'text-anchor': 'top', 'text-optional': true, 'text-max-width': 9 },
+          paint: { 'text-color': '#9fc0d6', 'text-halo-color': C.void, 'text-halo-width': 1.5 } }
       ])
     };
   }
@@ -488,8 +684,7 @@
     return files[0].then(function (fc) {
       fc.features.forEach(function (f) { f.geometry.coordinates = convert(f.geometry.coordinates); });
       map.getSource('city').setData(fc);
-      routes = fc.features.filter(function (f) { return f.properties.l === 'subway' || f.properties.l === 'ferry'; })
-        .map(route).filter(function (r) { return r.len > 0; });
+      if (window.GothamTraffic) GothamTraffic.init(fc, gazetteer.places || []);
       return files[1];
     }).then(function (rows) {
       // [height, base, x, y, x, y, ..., kind?] in hundredths of a unit.
@@ -529,18 +724,28 @@
 
   /* --- hovering: the console's own tooltip, never the map's ----------------- */
 
-  var HOVERABLE = ['incident', 'landmark', 'venue', 'station', 'district-label', 'quarter-label', 'road-label', 'primary',
-                   'highway', 'avenue', 'secondary', 'subway', 'ferry', 'park', 'water', 'trail-stop', 'district'];
+  var HOVERABLE = ['incident', 'plane', 'chopper', 'heli', 'train-car', 'ship', 'boat', 'tug', 'sail', 'patrol', 'metro',
+                   'landmark', 'spot', 'venue', 'station', 'railstation', 'parked', 'district-label', 'quarter-label', 'road-label',
+                   'primary', 'highway', 'avenue', 'secondary', 'subway', 'ferry', 'shipping', 'pitch', 'golf', 'lot', 'park', 'water',
+                   'marsh', 'trail-stop', 'district'];
 
   function describe(f) {
     var p = f.properties || {};
     if (p.l === 'place') return p.n + (p.a && p.a !== p.n ? ' · ' + p.a : '');
     if (p.l === 'stop') return p.n;
     if (p.kind) return p.kind + ' · ' + p.place + ' · ' + p.status;
+    if (p.m && p.n) return p.n;                                    // something moving: a train, a ferry, a flight
     if (p.l === 'station') return p.n + ' · ' + p.line;
-    if (p.l === 'subway' || p.l === 'ferry') return p.n;
-    if (p.l === 'venue') return p.n + ' · ' + ({ club: 'club', bar: 'bar', diner: 'diner', church: 'church',
-                                                fire: 'fire station', school: 'school' }[p.k] || '') + ' · ' + p.a;
+    if (p.l === 'railstation') return p.n + ' · ' + p.line + ' station';
+    if (p.l === 'gate') return 'At the gate';
+    if (p.l === 'subway' || p.l === 'ferry' || p.l === 'lane') return p.n + (p.l === 'lane' ? ' · shipping channel' : '');
+    if (p.l === 'pitch') return ({ turf: 'Playing field', dirt: 'Ball field', court: 'Courts', track: 'Running track' }[p.k] || '');
+    if (p.l === 'golf') return 'Golf course';
+    if (p.l === 'lot') return 'Car park';
+    if (p.l === 'marsh') return 'Slaughter Swamp';
+    if (p.l === 'venue') return p.n + ' · ' + ({ club: 'club', bar: 'bar', diner: 'diner', church: 'church', fire: 'fire station',
+                                                school: 'school', cafe: 'café', gym: 'gym', cinema: 'cinema', hotel: 'hotel',
+                                                shop: 'shop' }[p.k] || '') + ' · ' + p.a;
     if ((p.l === 'road' || p.l === 'park' || p.l === 'water' || p.l === 'district') && p.n) return p.n;
     return '';
   }
@@ -583,11 +788,14 @@
       map.getCanvas().style.cursor = dropping ? 'crosshair' : (top.properties.l === 'place' ? 'pointer' : '');
     }
     map.getCanvas().addEventListener('mouseleave', function () { hover.hidden = true; });
-    map.on('click', 'landmark', function (e) {
-      if (dropping) return;
-      var f = e.features[0];
-      map.flyTo({ center: f.geometry.coordinates, zoom: Math.max(map.getZoom(), 15.4), duration: 900 });
-      placeCard(f.properties.n);
+    ['landmark', 'spot', 'district-label', 'quarter-label'].forEach(function (layer) {
+      map.on('click', layer, function (e) {
+        if (dropping) return;
+        var f = e.features[0];
+        map.flyTo({ center: f.geometry.coordinates, zoom: Math.max(map.getZoom(), layer === 'district-label' ? 14 : 15.4),
+                    duration: 900 });
+        placeCard(f.properties.n);
+      });
     });
     map.on('click', 'incident', function (e) { if (!dropping) incidentCard(e.features[0].properties); });
   }
@@ -621,42 +829,106 @@
     marker._gliding = requestAnimationFrame(step);
   }
 
+  // A journey as something to move along: its road in map positions, how far along each point is.
+  function journey(route) {
+    var pts = route.pts.map(function (p) { return ll(p[0], p[1]); }), dist = [0];
+    for (var i = 1; i < pts.length; i++) dist.push(dist[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    return { pts: pts, dist: dist, len: dist[dist.length - 1], start: route.start, end: route.end, from: route.from };
+  }
+
+  // Where along it they are now — and the road behind and ahead of them.
+  function onJourney(j, now) {
+    var f = Math.max(0, Math.min(1, (now - j.start) / Math.max(1, j.end - j.start))), d = f * j.len, i = 1;
+    while (i < j.dist.length - 1 && j.dist[i] < d) i++;
+    var a = j.pts[i - 1], b = j.pts[i], seg = (j.dist[i] - j.dist[i - 1]) || 1, k = (d - j.dist[i - 1]) / seg;
+    return { at: [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k], i: i };
+  }
+
+  function travelling(c) {
+    var r = c.presence && c.presence.route;
+    return r && Date.now() / 1000 < r.end ? r : null;
+  }
+
+  function minutesLeft(route) { return Math.max(1, Math.round((route.end - Date.now() / 1000) / 60)); }
+
+  function personMarker(c, at, ghost) {
+    var marker = people[c.id];
+    if (!marker) {
+      var el = document.createElement('div');
+      el.className = 'gm-person';
+      el.innerHTML = '<span class="gm-person__ring"></span><span class="gm-person__face"></span>' +
+                     '<span class="gm-person__name"></span>';
+      el.style.setProperty('--accent', c.accent);
+      el.querySelector('.gm-person__name').textContent = c.name;
+      opts.portrait(el.querySelector('.gm-person__face'), c);
+      el.addEventListener('click', function (e) { e.stopPropagation(); select(c.id); });
+      marker = people[c.id] = flat(new maplibregl.Marker({ element: el, anchor: 'center' })).setLngLat(at).addTo(map);
+    } else if (!marker._trip) {
+      glide(marker, at);
+    }
+    marker.getElement().classList.toggle('is-ghost', !!ghost);
+    return marker;
+  }
+
+  function ago(seconds) {
+    var m = Math.round(seconds / 60);
+    if (m < 2) return 'just now';
+    if (m < 60) return m + ' min ago';
+    var h = Math.round(m / 60);
+    return h < 24 ? h + 'h ago' : Math.round(h / 24) + 'd ago';
+  }
+
   function placePeople() {
     if (!ready) return;
-    var byspot = {};
-    visible().forEach(function (c) {
-      var key = c.presence.spot.x.toFixed(1) + ',' + c.presence.spot.y.toFixed(1);
-      (byspot[key] = byspot[key] || []).push(c);
+    var byspot = {}, moving = [], ghosts = [];
+    var contacts = opts.contacts();
+    Object.keys(contacts).forEach(function (id) {
+      var c = contacts[id], p = c.presence;
+      if (!p) return;
+      if (p.spot) {
+        if (travelling(c)) moving.push(c);
+        else {
+          var key = p.spot.x.toFixed(1) + ',' + p.spot.y.toFixed(1);
+          (byspot[key] = byspot[key] || []).push(c);
+        }
+      } else if (p.last_seen) {
+        ghosts.push(c);
+      }
     });
     var seen = {};
     var showPeople = layerShown('people');
+    function finish(c, marker, tip) {
+      var node = marker.getElement();
+      node.dataset.status = c.presence.status;
+      node.classList.toggle('is-selected', selected === c.id);
+      node.setAttribute('data-tip', tip);
+      node.style.display = showPeople ? '' : 'none';
+      seen[c.id] = true;
+    }
     Object.keys(byspot).forEach(function (key) {
       var group = byspot[key];
       group.forEach(function (c, i) {
         var s = c.presence.spot;
         var angle = (i / group.length) * Math.PI * 2, r = group.length > 1 ? 0.55 : 0;
-        var at = ll(s.x + Math.cos(angle) * r, s.y + Math.sin(angle) * r);
-        seen[c.id] = true;
-        var marker = people[c.id];
-        if (!marker) {
-          var el = document.createElement('div');
-          el.className = 'gm-person';
-          el.innerHTML = '<span class="gm-person__ring"></span><span class="gm-person__face"></span>' +
-                         '<span class="gm-person__name"></span>';
-          el.style.setProperty('--accent', c.accent);
-          el.querySelector('.gm-person__name').textContent = c.name;
-          opts.portrait(el.querySelector('.gm-person__face'), c);
-          el.addEventListener('click', function (e) { e.stopPropagation(); select(c.id); });
-          marker = people[c.id] = flat(new maplibregl.Marker({ element: el, anchor: 'center' })).setLngLat(at).addTo(map);
-        } else {
-          glide(marker, at);
-        }
-        var node = marker.getElement();
-        node.dataset.status = c.presence.status;
-        node.classList.toggle('is-selected', selected === c.id);
-        node.setAttribute('data-tip', c.name + ' · ' + (c.presence.where || ''));
-        node.style.display = showPeople ? '' : 'none';
+        var marker = personMarker(c, ll(s.x + Math.cos(angle) * r, s.y + Math.sin(angle) * r));
+        if (marker._trip) { marker._trip = null; marker.getElement().classList.remove('is-moving'); }
+        finish(c, marker, c.name + ' · ' + (c.presence.where || ''));
       });
+    });
+    // On their way somewhere: along the road they're taking, at its pace (see moveTravellers).
+    moving.forEach(function (c) {
+      var route = travelling(c);
+      var marker = personMarker(c, onJourney(journey(route), Date.now() / 1000).at);
+      if (!marker._trip || marker._trip.start !== route.start) marker._trip = journey(route);
+      marker.getElement().classList.add('is-moving');
+      finish(c, marker, c.name + ' · on the way to ' + (c.presence.where || c.presence.spot.name) + ' · ' +
+             minutesLeft(route) + ' min');
+    });
+    // Those who keep where they are to themselves: where he last knew them to be, faded.
+    ghosts.forEach(function (c) {
+      var ls = c.presence.last_seen;
+      var marker = personMarker(c, ll(ls.x, ls.y), true);
+      finish(c, marker, c.name + ' · last seen ' + ago(Date.now() / 1000 - ls.at) + ' · ' + ls.where + ' — ' + ls.how);
     });
     Object.keys(people).forEach(function (id) {
       if (!seen[id]) { people[id].remove(); delete people[id]; }
@@ -664,6 +936,20 @@
     renderRoster();
     if (selected) renderCard(selected);
     if (following && people[following]) map.easeTo({ center: people[following].getLngLat(), duration: 1200 });
+  }
+
+  // Each tick: anyone on the road moves along it — and the camera with them, if he's following.
+  function moveTravellers() {
+    var now = Date.now() / 1000, arrived = false;
+    Object.keys(people).forEach(function (id) {
+      var marker = people[id], trip = marker._trip;
+      if (!trip) return;
+      if (now >= trip.end) { arrived = true; return; }
+      var here = onJourney(trip, now).at;
+      marker.setLngLat(here);
+      if (following === id && !moving) map.jumpTo({ center: here });
+    });
+    if (arrived) placePeople();
   }
 
   function renderRoster() {
@@ -675,7 +961,7 @@
       if (!c) return;
       var p = c.presence || {};
       var li = document.createElement('li');
-      li.className = 'gm-roster__item' + (p.spot ? '' : ' is-hidden') + (selected === id ? ' is-on' : '');
+      li.className = 'gm-roster__item' + (p.spot ? '' : p.last_seen ? ' is-ghost' : ' is-hidden') + (selected === id ? ' is-on' : '');
       li.style.setProperty('--accent', c.accent);
       var face = document.createElement('span');
       face.className = 'gm-roster__face';
@@ -685,12 +971,15 @@
       text.innerHTML = '<b></b><small></small>';
       text.querySelector('b').textContent = c.name;
       var company = (p['with'] || []).map(function (cid) { return (contacts[cid] || {}).name; }).filter(Boolean);
+      var route = travelling(c);
       text.querySelector('small').textContent = p.spot
-        ? (p.where || p.spot.name) + (company.length ? ' · with ' + company.join(', ') : '') : 'Location hidden';
+        ? (route ? '→ ' + (p.where || p.spot.name) + ' · ' + minutesLeft(route) + ' min' : (p.where || p.spot.name))
+          + (company.length ? ' · with ' + company.join(', ') : '')
+        : p.last_seen ? 'Last seen ' + ago(Date.now() / 1000 - p.last_seen.at) + ' · ' + p.last_seen.where : 'Location hidden';
       li.appendChild(face);
       li.appendChild(text);
       li.dataset.status = p.status || '';
-      if (p.spot) {
+      if (p.spot || p.last_seen) {
         li.tabIndex = 0;
         li.setAttribute('role', 'button');
         li.addEventListener('click', function () { select(id, true); });
@@ -700,6 +989,8 @@
   }
 
   function select(id, fly) {
+    // Clicking whoever's already picked lets them go: the card, their trail, following.
+    if (selected === id && !fly) { deselect(); return; }
     selected = id;
     var marker = people[id];
     if (marker && fly) map.flyTo({ center: marker.getLngLat(), zoom: Math.max(map.getZoom(), 14.6), duration: 1000 });
@@ -711,10 +1002,19 @@
     showTrail(id);
   }
 
+  function deselect() {
+    selected = null; following = null;
+    $('.gm-card').hidden = true;
+    map.getSource('trail').setData({ type: 'FeatureCollection', features: [] });
+    Object.keys(people).forEach(function (other) { people[other].getElement().classList.remove('is-selected'); });
+    renderRoster();
+  }
+
   function renderCard(id) {
     var card = $('.gm-card');
     var c = opts.contacts()[id];
-    if (!c || !c.presence || !c.presence.spot) { card.hidden = true; return; }
+    // Gone from the map — asleep, out of reach, hidden — and their trail and card go too.
+    if (!c || !c.presence || (!c.presence.spot && !c.presence.last_seen)) { if (selected === id) deselect(); else card.hidden = true; return; }
     var p = c.presence;
     card.hidden = false;
     card.style.setProperty('--accent', c.accent);
@@ -722,9 +1022,13 @@
     card.querySelector('.gm-card__name').textContent = c.full_name;
     card.querySelector('.gm-card__status').textContent = opts.label(c);
     var company = (p['with'] || []).map(function (cid) { return (opts.contacts()[cid] || {}).name; }).filter(Boolean);
-    card.querySelector('.gm-card__where').textContent = (p.where || p.spot.name) +
-      (p.spot.area && p.spot.area !== p.where && p.spot.area !== p.spot.name ? ' · ' + p.spot.area : '') +
-      (company.length ? ' · with ' + company.join(', ') : '');
+    var route = travelling(c);
+    card.querySelector('.gm-card__where').textContent = !p.spot
+      ? 'Last seen ' + ago(Date.now() / 1000 - p.last_seen.at) + ' · ' + p.last_seen.where + ' — ' + p.last_seen.how
+      : (route ? 'On the way to ' : '') + (p.where || p.spot.name) +
+        (p.spot.area && p.spot.area !== p.where && p.spot.area !== p.spot.name ? ' · ' + p.spot.area : '') +
+        (route ? ' · ' + minutesLeft(route) + ' min' : '') + (company.length ? ' · with ' + company.join(', ') : '');
+    card.querySelector('[data-act="follow"]').hidden = !p.spot;
     card.querySelector('[data-act="follow"]').classList.toggle('is-on', following === id);
   }
 
@@ -736,10 +1040,26 @@
     fetch('/api/map/trail/' + encodeURIComponent(id) + '?hours=3').then(function (r) { return r.json(); })
       .then(function (body) {
         if (selected !== id) return;
-        var pts = body.trail || [];
-        if (pts.length < 2) return;
-        var features = [{ type: 'Feature', properties: { color: c.accent },
-                          geometry: { type: 'LineString', coordinates: pts.map(function (p) { return ll(p.x, p.y); }) } }];
+        var pts = body.trail || [], trips = body.trips || [], now = Date.now() / 1000;
+        if (pts.length < 2 && !trips.length) return;
+        var features = [];
+        if (trips.length) {
+          trips.forEach(function (tr) {
+            var j = journey(tr), coords = j.pts;
+            if (now < tr.end) {
+              var here = onJourney(j, now);
+              features.push({ type: 'Feature', properties: { color: c.accent },
+                              geometry: { type: 'LineString', coordinates: coords.slice(0, here.i).concat([here.at]) } });
+              features.push({ type: 'Feature', properties: { color: c.accent, k: 'ahead' },
+                              geometry: { type: 'LineString', coordinates: [here.at].concat(coords.slice(here.i)) } });
+            } else {
+              features.push({ type: 'Feature', properties: { color: c.accent }, geometry: { type: 'LineString', coordinates: coords } });
+            }
+          });
+        } else {
+          features.push({ type: 'Feature', properties: { color: c.accent },
+                          geometry: { type: 'LineString', coordinates: pts.map(function (p) { return ll(p.x, p.y); }) } });
+        }
         pts.slice(0, -1).forEach(function (p) {
           var when = new Date(p.at * 1000);
           features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: ll(p.x, p.y) },
@@ -778,6 +1098,15 @@
   function placeCard(name) {
     var p = (gazetteer.places || []).filter(function (q) { return q.name === name; })[0];
     if (!p) return;
+    if (p.kind === 'district') {
+      // A district: what it's like, and what's in it.
+      var here = (gazetteer.places || []).filter(function (q) { return q.area === p.area && q.kind !== 'district'; })
+        .map(function (q) { return q.name; });
+      showInfo(p.name, 'District', (gazetteer.areas || {})[p.name] || '', here.length ? 'Here: ' + here.join(' · ') : '',
+               iconUrl('civic'), C.lit);
+      $('.gm-info__note').classList.add('is-plain');
+      return;
+    }
     showInfo(p.name, p.area, p.bio, p.note, iconUrl(p.icon || ''), ICON_TINT[p.icon]);
   }
 
@@ -973,57 +1302,14 @@
       map.setPaintProperty('smoke', 'circle-opacity', 0.38 * (1 - drift * 0.7));
     }
     if (layerShown('life') && zoom >= 12.6) map.setPaintProperty('venue-glow', 'circle-opacity', 0.26 + 0.1 * Math.sin(now / 900));
-    if (layerShown('transit') || layerShown('crime')) movers(now);
+    if (layerShown('transit') || layerShown('crime')) movers();
+    moveTravellers();
   }
 
-  /* --- things that move: trains on their lines, ferries crossing, a chopper over trouble --- */
+  /* --- things that move: everything in gothamtraffic.js, drawn here ------------------- */
 
-  var routes = [];
-
-  // A line as something to travel along: its points, and how far along each one is.
-  function route(f) {
-    var g = f.geometry, lines = g.type === 'MultiLineString' ? g.coordinates : [g.coordinates];
-    var pts = lines.reduce(function (a, b) { return b.length > a.length ? b : a; }, []);
-    var dist = [0];
-    for (var i = 1; i < pts.length; i++) {
-      dist.push(dist[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
-    }
-    return { pts: pts, dist: dist, len: dist[dist.length - 1] || 0, kind: f.properties.l, col: f.properties.col || C.edge };
-  }
-
-  // Where a fraction u (0–1) of the way along is, and the heading there (degrees from north).
-  function along(r, u) {
-    var d = Math.max(0, Math.min(1, u)) * r.len, i = 1;
-    while (i < r.dist.length - 1 && r.dist[i] < d) i++;
-    var a = r.pts[i - 1], b = r.pts[i], seg = (r.dist[i] - r.dist[i - 1]) || 1, k = (d - r.dist[i - 1]) / seg;
-    return { at: [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k],
-             heading: Math.atan2(b[0] - a[0], b[1] - a[1]) * 180 / Math.PI };
-  }
-
-  function movers(now) {
-    var s = now / 1000, features = [];
-    routes.forEach(function (r, n) {
-      // Two trains a line, one boat a route; end to end in a minute and a half, or two and a half.
-      var trips = r.kind === 'subway' ? [0, 1] : [0.3], period = r.kind === 'subway' ? 80 : 150;
-      trips.forEach(function (offset) {
-        var u = ((s / period + offset + n * 0.37) % 2 + 2) % 2, back = u > 1;
-        if (back) u = 2 - u;
-        if (r.kind === 'ferry') u = Math.max(0, Math.min(1, (u - 0.08) / 0.84));     // a while at each pier
-        var p = along(r, u);
-        features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: p.at },
-                        properties: { m: r.kind, col: r.col, r: back ? p.heading + 180 : p.heading } });
-      });
-    });
-    // Over the worst thing on the scanner, a police helicopter circles, its light on the street.
-    var worst = reports.filter(function (r) { return r.severity >= 3 && r.status !== 'resolved'; })
-      .sort(function (a, b) { return b.severity - a.severity || b.at - a.at; })[0];
-    if (worst) {
-      var c = ll(worst.x, worst.y), a = s * 0.45, rad = 0.0011;
-      features.push({ type: 'Feature', properties: { m: 'light' },
-                      geometry: { type: 'Point', coordinates: [c[0] + Math.cos(a) * rad * 0.3, c[1] + Math.sin(a) * rad * 0.3] } });
-      features.push({ type: 'Feature', properties: { m: 'heli', r: -a * 180 / Math.PI },
-                      geometry: { type: 'Point', coordinates: [c[0] + Math.cos(a) * rad, c[1] + Math.sin(a) * rad] } });
-    }
+  function movers() {
+    var features = window.GothamTraffic ? GothamTraffic.frame(Date.now(), reports) : [];
     map.getSource('movers').setData({ type: 'FeatureCollection', features: features });
   }
 
@@ -1216,14 +1502,16 @@
   /* --- layers, 3D, the frame ---------------------------------------------------- */
 
   var LAYER_GROUPS = {
-    places: ['landmark', 'quarter-label'],
+    places: ['landmark', 'quarter-label', 'spot'],
     streets: ['street', 'avenue', 'road-label'],
     buildings: ['buildings', 'footprint', 'trees', 'trunks'],
-    transit: ['subway', 'station', 'station-label', 'ferry', 'train', 'train-glow', 'boat'],
+    transit: ['subway', 'station', 'station-label', 'ferry', 'shipping', 'train-car', 'metro', 'metro-glow', 'boat', 'ship', 'tug',
+              'sail', 'patrol', 'rail', 'rail-bed', 'railbridge', 'railbridge-truss', 'railstation', 'railstation-label',
+              'plane', 'plane-shadow', 'parked', 'chopper', 'beam'],
     crime: ['incident', 'incident-pulse', 'smoke', 'case-ring', 'heli', 'heli-light', 'heli-spot'],
     life: ['venue', 'venue-glow'],
     safety: ['safety'],
-    trails: ['trail', 'trail-stop']
+    trails: ['trail', 'trail-ahead', 'trail-stop']
   };
 
   var shownLayers = null;
@@ -1356,6 +1644,16 @@
         [1, 2, 3, 4].forEach(function (s) { map.addImage('gm-warn-' + s, warning(s), { pixelRatio: 2 }); });
         map.addImage('gm-boat', sprite(30, boat), { pixelRatio: 2 });
         map.addImage('gm-heli', sprite(30, heli), { pixelRatio: 2 });
+        map.addImage('gm-train', sprite(46, train), { pixelRatio: 2 });
+        map.addImage('gm-ship', sprite(50, ship), { pixelRatio: 2 });
+        map.addImage('gm-tug', sprite(20, tug), { pixelRatio: 2 });
+        map.addImage('gm-sail', sprite(16, sail), { pixelRatio: 2 });
+        map.addImage('gm-launch', sprite(22, launch), { pixelRatio: 2 });
+        map.addImage('gm-plane', sprite(32, airliner), { pixelRatio: 2 });
+        map.addImage('gm-plane-shadow', sprite(32, function (ctx) { airliner(ctx, true); }), { pixelRatio: 2 });
+        map.addImage('gm-heli-news', sprite(30, livery('#e8f3fb', '#ffffff')), { pixelRatio: 2 });
+        map.addImage('gm-heli-med', sprite(30, livery('#f2f2f2', '#ff3b3b')), { pixelRatio: 2 });
+        map.addImage('gm-heli-civ', sprite(30, livery('#16324e', '#ffd27f')), { pixelRatio: 2 });
         ready = true;
         loadCity();
         ['places', 'streets', 'buildings', 'transit', 'crime', 'life', 'trails', 'people', 'pins'].forEach(function (name) {
@@ -1371,7 +1669,15 @@
         loadPins();
         if (!root.hidden) { map.resize(); if (!fitted) { fit(); fitted = true; } placePeople(); }
       });
-      map.on('click', function (e) { if (dropping) dropPin(e.lngLat); });
+      map.on('click', function (e) {
+        if (dropping) { dropPin(e.lngLat); return; }
+        // A click on nothing in particular puts down whatever was picked up.
+        var hit = map.queryRenderedFeatures(e.point, { layers: ['landmark', 'spot', 'district-label', 'quarter-label', 'incident']
+          .filter(function (id) { return map.getLayer(id); }) });
+        if (hit.length) return;
+        $('.gm-info').hidden = true; openReport = null;
+        if (selected) deselect();
+      });
       map.on('contextmenu', function (e) { e.preventDefault(); dropPin(e.lngLat); });
       map.on('dragstart', function () { if (following) { following = null; if (selected) renderCard(selected); } });
       map.on('pitchend', function () {
@@ -1415,6 +1721,13 @@
       if (opts.toggled) opts.toggled(false);
     },
     isOpen: function () { return !!root && !root.hidden; },
+    // Escape on the map: a card first, then whoever's picked — and only then the map.
+    escape: function () {
+      if (!root || root.hidden) return false;
+      if (!$('.gm-info').hidden) { $('.gm-info').hidden = true; openReport = null; return true; }
+      if (selected) { deselect(); return true; }
+      return false;
+    },
     _map: function () { return map; },
     update: function () { if (map && !root.hidden) placePeople(); },
     refreshCases: function () { if (map && !root.hidden) loadIncidents(); },

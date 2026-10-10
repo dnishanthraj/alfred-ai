@@ -66,16 +66,20 @@ class Call:
             return False
         if not self.transcript and self.members:
             # Until now this was a one-to-one call, which kept no transcript of
-            # its own; the first contact's recent conversation is what was said.
+            # its own: what's been said on *this call* is what was said — not
+            # the first contact's history, which held their private texts.
             first = self.members[0]
-            for message in first.history.messages[-6:]:
+            for message in first.call_messages()[-6:]:
                 who = self.operator if message["role"] == "user" else first.contact.full_name
                 self.transcript.append(f"{who}: {message['content']}")
         self.members.append(session)
         session.mark_call_start()
         # The last few lines before they joined, marked as such: enough to
-        # pick up the thread, not a recording of the evening.
-        session.heard = [f"(before you joined) {line}" for line in self.transcript[-6:]]
+        # pick up the thread, not a recording of the evening — and none at all
+        # for someone outside the secret, who'd have heard nothing of it anyway.
+        from .groupchat import outside
+        before = [] if outside(session.contact.id) else self.transcript[-6:]
+        session.heard = [f"(before you joined) {line}" for line in before]
         self._attach()
         return True
 
@@ -122,10 +126,22 @@ class Call:
         secret = self._secrets(session)
         if secret:
             note += " " + secret
+        room = self.in_the_room(session)
+        if room:
+            note += (f" {' and '.join(room)} {'is' if len(room) == 1 else 'are'} right there with you — the same room, "
+                     "not just the same line: you hear each other directly, see what each other sees, and whatever "
+                     "happens where you are happens to you both.")
         if follow_up:
             note += (" He didn't ask you directly; you're coming in because of what was "
                      "just said to you or about you. Answer that, briefly.")
         return note
+
+    def in_the_room(self, session):
+        """Who else on the call is actually with them — the same place, not just the same line."""
+        from . import presence
+        _, group = presence.together(presence.of(session.contact))
+        with_them = {p.contact.id for p in group}
+        return [m.contact.name for m in self.others(session) if m.contact.id in with_them]
 
     def _secrets(self, session):
         """
@@ -415,7 +431,7 @@ class Call:
         target = self._named(line, speaker)
         if target is None:
             return
-        reply = yield from self._speak(target, line, False, 1.0, True)
+        reply = yield from self._speak(target, line, False, 1.0, True, via="from_contact")
         if reply:
             self.last_speaker = target
             self.aside_answered = True
@@ -439,8 +455,9 @@ class Call:
     def _speak_aside(self, member, instruction, prompted_by=None, greeting=False, farewell=False):
         # What's been said since they last spoke — or a reaction, a remark into a
         # pause, a jump-in, answers something it never heard.
+        from .session import capped
         heard = member.heard[-8:]
-        heard_all = "\n".join(member.heard)
+        heard_all = "\n".join(capped(member.heard))
         if heard:
             instruction = ("What's been said on the call since you last spoke:\n" + "\n".join(heard)
                            + "\n\n" + instruction)

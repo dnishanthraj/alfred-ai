@@ -8,6 +8,7 @@ through, so it keeps its own record: every message, when it was sent, and when
 yours was read. Encrypted at rest like the rest of a contact's memory.
 """
 import json
+import re
 import threading
 import time
 import uuid
@@ -17,6 +18,36 @@ from .store import atomic_write, read_text
 
 MAX_MESSAGES = 2000
 _lock = threading.Lock()
+
+
+def quote(messages, message_id):
+    """The message an answer is to, as the answer keeps it: who, and the start of what they said."""
+    if not message_id:
+        return None
+    found = next((m for m in messages if m.get("id") == message_id and not m.get("kind")), None)
+    if found is None:
+        return None
+    text = found["text"]
+    return {"id": found["id"], "from": found["from"], "text": text if len(text) <= 120 else text[:117] + "…"}
+
+
+def quoted_by(messages, words, fallback=False):
+    """
+    Which of `messages` a reply means by a few of its words ("the car thing")
+    — the best fit, the latest of equals; with no fit, the latest if
+    `fallback`, else None.
+    """
+    if not messages:
+        return None
+    wanted = set(re.findall(r"\w+", (words or "").lower()))
+
+    def fit(m):
+        return len(wanted & set(re.findall(r"\w+", m["text"].lower()))) / len(wanted) if wanted else 0
+
+    best = max(reversed(messages), key=fit)
+    if fit(best) >= 0.5:
+        return best
+    return messages[-1] if fallback else None
 
 
 class TextLog:
@@ -29,11 +60,12 @@ class TextLog:
         except ValueError:
             return []
 
-    def add(self, sender, text, at=None, kind=None, origin=None):
+    def add(self, sender, text, at=None, kind=None, origin=None, reply_to=None):
         """
         Append a message ('me' or 'them'). Returns it. `kind` marks something
         that isn't a message — "missed_call", "declined_call" — shown in the
-        thread as a line of its own.
+        thread as a line of its own. `reply_to` is the id of the message this
+        one answers: it's kept with a short quote of it, as a phone shows.
         """
         message = {"id": uuid.uuid4().hex[:12], "from": sender, "text": text,
                    "at": at or time.time()}
@@ -42,9 +74,25 @@ class TextLog:
         if origin:
             message["origin"] = origin      # sent unprompted: "chase", "callback", ...
         with _lock:
-            messages = self._load() + [message]
+            messages = self._load()
+            quoted = quote(messages, reply_to)
+            if quoted:
+                message["reply_to"] = quoted
+            messages = messages + [message]
             atomic_write(self.path, json.dumps(messages[-MAX_MESSAGES:]))
         return message
+
+    def mark_seen(self, at=None):
+        """He's opened the thread: their messages are read — and they can tell."""
+        at = at or time.time()
+        with _lock:
+            messages = self._load()
+            fresh = [m for m in messages if m["from"] == "them" and not m.get("seen_at") and not m.get("kind")]
+            for m in fresh:
+                m["seen_at"] = at
+            if fresh:
+                atomic_write(self.path, json.dumps(messages))
+        return len(fresh)
 
     def mark_read(self, ids, at=None):
         at = at or time.time()

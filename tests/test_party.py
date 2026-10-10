@@ -27,6 +27,9 @@ class FakeMember:
     def mark_call_start(self):
         pass
 
+    def call_messages(self):
+        return list(self.history.messages)
+
     def keep_heard(self):
         self.kept += self.heard
 

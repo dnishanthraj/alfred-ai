@@ -8,6 +8,11 @@
    ========================================================================== */
 
 :root {
+  /* The console's own cursors: a cyan-edged arrow, a reticle over anything that
+     does something, an amber target for dropping a pin. */
+  --cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M3 2 L3 19 L7.5 14.8 L10.4 21.4 L13 20.2 L10.2 13.8 L16.4 13.6 Z' fill='%2302050a' stroke='%238fd3ff' stroke-width='1.4' stroke-linejoin='round'/%3E%3C/svg%3E") 3 2, auto;
+  --cursor-pointer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Ccircle cx='14' cy='14' r='7.5' fill='none' stroke='%238fd3ff' stroke-width='1.4'/%3E%3Ccircle cx='14' cy='14' r='1.7' fill='%238fd3ff'/%3E%3Cpath d='M14 2v5M14 21v5M2 14h5M21 14h5' stroke='%238fd3ff' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") 14 14, pointer;
+  --cursor-target: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Ccircle cx='15' cy='15' r='9' fill='none' stroke='%23ffb84d' stroke-width='1.4' stroke-dasharray='3 2.4'/%3E%3Cpath d='M15 1v7M15 22v7M1 15h7M22 15h7' stroke='%23ffb84d' stroke-width='1.4' stroke-linecap='round'/%3E%3Ccircle cx='15' cy='15' r='1.6' fill='%23ffb84d'/%3E%3C/svg%3E") 15 15, crosshair;
   --void:       #05070b;
   --surface:    #0a0d14;
   --surface-2:  #0e131c;
@@ -194,7 +199,7 @@ body::before {
   letter-spacing: 0.2em;
   text-transform: uppercase;
   padding: 12px;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
   transition: background 0.3s var(--ease);
 }
 .auth__btn:hover { background: rgba(79, 168, 224, 0.09); }
@@ -378,7 +383,7 @@ html[data-rail="hidden"] .rail { display: none; }
   border: 1px solid var(--hairline-2);
   color: var(--text-dim);
   padding: 9px;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
   transition: color 0.25s var(--ease), border-color 0.25s var(--ease);
 }
 .lock:hover { color: var(--alert); border-color: var(--alert); }
@@ -571,7 +576,7 @@ html[data-link="ending"] .viz { opacity: 0; transform: scale(1.12); }
   letter-spacing: 0.16em;
   text-transform: uppercase;
   padding: 6px 10px;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
   transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
 }
 .dossier__close:hover { color: var(--text); border-color: var(--hairline-2); }
@@ -686,7 +691,7 @@ html[data-link="ending"] .viz { opacity: 0; transform: scale(1.12); }
   letter-spacing: 0.16em;
   text-transform: uppercase;
   padding: 9px 18px;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
   transition: background 0.25s var(--ease);
 }
 .dossier__save:hover { background: rgba(79, 168, 224, 0.09); }
@@ -699,7 +704,7 @@ html[data-link="ending"] .viz { opacity: 0; transform: scale(1.12); }
   text-align: left;
   font: inherit;
   color: inherit;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 .book__open:hover .book__name { color: var(--contact-accent, var(--primary)); }
 
@@ -748,7 +753,7 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
   background: transparent;
   border: 1px solid var(--hairline-2);
   color: var(--text-dim);
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
   display: grid;
   place-items: center;
   transition: color 0.25s var(--ease), border-color 0.25s var(--ease);
@@ -829,7 +834,7 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
   border-radius: 50%;
   background: transparent;
   color: var(--text-dim);
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
   transition: color 0.2s var(--ease), border-color 0.2s var(--ease), background 0.2s var(--ease);
 }
 .book__act svg { width: 14px; height: 14px; }
@@ -879,7 +884,7 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
 .messages__name, .messages__role { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Close sits with the thread's other controls: the same square, the same line. */
 .messages__close {
-  width: 30px; height: 30px; padding: 7px; flex: none; cursor: pointer;
+  width: 30px; height: 30px; padding: 7px; flex: none; cursor: var(--cursor-pointer);
   background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim);
   transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
 }
@@ -914,7 +919,7 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
 .messages__send {
   background: transparent; border: 1px solid var(--contact-accent, var(--primary-dim));
   color: var(--contact-accent, var(--primary)); border-radius: 21px; padding: 0 14px;
-  font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; cursor: pointer;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; cursor: var(--cursor-pointer);
   transition: background 0.15s var(--ease);
 }
 .messages__send:hover { background: color-mix(in srgb, var(--contact-accent, var(--primary)) 12%, transparent); }
@@ -937,7 +942,7 @@ html[data-link="ending"] .compose { opacity: 0.35; pointer-events: none; }
   position: relative;
   width: 28px; height: 28px; display: grid; place-items: center;
   background: transparent; border: 1px solid transparent; border-radius: 6px;
-  color: var(--text-dim); cursor: pointer;
+  color: var(--text-dim); cursor: var(--cursor-pointer);
   transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
 }
 .bar__btn:hover { color: var(--primary); border-color: var(--hairline-2); }
@@ -967,13 +972,13 @@ html[data-rail="compact"] .book__open,
 html[data-rail="compact"] .book__actions { display: none; }
 html[data-rail="compact"] .book__group { font-size: 0; height: 1px; background: var(--hairline); margin: 12px 4px; }
 html[data-rail="compact"] .book__row { grid-template-columns: 1fr; justify-items: center; padding: 6px 0; border-left: 0; }
-html[data-rail="compact"] .book__avatar { width: 40px; height: 40px; cursor: pointer; }
+html[data-rail="compact"] .book__avatar { width: 40px; height: 40px; cursor: var(--cursor-pointer); }
 html[data-rail="compact"] .lock { font-size: 0; padding: 10px 0; }
 html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
 
 .messages { width: var(--msg-w, 400px); max-width: 100%; }
-.messages__avatar { cursor: pointer; padding: 0; }
-.messages__who { cursor: pointer; }
+.messages__avatar { cursor: var(--cursor-pointer); padding: 0; }
+.messages__who { cursor: var(--cursor-pointer); }
 .messages__who:hover .messages__name { color: var(--contact-accent, var(--primary)); }
 
 /* The time sits inside the bubble, bottom right, whatever its length — floated
@@ -997,7 +1002,7 @@ html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
 .dossier__reach { display: flex; gap: 10px; justify-content: center; margin: 0 0 26px; }
 .dossier__btn {
   background: transparent; border: 1px solid var(--contact-accent, var(--hairline-2));
-  color: var(--contact-accent, var(--text-dim)); padding: 7px 16px; cursor: pointer;
+  color: var(--contact-accent, var(--text-dim)); padding: 7px 16px; cursor: var(--cursor-pointer);
   font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
 }
 .dossier__btn:hover { background: rgba(79, 168, 224, 0.08); }
@@ -1011,7 +1016,7 @@ html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
   pointer-events: none;
 }
 .toast {
-  pointer-events: auto; cursor: pointer;
+  pointer-events: auto; cursor: var(--cursor-pointer);
   display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: center;
   padding: 10px 12px; background: var(--raised);
   border: 1px solid var(--hairline-2); border-left: 2px solid var(--contact-accent, var(--primary));
@@ -1095,7 +1100,7 @@ html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
 .incoming__name { margin: 6px 0 22px; font-weight: 400; font-size: 20px; color: var(--text); }
 .incoming__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .incoming__btn {
-  padding: 10px 0; background: transparent; cursor: pointer;
+  padding: 10px 0; background: transparent; cursor: var(--cursor-pointer);
   font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
   border: 1px solid var(--hairline-2); color: var(--text);
   transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
@@ -1168,13 +1173,13 @@ html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
 /* --- group chats ------------------------------------------------------------- */
 .groups__label { margin: 0; }
 .groups__new {
-  width: 22px; height: 22px; border-radius: 50%; padding: 0; cursor: pointer;
+  width: 22px; height: 22px; border-radius: 50%; padding: 0; cursor: var(--cursor-pointer);
   background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim);
   font-size: 15px; line-height: 19px;
 }
 .groups__new:hover { color: var(--text); border-color: var(--primary-dim); }
 .groups__row { width: 100%; background: transparent; border: 0; border-left: 2px solid transparent;
-  color: inherit; text-align: left; cursor: pointer; font: inherit; }
+  color: inherit; text-align: left; cursor: var(--cursor-pointer); font: inherit; }
 .groups__item[data-thread="1"] .groups__row { background: rgba(14, 19, 28, 0.7); border-left-color: var(--primary-dim); }
 .groups__last { text-transform: none; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -1208,7 +1213,7 @@ html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
   text-transform: uppercase; margin-bottom: 3px; }
 
 .messages__delete {
-  width: 30px; height: 30px; padding: 6px; flex: none; cursor: pointer;
+  width: 30px; height: 30px; padding: 6px; flex: none; cursor: var(--cursor-pointer);
   background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim);
   transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
 }
@@ -1230,7 +1235,7 @@ html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
   text-transform: uppercase; color: var(--text-faint); }
 .modal__people { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr;
   gap: 6px; max-height: 260px; overflow-y: auto; }
-.modal__person { display: flex; align-items: center; gap: 8px; padding: 6px 8px; cursor: pointer;
+.modal__person { display: flex; align-items: center; gap: 8px; padding: 6px 8px; cursor: var(--cursor-pointer);
   border: 1px solid var(--hairline); color: var(--text); font-size: 13px; }
 .modal__person:has(input:checked) { border-color: var(--primary-dim); background: rgba(79, 168, 224, 0.07); }
 .modal__person input { accent-color: var(--primary); margin: 0; }
@@ -1238,7 +1243,7 @@ html[data-rail="compact"] .lock::before { content: "⏻"; font-size: 13px; }
 .modal__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .modal__btn { padding: 8px 14px; background: transparent; border: 1px solid var(--hairline-2);
   color: var(--text-dim); font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em;
-  text-transform: uppercase; cursor: pointer; }
+  text-transform: uppercase; cursor: var(--cursor-pointer); }
 .modal__btn--go { border-color: var(--primary-dim); color: var(--primary); }
 .modal__btn:disabled { opacity: 0.4; cursor: default; }
 .modal__btn:not(:disabled):hover { color: var(--text); border-color: var(--text-faint); }
@@ -1280,7 +1285,7 @@ html[data-rail="compact"] .panel__head .panel__label { display: none; }
   color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .modal__remove { background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim);
   font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
-  padding: 5px 8px; cursor: pointer; }
+  padding: 5px 8px; cursor: var(--cursor-pointer); }
 .modal__remove:hover { color: var(--alert); border-color: rgba(224, 87, 79, 0.45); }
 .modal__remove:disabled { opacity: 0.35; cursor: default; }
 
@@ -1353,7 +1358,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
   background: var(--raised); border: 1px solid var(--hairline-2);
   box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4); animation: toast-in 0.12s var(--ease) both; }
 .mention-pick[hidden] { display: none; }
-.mention-pick__item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; cursor: pointer;
+.mention-pick__item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; cursor: var(--cursor-pointer);
   font-size: 13px; color: var(--text-dim); border-left: 2px solid transparent; }
 .mention-pick__item .bubble__avatar { width: 22px; height: 22px; flex: none; }
 .mention-pick__item[data-on="1"], .mention-pick__item:hover { color: var(--text);
@@ -1376,7 +1381,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 /* React without knowing to double-click: a face beside their message, on hover. */
 .bubble__add { flex: none; align-self: center; width: 24px; height: 24px; padding: 4px; margin-left: -2px;
   border-radius: 50%; border: 1px solid var(--hairline-2); background: var(--surface); color: var(--text-faint);
-  cursor: pointer; opacity: 0; transition: opacity 0.15s var(--ease), color 0.15s, border-color 0.15s; }
+  cursor: var(--cursor-pointer); opacity: 0; transition: opacity 0.15s var(--ease), color 0.15s, border-color 0.15s; }
 .bubble__add svg { width: 100%; height: 100%; display: block; }
 .bubble:hover .bubble__add, .bubble__add:focus-visible { opacity: 1; }
 .bubble__add:hover { color: var(--primary); border-color: var(--primary-dim); }
@@ -1404,7 +1409,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
   text-transform: uppercase; color: var(--text-faint); }
 
 /* --- emoji ------------------------------------------------------------------ */
-.messages__emoji { flex: none; width: 40px; height: 40px; align-self: center; padding: 8px; cursor: pointer;
+.messages__emoji { flex: none; width: 40px; height: 40px; align-self: center; padding: 8px; cursor: var(--cursor-pointer);
   border-radius: 50%; border: 1px solid var(--hairline-2); background: transparent; color: var(--text-dim);
   transition: color 0.15s var(--ease), border-color 0.15s var(--ease); }
 .messages__emoji svg { width: 100%; height: 100%; display: block; }
@@ -1416,20 +1421,20 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .emoji-pick__tabs { display: flex; gap: 2px; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--hairline); }
 .emoji-pick__tabs > span { display: none; }
 .emoji-pick__tab { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; padding: 4px 0 5px;
-  font-size: 16px; line-height: 1; cursor: pointer; filter: grayscale(0.7); opacity: 0.7;
+  font-size: 16px; line-height: 1; cursor: var(--cursor-pointer); filter: grayscale(0.7); opacity: 0.7;
   transition: opacity 0.12s, filter 0.12s; }
 .emoji-pick__tab:hover, .emoji-pick__tab[data-on="1"] { opacity: 1; filter: none; }
 .emoji-pick__tab[data-on="1"] { border-bottom-color: var(--primary); }
 .emoji-pick__grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; max-height: 196px; overflow-y: auto; }
 .emoji-pick__btn { background: none; border: 0; font-size: 20px; line-height: 1; padding: 5px 0; border-radius: 6px;
-  cursor: pointer; transition: transform 0.1s var(--ease), background 0.1s; }
+  cursor: var(--cursor-pointer); transition: transform 0.1s var(--ease), background 0.1s; }
 .emoji-pick__btn:hover { background: var(--hairline); transform: scale(1.15); }
 .tapbar { position: fixed; z-index: 75; display: flex; gap: 2px; padding: 4px;
   background: var(--raised); border: 1px solid var(--hairline-2); border-radius: 18px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); animation: toast-in 0.12s var(--ease) both; }
 .tapbar[hidden] { display: none; }
 .tapbar__btn { background: none; border: 0; font-size: 17px; line-height: 1; padding: 5px 6px;
-  border-radius: 50%; cursor: pointer; transition: transform 0.12s var(--ease), background 0.12s; }
+  border-radius: 50%; cursor: var(--cursor-pointer); transition: transform 0.12s var(--ease), background 0.12s; }
 .tapbar__btn:hover { transform: scale(1.18); background: var(--hairline); }
 .tapbar__btn[data-on="1"] { background: color-mix(in srgb, var(--primary) 22%, transparent); }
 .tapbar__more { width: 29px; height: 29px; padding: 6px; color: var(--text-dim); border-left: 1px solid var(--hairline);
@@ -1466,7 +1471,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
   padding: 4px; list-style: none; background: var(--raised); border: 1px solid var(--hairline-2);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5); }
 .gm-search__list[hidden] { display: none; }
-.gm-search__item { display: flex; justify-content: space-between; gap: 12px; padding: 7px 9px; cursor: pointer;
+.gm-search__item { display: flex; justify-content: space-between; gap: 12px; padding: 7px 9px; cursor: var(--cursor-pointer);
   border-left: 2px solid transparent; font-size: 13px; color: var(--text-dim); }
 .gm-search__item small { font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em;
   text-transform: uppercase; color: var(--text-faint); align-self: center; text-align: right; }
@@ -1474,16 +1479,16 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
   border-left-color: var(--primary); }
 .gm-chip { background: transparent; border: 1px solid var(--hairline-2); color: var(--text-faint);
   font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
-  padding: 5px 9px; cursor: pointer; transition: color 0.2s var(--ease), border-color 0.2s var(--ease); }
+  padding: 5px 9px; cursor: var(--cursor-pointer); transition: color 0.2s var(--ease), border-color 0.2s var(--ease); }
 .gm-chip.is-on { color: var(--primary); border-color: var(--primary-dim); background: rgba(79, 168, 224, 0.07); }
 .gm__tools { display: flex; gap: 4px; margin-left: auto; }
 .gm-tool { width: 30px; height: 30px; padding: 7px; background: transparent; border: 1px solid var(--hairline-2);
-  color: var(--text-dim); cursor: pointer; transition: color 0.2s var(--ease), border-color 0.2s var(--ease); }
+  color: var(--text-dim); cursor: var(--cursor-pointer); transition: color 0.2s var(--ease), border-color 0.2s var(--ease); }
 .gm-tool svg { width: 100%; height: 100%; display: block; }
 .gm-tool:hover, .gm-tool.is-on { color: var(--primary); border-color: var(--primary-dim); }
 .gm__body { position: relative; z-index: 0; flex: 1; min-height: 0; display: flex; }   /* its cards stay under the header's menus */
 .gm-canvas { flex: 1; min-width: 0; background: var(--void); }
-.gm.is-dropping .gm-canvas { cursor: crosshair; }
+.gm.is-dropping .gm-canvas { cursor: var(--cursor-target); }
 
 /* The city itself is drawn by MapLibre (gothammap.js); over it, the hologram:
    faint scan lines and a vignette, never in the way of a click. */
@@ -1505,10 +1510,10 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 
 /* People, in their own colour. */
 /* The map places the marker; it's a 34px disc, and its insides hang off it. */
-.gm-person { width: 34px; height: 34px; cursor: pointer; }
+.gm-person { width: 34px; height: 34px; cursor: var(--cursor-pointer); }
 .gm-person__face { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--accent);
   background-color: var(--surface-2); background-size: cover; background-repeat: no-repeat;
-  box-shadow: 0 0 0 3px #060a10, 0 4px 14px rgba(0, 0, 0, 0.6); cursor: pointer; }
+  box-shadow: 0 0 0 3px #060a10, 0 4px 14px rgba(0, 0, 0, 0.6); cursor: var(--cursor-pointer); }
 .gm-person__ring { position: absolute; inset: -6px; border-radius: 50%; border: 1.5px solid var(--accent);
   opacity: 0; animation: gm-ping 2.6s ease-out infinite; }
 .gm-person[data-status="offline"] .gm-person__ring, .gm-person[data-status="idle"] .gm-person__ring { animation: none; }
@@ -1533,7 +1538,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm-pinform__actions { display: flex; justify-content: space-between; gap: 6px; margin-top: 8px; }
 .gm-btn { background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim);
   font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
-  padding: 6px 10px; cursor: pointer; transition: color 0.2s var(--ease), border-color 0.2s var(--ease); }
+  padding: 6px 10px; cursor: var(--cursor-pointer); transition: color 0.2s var(--ease), border-color 0.2s var(--ease); }
 .gm-btn:hover { color: var(--text); border-color: var(--text-faint); }
 .gm-btn--go, .gm-btn.is-on { color: var(--accent, var(--primary)); border-color: var(--accent, var(--primary-dim)); }
 
@@ -1541,7 +1546,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm-side { width: 210px; flex: none; border-left: 1px solid var(--hairline); background: var(--surface);
   overflow-y: auto; padding: 12px 0; }
 .gm-roster { list-style: none; margin: 0; padding: 0; }
-.gm-roster__item { display: flex; align-items: center; gap: 10px; padding: 7px 14px; cursor: pointer;
+.gm-roster__item { display: flex; align-items: center; gap: 10px; padding: 7px 14px; cursor: var(--cursor-pointer);
   border-left: 2px solid transparent; }
 .gm-roster__item:hover, .gm-roster__item.is-on { background: var(--hairline); border-left-color: var(--accent); }
 .gm-roster__item.is-hidden { cursor: default; opacity: 0.45; }
@@ -1556,7 +1561,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); animation: toast-in 0.16s var(--ease) both; }
 .gm-card[hidden] { display: none; }
 .gm-card__x { position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; padding: 3px; background: none;
-  border: 0; color: var(--text-faint); cursor: pointer; }
+  border: 0; color: var(--text-faint); cursor: var(--cursor-pointer); }
 .gm-card__x svg { width: 100%; height: 100%; display: block; }
 .gm-card__x:hover { color: var(--text); }
 .gm-card__top { display: flex; gap: 10px; align-items: center; }
@@ -1573,7 +1578,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 #map-open.is-on { color: var(--primary); }
 
 /* End the call — any call — from the line you talk on. */
-.end-call { flex: none; width: 42px; height: 42px; padding: 10px; border-radius: 50%; cursor: pointer;
+.end-call { flex: none; width: 42px; height: 42px; padding: 10px; border-radius: 50%; cursor: var(--cursor-pointer);
   background: rgba(224, 87, 79, 0.12); border: 1px solid rgba(224, 87, 79, 0.55); color: var(--alert);
   transition: background 0.2s var(--ease), color 0.2s var(--ease); }
 .end-call svg { width: 100%; height: 100%; display: block; }
@@ -1615,7 +1620,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm-tabs { display: flex; border-bottom: 1px solid var(--hairline); position: sticky; top: 0; background: var(--surface); z-index: 2; }
 .gm-tab { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; padding: 11px 4px 9px;
   font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-faint);
-  cursor: pointer; }
+  cursor: var(--cursor-pointer); }
 .gm-tab:hover { color: var(--text-dim); }
 .gm-tab.is-on { color: var(--primary); border-bottom-color: var(--primary); }
 .gm-tab__count { display: inline-block; min-width: 14px; padding: 0 4px; margin-left: 3px; border-radius: 7px;
@@ -1624,7 +1629,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm-roster, .gm-list { padding-top: 8px; }
 .gm-list { list-style: none; margin: 0; }
 .gm-list[hidden], .gm-roster[hidden] { display: none; }
-.gm-list__item { display: flex; align-items: center; gap: 10px; padding: 8px 14px; cursor: pointer;
+.gm-list__item { display: flex; align-items: center; gap: 10px; padding: 8px 14px; cursor: var(--cursor-pointer);
   border-left: 2px solid transparent; }
 .gm-list__item:hover { background: var(--hairline); border-left-color: var(--sev); }
 .gm-list__sev { width: 8px; height: 8px; flex: none; transform: rotate(45deg); background: var(--sev);
@@ -1643,14 +1648,14 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm-info__assign[hidden] { display: none; }
 .gm-info__people { display: flex; flex-wrap: wrap; gap: 6px; }
 .gm-assign { display: flex; align-items: center; gap: 6px; padding: 3px 9px 3px 3px; border-radius: 14px;
-  background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim); font-size: 11.5px; cursor: pointer; }
+  background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim); font-size: 11.5px; cursor: var(--cursor-pointer); }
 .gm-assign span { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--accent);
   background-color: var(--surface-2); background-size: cover; }
 .gm-assign:hover, .gm-assign.is-on { color: var(--text); border-color: var(--accent); }
 
 /* Layers: one button, a menu of switches. */
 .gm-layers { position: relative; }
-.gm-layers__btn { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; cursor: pointer;
+.gm-layers__btn { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; cursor: var(--cursor-pointer);
   background: transparent; border: 1px solid var(--hairline-2); color: var(--text-dim); font-family: var(--mono);
   font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; }
 .gm-layers__btn svg { width: 14px; height: 14px; }
@@ -1672,7 +1677,7 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm.is-wide .gm-side { margin-right: -210px; }
 .gm-side__toggle { position: absolute; top: 12px; right: 210px; z-index: 860; width: 22px; height: 40px; padding: 3px;
   background: rgba(10, 13, 20, 0.88); border: 1px solid var(--hairline-2); border-right: 0; color: var(--text-dim);
-  cursor: pointer; transition: right 0.25s var(--ease); }
+  cursor: var(--cursor-pointer); transition: right 0.25s var(--ease); }
 .gm-side__toggle svg { width: 100%; height: 100%; display: block; transition: transform 0.25s var(--ease); }
 .gm-side__toggle:hover { color: var(--primary); }
 .gm.is-wide .gm-side__toggle { right: 0; }
@@ -1719,3 +1724,53 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm-info__said { margin: 8px 0 0; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--text-dim); }
 .gm-info__said[hidden] { display: none; }
 .gm-assign[data-status="offline"] { opacity: 0.6; }
+
+/* --- replies ------------------------------------------------------------------
+   Answering one message in particular: the bar over the box says which, and the
+   bubble carries a quote of it — tap it to go back to the original. */
+.messages__replying { display: flex; align-items: center; gap: 10px; margin: 0 16px; padding: 8px 10px;
+  border-left: 2px solid var(--contact-accent, var(--primary)); background: var(--surface-2);
+  border-radius: 0 10px 10px 0; animation: toast-in 0.12s var(--ease) both; }
+.messages__replying[hidden] { display: none; }
+.messages__replying-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.messages__replying-who { font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--contact-accent, var(--primary)); }
+.messages__replying-text { font-size: 12.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.messages__replying-x { flex: none; width: 24px; height: 24px; padding: 5px; border: 0; background: none; cursor: var(--cursor-pointer);
+  color: var(--text-faint); }
+.messages__replying-x svg { width: 100%; height: 100%; display: block; }
+.messages__replying-x:hover { color: var(--text); }
+.bubble__quote { display: flex; flex-direction: column; gap: 1px; margin: 0 0 6px; padding: 5px 8px;
+  border-left: 2px solid var(--contact-accent, var(--primary-dim)); border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--void) 35%, transparent); cursor: var(--cursor-pointer); max-width: 100%; }
+.bubble--me .bubble__quote { border-left-color: var(--operator-dim, var(--primary-dim)); }
+.bubble__quote b { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-faint); }
+.bubble__quote span { font-size: 12.5px; color: var(--text-dim); overflow: hidden; display: -webkit-box;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; }
+.bubble__reply { flex: none; align-self: center; width: 24px; height: 24px; padding: 4px; border-radius: 50%;
+  border: 1px solid var(--hairline-2); background: var(--surface); color: var(--text-faint); cursor: var(--cursor-pointer);
+  opacity: 0; transition: opacity 0.15s var(--ease), color 0.15s, border-color 0.15s; }
+.bubble__reply svg { width: 100%; height: 100%; display: block; }
+.bubble:hover .bubble__reply, .bubble__reply:focus-visible { opacity: 1; }
+.bubble__reply:hover { color: var(--primary); border-color: var(--primary-dim); }
+.bubble--me .bubble__reply { order: -1; }          /* on the inside edge of his own messages */
+@media (hover: none) { .bubble__reply { opacity: 0.6; } }
+.bubble.is-flash .bubble__text { animation: quote-flash 1.2s var(--ease); }
+@keyframes quote-flash { 30% { box-shadow: 0 0 0 2px var(--primary); } }
+
+/* Cursors everywhere: the arrow by default, the reticle on what's clickable;
+   text stays text. The map keeps its own hand for dragging. */
+html, body { cursor: var(--cursor); }
+a, button, [role="button"], [role="tab"], [role="menuitemcheckbox"], summary, select, label[for],
+input[type="checkbox"], input[type="radio"], input[type="range"] { cursor: var(--cursor-pointer); }
+button:disabled { cursor: default; }
+input[type="text"], input[type="search"], input[type="password"], input:not([type]), textarea, [contenteditable="true"] { cursor: text; }
+
+/* On the move: the ring turns dashed and slowly round. Last seen: faded, uncertain. */
+.gm-person.is-moving .gm-person__ring { opacity: 0.85; border-style: dashed; animation: gm-turn 3.2s linear infinite; }
+@keyframes gm-turn { to { transform: rotate(360deg); } }
+.gm-person.is-ghost .gm-person__face { filter: grayscale(0.85) brightness(0.65); opacity: 0.7; border-style: dashed; }
+.gm-person.is-ghost .gm-person__ring { animation: none; opacity: 0; }
+.gm-person.is-ghost .gm-person__name { opacity: 0.6; }
+.gm-roster__item.is-ghost { opacity: 0.72; }

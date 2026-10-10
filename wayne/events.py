@@ -12,10 +12,8 @@ from . import delivery
 # --- Engine states (the contact's current mode) ---
 IDLE = "idle"
 LISTENING = "listening"
-TRANSCRIBING = "transcribing"
 SEARCHING = "searching"
 THINKING = "thinking"
-SPEAKING = "speaking"
 
 
 def state(value):

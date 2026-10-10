@@ -14,6 +14,7 @@ import uuid
 
 from .. import paths
 from .store import atomic_write, read_text
+from .texts import quote
 
 MAX_MESSAGES = 3000
 _lock = threading.RLock()
@@ -43,6 +44,20 @@ class Group:
     def _save_meta(self, meta):
         atomic_write(self.meta_path, json.dumps(meta, indent=1))
 
+    def update_meta(self, change):
+        """
+        Read, change and write the group's settings as one step, under the
+        store's lock — and not at all once the group's gone. Done piecemeal
+        outside the lock, a member's read pointer written meanwhile was lost.
+        """
+        with _lock:
+            if not self.meta_path.exists():
+                return None
+            meta = self.meta()
+            change(meta)
+            self._save_meta(meta)
+            return meta
+
     def messages(self):
         try:
             return json.loads(read_text(self.log_path) or "[]")
@@ -60,19 +75,34 @@ class Group:
         """Contact ids in the group — Bruce is always in it, and isn't listed."""
         return list(self.meta().get("members", []))
 
-    def add(self, sender, text, at=None, origin=None):
-        """Post a message from 'me' (Bruce) or a contact id. Returns it."""
+    def add(self, sender, text, at=None, origin=None, reply_to=None):
+        """
+        Post a message from 'me' (Bruce) or a contact id. Returns it — or None if
+        the group's gone (deleted while they were typing: nothing is written,
+        or a nameless "Group" rose from the log).
+        """
         message = {"id": uuid.uuid4().hex[:12], "from": sender, "text": text, "at": at or time.time()}
         if origin:
             message["origin"] = origin
         with _lock:
-            messages = self.messages() + [message]
-            atomic_write(self.log_path, json.dumps(messages[-MAX_MESSAGES:]))
+            if not self.meta_path.exists():
+                return None
+            before = self.messages()
+            quoted = quote(before, reply_to)
+            if quoted:
+                message["reply_to"] = quoted
+            atomic_write(self.log_path, json.dumps((before + [message])[-MAX_MESSAGES:]))
             if sender != "me":
-                self._mark(sender, message["at"])      # you've read what you wrote
+                # You've read what you wrote — and what came before it, if you'd
+                # read that: a question that landed while you typed is still unread.
+                upto = self.read_upto(sender)
+                if not any(m["at"] > upto and m["from"] != sender for m in before):
+                    self._mark(sender, message["at"])
         return message
 
     def _mark(self, member, at):
+        if not self.meta_path.exists():
+            return
         meta = self.meta()
         reads = meta.setdefault("reads", {})
         if at > reads.get(member, 0):
@@ -96,9 +126,13 @@ class Group:
         return [m for m in self.messages() if m["at"] > upto and m["from"] != member]
 
     def seen_by(self, member, limit=12):
-        """The tail of the thread as far as they've read it — what they can know."""
+        """
+        The tail of the thread as far as they've read it — what they can know —
+        and everything they wrote themselves, read or not: Dick posted with
+        others' messages still unread, and then couldn't recall his own text.
+        """
         upto = self.read_upto(member)
-        return [m for m in self.messages() if m["at"] <= upto][-limit:]
+        return [m for m in self.messages() if m["at"] <= upto or m.get("from") == member][-limit:]
 
     def page(self, before=None, limit=40):
         messages = self.messages()
@@ -117,6 +151,8 @@ class Group:
         if said:
             message["said"] = said
         with _lock:
+            if not self.meta_path.exists():
+                return message
             messages = self.messages() + [message]
             atomic_write(self.log_path, json.dumps(messages[-MAX_MESSAGES:]))
         return message
@@ -136,15 +172,20 @@ class Group:
                     return message
         return None
 
-    def add_member(self, contact_id, at=None):
-        """In they come — having read nothing yet, so the recent thread is theirs to read."""
+    def add_member(self, contact_id, at=None, backlog=6):
+        """
+        In they come, with the last few messages to catch up on (`backlog`) —
+        not the whole history, which went to the model whole, and told someone
+        outside the secret everything the family had said before they arrived.
+        """
         with _lock:
             meta = self.meta()
             if contact_id in meta.get("members", []):
                 return False
             meta.setdefault("members", []).append(contact_id)
-            # They can scroll up, as anyone added to a group can.
-            meta.setdefault("reads", {})[contact_id] = 0
+            said = [m for m in self.messages() if m.get("kind") != "system"]
+            seen_to = said[-backlog - 1]["at"] if backlog and len(said) > backlog else (0 if backlog else time.time())
+            meta.setdefault("reads", {})[contact_id] = seen_to
             self._save_meta(meta)
         return True
 
@@ -216,6 +257,3 @@ def groups_with(contact_id):
     return [g for g in all_groups() if contact_id in g.members]
 
 
-def clear_all():
-    for group in all_groups():
-        group.delete()

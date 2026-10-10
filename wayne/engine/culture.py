@@ -23,10 +23,9 @@ import re
 import threading
 import time
 
-import ollama
-
 from .. import paths
 from ..memory.store import atomic_write, read_text
+from . import model
 from .search import google_search
 
 # How long what they've seen stays fresh before it's looked for again.
@@ -197,9 +196,9 @@ def _condense(contact, topic, snippets, month):
         "few months; no opinions; nothing about Batman, his family or any Gotham villain. "
         "JSON only: {\"items\": [\"...\"]}")
     try:
-        reply = ollama.chat(model=contact.model, think=False, format="json",
-                            options={**contact.options, "temperature": 0.2, "num_predict": 260},
-                            messages=[{"role": "user", "content": instruction}])["message"]["content"]
+        reply = model.ask(contact.model, [{"role": "user", "content": instruction}],
+                          {**contact.options, "temperature": 0.2, "num_predict": 260},
+                          think=model.thinking(contact), fmt="json", purpose=f"{contact.id}'s catching up")
         items = json.loads(reply).get("items") or []
     except Exception:
         return []

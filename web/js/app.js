@@ -121,7 +121,7 @@
      'dossier', 'dossier-close', 'dossier-name',
      'dossier-role', 'dossier-text', 'dossier-save', 'dossier-saved',
      'dossier-portrait', 'messages', 'messages-avatar', 'messages-name', 'messages-role',
-     'messages-close', 'messages-thread', 'messages-compose', 'messages-input', 'messages-emoji',
+     'messages-close', 'messages-thread', 'messages-compose', 'messages-input', 'messages-emoji', 'messages-replying',
      'messages-resize', 'messages-who', 'rail-toggle', 'rail-resize', 'inbox', 'inbox-count',
      'toasts', 'dossier-call', 'dossier-message', 'incoming', 'incoming-avatar',
      'incoming-name', 'incoming-accept', 'incoming-decline', 'groups', 'group-new',
@@ -358,6 +358,7 @@
     // Anything from the operator cancels a pending hang-up — he was leaving
     // because nobody was there, and now somebody is.
     state.hangUpWhenQuiet = false;
+    state.closing = false;        // he's here after all: the sign-off is off
     state.nudges = 0;
     state.lulls = 0;
     if (opts && opts.quietFor) state.quietUntil = Date.now() + opts.quietFor;
@@ -512,6 +513,7 @@
   }
 
   var ICONS = {
+    reply: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v3"/></svg>',
     smile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.2a4.2 4.2 0 0 0 7 0"/><path d="M9 9.6h.01M15 9.6h.01" stroke-width="2.6"/></svg>',
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6v12M6 12h12"/></svg>',
     call: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>',
@@ -706,6 +708,7 @@
       t.classList.add('bubble__dots');
       t.insertAdjacentHTML('beforeend', '<i></i><i></i><i></i>');
     } else {
+      if (message.reply_to) t.appendChild(quoteNode(message.reply_to, opts.group, contact));
       appendMentions(t, message.text, opts.mentions, opts.group);
       if (message.at) {
         var time = document.createElement('span');
@@ -723,6 +726,16 @@
       body.appendChild(t);
     }
     li.appendChild(body);
+    if (message.id && !message.typing) {
+      // Reply to this one in particular.
+      var answer = document.createElement('button');
+      answer.type = 'button';
+      answer.className = 'bubble__reply';
+      answer.setAttribute('aria-label', 'Reply');
+      answer.dataset.tip = 'Reply';
+      answer.innerHTML = ICONS.reply;
+      li.appendChild(answer);
+    }
     if (from === 'them' && message.id && !message.typing) {
       // A way to react without knowing to double-click.
       var add = document.createElement('button');
@@ -819,7 +832,24 @@
     });
     el['messages-thread'].addEventListener('click', function (e) {
       var button = e.target.closest && e.target.closest('.bubble__add');
-      if (button) { e.stopPropagation(); open(button.closest('.bubble')); }
+      if (button) { e.stopPropagation(); open(button.closest('.bubble')); return; }
+      var reply = e.target.closest && e.target.closest('.bubble__reply');
+      if (reply && state.thread) {
+        var id = reply.closest('.bubble').dataset.id;
+        var m = (state.thread.messages || []).filter(function (x) { return x.id === id; })[0];
+        if (m) setReplyTo(m);
+        return;
+      }
+      var quote = e.target.closest && e.target.closest('.bubble__quote');
+      if (quote) {
+        var original = el['messages-thread'].querySelector('.bubble[data-id="' + quote.dataset.goto + '"]');
+        if (original) {
+          original.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          original.classList.remove('is-flash');
+          void original.offsetWidth;
+          original.classList.add('is-flash');
+        }
+      }
     });
     document.addEventListener('pointerdown', function (e) {
       if (!bar.hidden && !bar.contains(e.target) && !(e.target.closest && e.target.closest('.bubble__add'))) bar.hidden = true;
@@ -1165,6 +1195,16 @@
     if (state.threadAtEnd === false) box.scrollTop = kept;
   }
 
+  /* What the server sent for a thread, plus anything that arrived as an event
+     while it was being fetched — by id, in order. Replacing the list dropped
+     a message that landed in between. */
+  function mergeMessages(fetched, live) {
+    var seen = {};
+    fetched.forEach(function (m) { if (m.id) seen[m.id] = true; });
+    var extra = (live || []).filter(function (m) { return m.id && !seen[m.id]; });
+    return fetched.concat(extra).sort(function (a, b) { return (a.at || 0) - (b.at || 0); });
+  }
+
   /* To the latest message — if he was already there, or `force` (opening a
      thread, sending one himself). Someone typing or reading no longer drags
      him down from whatever he'd scrolled back to. */
@@ -1177,6 +1217,7 @@
     var contact = state.contacts[id];
     if (!contact) return;
     clearToasts('t:' + id);
+    setReplyTo(null);
     state.messagesWith = id;
     state.groupOpen = null;
     state.lastThread = id;
@@ -1199,7 +1240,7 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!state.thread || state.thread.id !== id) return;
-        state.thread.messages = d.messages || [];
+        state.thread.messages = mergeMessages(d.messages || [], state.thread.messages);
         state.thread.messages.forEach(function (m) { state.thread.seen[m.id] = true; });
         state.thread.more = (d.messages || []).length >= 40;
         state.thread.loading = false;
@@ -1211,6 +1252,7 @@
         }
         renderThread();
         scrollThreadToEnd(true);
+        markSeen();
       })
       .catch(function () { if (state.thread && state.thread.id === id) state.thread.loading = false; });
     el['messages-input'].focus();
@@ -1297,9 +1339,48 @@
     if (!body || !id) return;
     // Kept in the box if the link is down: a text that silently vanished was
     // worse than one that visibly didn't go.
-    if (!send(group ? { type: 'group_text', id: group, text: body } : { type: 'text', id: id, text: body })) return;
+    var reply = state.replyTo ? state.replyTo.id : null;
+    if (!send(group ? { type: 'group_text', id: group, text: body, reply_to: reply }
+                    : { type: 'text', id: id, text: body, reply_to: reply })) return;
     el['messages-input'].value = '';
+    setReplyTo(null);
     ConsoleTones.sent();
+  }
+
+  /* Replying to one message in particular: a bar over the box says which, and
+     the message sent carries it — shown in the bubble, and told to them. */
+  function setReplyTo(message) {
+    state.replyTo = message ? { id: message.id, from: message.from, text: message.text } : null;
+    var bar = el['messages-replying'];
+    bar.hidden = !message;
+    if (!message) return;
+    var who = message.from === 'me' ? 'yourself' : ((state.contacts[message.from] || {}).name ||
+              ((state.contacts[state.thread && state.thread.id] || {}).name) || 'them');
+    bar.querySelector('.messages__replying-who').textContent = 'Replying to ' + who;
+    bar.querySelector('.messages__replying-text').textContent = message.text;
+    el['messages-input'].focus();
+  }
+
+  function quoteNode(quoted, group, contact) {
+    var q = document.createElement('span');
+    q.className = 'bubble__quote';
+    var who = quoted.from === 'me' ? 'You' : group ? ((state.contacts[quoted.from] || {}).name || '') : (contact || {}).name || '';
+    var name = document.createElement('b');
+    name.textContent = who;
+    var text = document.createElement('span');
+    text.textContent = quoted.text;
+    q.appendChild(name);
+    q.appendChild(text);
+    q.dataset.goto = quoted.id;
+    return q;
+  }
+
+  /* He's seen their messages — the thread is open and the window in front.
+     Their phone shows it, as anyone's does. */
+  function markSeen() {
+    if (!state.thread || el.messages.hidden || document.visibilityState !== 'visible') return;
+    if (state.thread.kind === 'group') send({ type: 'group_seen', id: state.thread.id });
+    else send({ type: 'seen', id: state.thread.id });
   }
 
   function threadOpenFor(id) {
@@ -1349,6 +1430,7 @@
       state.thread.messages.push(event.message);
       renderThread();
       scrollThreadToEnd();
+      markSeen();
     } else {
       state.unread[event.speaker] = (state.unread[event.speaker] || 0) + 1;
       updateInbox();
@@ -1588,6 +1670,7 @@
   function openGroup(id) {
     var g = state.groups[id];
     if (!g) return;
+    setReplyTo(null);
     state.groupOpen = id;
     state.messagesWith = null;
     delete state.unread[groupKey(id)];
@@ -1611,7 +1694,7 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!state.thread || state.thread.id !== id) return;
-        state.thread.messages = d.messages || [];
+        state.thread.messages = mergeMessages(d.messages || [], state.thread.messages);
         state.thread.messages.forEach(function (m) { state.thread.seen[m.id] = true; });
         state.thread.more = (d.messages || []).length >= 40;
         state.thread.reads = d.reads || {};
@@ -1626,6 +1709,7 @@
         });
         renderThread();
         scrollThreadToEnd(true);
+        markSeen();
       })
       .catch(function () { if (state.thread && state.thread.id === id) state.thread.loading = false; });
     el['messages-input'].focus();
@@ -1689,12 +1773,14 @@
       case 'group_sent':
       case 'group_message':
         var m = event.message;
+        if (!state.groups[id]) return;      // a group this page doesn't know (deleted mid-message)
         if (state.groupTyping[id]) delete state.groupTyping[id][m.from];
         if (state.groups[id]) state.groups[id].last = m;
         var ping = m.from !== 'me' && pingsMe(m.text, true);
         if (groupOpenFor(id)) {
           state.thread.messages.push(m);
           if (m.from === 'me') state.threadAtEnd = true;
+          else markSeen();
           if (ping && ConsoleTones.ping) ConsoleTones.ping();
         } else if (m.from !== 'me') {
           state.unread[groupKey(id)] = (state.unread[groupKey(id)] || 0) + 1;
@@ -2447,7 +2533,10 @@
         break;
 
       case 'picked_up':
-        // They've picked up, whether or not their first words survived.
+        // They've picked up, whether or not their first words survived — if
+        // it's someone this page is ringing or has on the line. A pick-up from
+        // a line he's since left behind is nothing to do with this call.
+        if (event.speaker !== state.ringingId && event.speaker !== state.connectedId && !onCall(event.speaker)) break;
         answered(event.speaker);
         if (state.ringingId === event.speaker) { state.ringingId = null; ConsoleTones.stopRinging(); }
         renderSeats();
@@ -2462,13 +2551,9 @@
       case 'turn_complete':
         state.generationDone = true;
         answered();
-        // Someone being patched in whose greeting never came (talked over,
-        // or nothing to say): they're on the call — stop ringing for them.
-        if (state.ringingId && state.ringingId !== state.connectedId && onCall(state.ringingId)) {
-          state.ringingId = null;
-          ConsoleTones.stopRinging();
-          renderDirectory();
-        }
+        // A ring for someone being patched in stops when they pick up or refuse
+        // (picked_up, call_refused) — not when the call's last remark finishes,
+        // which made a decliner look joined for half a minute.
         // No voice arrived (degraded link): the ring mustn't sit on "thinking".
         if (!ConsoleAudio.isPlaying && document.documentElement.dataset.state === 'thinking') {
           setState('idle');
@@ -2600,6 +2685,7 @@
     $('end-call').innerHTML = ICONS.end;
     $('end-call').addEventListener('click', function () { if (state.connectedId) hangUp(); });
     el['messages-compose'].addEventListener('submit', sendMessage);
+    el['messages-replying'].querySelector('.messages__replying-x').addEventListener('click', function () { setReplyTo(null); });
     el['dossier-save'].addEventListener('click', saveDossier);
     el.dossier.addEventListener('click', function (e) {
       if (e.target === el.dossier) el.dossier.hidden = true;
@@ -2635,7 +2721,7 @@
         if (modal) { modal.hidden = true; return; }
         if (!el.dossier.hidden) { el.dossier.hidden = true; return; }
         if (typing) { e.target.blur(); return; }
-        if (window.GothamMap && GothamMap.isOpen()) { GothamMap.close(); return; }
+        if (window.GothamMap && GothamMap.isOpen()) { if (!GothamMap.escape()) GothamMap.close(); return; }
         interruptHim();
         return;
       }
@@ -2870,6 +2956,8 @@
   wireMentions();
   wireTapbacks();
   wireEmoji();
+  // Back at the window with a thread open: what's on screen has been seen.
+  document.addEventListener('visibilitychange', markSeen);
   try { state.unread = JSON.parse(recall('unread') || '{}') || {}; } catch (e) { state.unread = {}; }
   updateInbox();
   loadSession().then(startBoot, startBoot);

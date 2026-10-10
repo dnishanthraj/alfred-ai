@@ -97,11 +97,6 @@ def _resolve_backend():
         return _backend
 
 
-def backend_name():
-    kind, _ = _resolve_backend()
-    return "mlx-whisper (Neural Engine)" if kind == "mlx" else "faster-whisper (CPU)"
-
-
 def transcribe_audio(audio, hint=None):
     """
     Transcribe a float32 mono array at SAMPLE_RATE.
@@ -219,7 +214,3 @@ def record_while(should_continue, max_seconds=_MAX_RECORD_SECONDS):
     return np.concatenate(frames, axis=0)
 
 
-def listen_for_hold(should_continue):
-    """Record while the predicate holds, then transcribe. Returns '' on a short take."""
-    text, _confidence_score = transcribe_audio(record_while(should_continue))
-    return text

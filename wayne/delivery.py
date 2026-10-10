@@ -49,7 +49,15 @@ def clean(text):
     return _tidy(_ANY_CUE.sub(" ", text or ""))
 
 
+# Said in full, the way they're said aloud — the screen keeps "Mr." as written.
+_SAID_IN_FULL = [(re.compile(rf"\b{short}\.(?=\s)"), said) for short, said in (
+    ("Mr", "Mister"), ("Mrs", "Missus"), ("Dr", "Doctor"), ("Prof", "Professor"), ("Det", "Detective"),
+    ("Lt", "Lieutenant"), ("Sgt", "Sergeant"), ("Capt", "Captain"), ("Commr", "Commissioner"))]
+
+
 def _pronounce(text):
+    for short, said in _SAID_IN_FULL:
+        text = short.sub(said, text)
     for word, spelling in config.PRONUNCIATIONS.items():
         text = re.sub(rf"\b{re.escape(word.strip())}\b", spelling.strip(), text)
     return text

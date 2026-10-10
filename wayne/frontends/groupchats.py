@@ -36,6 +36,8 @@ class GroupChats:
     def _init_groups(self):
         # One reader per member per group: reading, deciding, perhaps replying.
         self._group_readers = {}
+        self._group_writing = set()     # (group, member) whose post the model is writing right now
+        self._drafts = {}               # group -> {member: what they've written and are typing out}
 
     # --- what the page asks for ---------------------------------------------
 
@@ -60,17 +62,18 @@ class GroupChats:
             return
         for key, task in list(self._group_readers.items()):
             if key[0] == group_id:
-                task.cancel()
+                if key not in self._group_writing:
+                    task.cancel()
                 self._group_readers.pop(key, None)
         group.delete()
         await self.broadcast({"type": "group_deleted", "id": group_id})
 
-    async def group_text(self, group_id, body):
+    async def group_text(self, group_id, body, reply_to=None):
         """Bruce posts. Everyone in it will read it — when they get to it."""
         group, body = store.of(group_id), (body or "").strip()
         if group is None or not body:
             return
-        message = group.add("me", body)
+        message = group.add("me", body, reply_to=reply_to)
         groupchat.spend(group, "me")
         await self.broadcast({"type": "group_sent", "group": group_id, "message": message})
         await self._ping(group, body, "me")
@@ -126,14 +129,26 @@ class GroupChats:
     def _read_later(self, group, member):
         key = (group.id, member)
         contact = self.directory.get(member)
-        if contact is None or key in self._group_readers:
-            return
+        current = store.of(group.id)
+        if contact is None or key in self._group_readers or current is None or member not in current.members:
+            return          # gone, or not theirs to read any more
         self._group_readers[key] = self._spawn(self._read_group(group.id, contact))
 
     async def _read_group(self, group_id, contact):
         key = (group_id, contact.id)
         try:
             await self._wait_to_read(contact)
+            # On a call with him, the group chat waits till they hang up — unless
+            # it's for them (asked, tagged), when they might glance at it.
+            while contact.id in self._members():
+                waiting = store.of(group_id)
+                if waiting is None or contact.id not in waiting.members:
+                    return
+                for_them = any(groupchat.addressed(m["text"], contact) or groupchat.tagged(m["text"], contact)
+                               for m in waiting.unread_for(contact.id))
+                if for_them and random.random() < 0.35:
+                    break
+                await asyncio.sleep(6)
             group = store.of(group_id)
             if group is None or contact.id not in group.members:
                 return
@@ -157,7 +172,7 @@ class GroupChats:
             self._group_readers.pop(key, None)
             # More arrived while they were reading or writing: another look.
             group = store.of(group_id)
-            if group is not None and group.unread_for(contact.id):
+            if group is not None and contact.id in group.members and group.unread_for(contact.id):
                 self._read_later(group, contact.id)
 
     async def _maybe_reply(self, group, contact, unread):
@@ -219,13 +234,15 @@ class GroupChats:
         session = self.session_for(contact.id)
         loop = asyncio.get_running_loop()
         session._group_actions = {"leave": False, "add": []}
+        key = (group.id, contact.id)
         if given is not None:
             text, unread = given, list(unread)
         else:
             async with self.turn_lock:
                 # Anything said while they waited their turn to write, they've seen
                 # too — two people answering the same question without either
-                # noticing the other was the rule, not the exception.
+                # noticing the other was the rule, not the exception. That
+                # includes what someone else has written and is still typing out.
                 unread = list(unread)
                 seen = {m.get("id") for m in unread}
                 fresh = [m for m in group.messages() if m["at"] > group.read_upto(contact.id)
@@ -235,8 +252,26 @@ class GroupChats:
                     read_at = group.mark_read(contact.id)
                     await self.broadcast({"type": "group_read", "group": group.id, "member": contact.id,
                                           "at": read_at})
-                text = await loop.run_in_executor(None, session.group_post, group, unread, must,
-                                                  opening, task, chase, tapback)
+                    # Asked something in what they've only now read: that's owed an answer too.
+                    must = must or any(groupchat.addressed(m["text"], contact) for m in fresh if m["from"] == "me")
+                typing = [{"from": cid, "text": draft, "at": time.time()}
+                          for cid, draft in self._drafts.get(group.id, {}).items() if cid != contact.id]
+                self._group_writing.add(key)
+                try:
+                    text = await loop.run_in_executor(None, session.group_post, group, unread + typing, must,
+                                                      opening, task, chase, tapback)
+                finally:
+                    self._group_writing.discard(key)
+                if text:
+                    self._drafts.setdefault(group.id, {})[contact.id] = text
+        try:
+            await self._send_group_post(group, contact, session, text, unread, task)
+        finally:
+            self._drafts.get(group.id, {}).pop(contact.id, None)
+
+    async def _send_group_post(self, group, contact, session, text, unread, task):
+        """What they wrote, typed out and sent, part by part — if the group and their place in it still stand."""
+        loop = asyncio.get_running_loop()
         actions = getattr(session, "_group_actions", {}) or {}
         if task:
             actions["asked"] = True     # he asked for this, in a DM: it stands
@@ -269,7 +304,17 @@ class GroupChats:
             await self.broadcast({"type": "group_typing", "group": group.id, "speaker": contact.id})
             await self._type_out(contact.id, part, per_second, group=group.id, cap=15,
                                  already=(loop.time() - started) if i == 0 else 0)
-            message = group.add(contact.id, part)
+            current = store.of(group.id)
+            answering = None
+            if i == 0 and current:
+                answering = (groupchat.quoting(current, actions["reply"], self.directory, contact.id)
+                             if actions.get("reply") else self._answering(current, contact, unread))
+            message = (current.add(contact.id, part, reply_to=answering)
+                       if current and contact.id in current.members else None)
+            if message is None:
+                # Deleted, or shown the door, while they typed: it never lands.
+                await self.broadcast({"type": "group_idle", "group": group.id, "speaker": contact.id})
+                return
             await self.broadcast({"type": "group_message", "group": group.id, "message": message})
             await self._ping(group, part, contact.id)
             if i < len(parts) - 1:
@@ -277,11 +322,29 @@ class GroupChats:
         presence.of(contact).touch()
         await self._presence_changed(contact)
         log.info("%s posted in group %s, %d messages", contact.id, group.id, len(parts))
+        if contact.id in self._members():
+            # Typed mid-call: they'd say so on the line, as anyone would.
+            self._spawn(self._react(f"You've just sent a message in your group chat “{group.name}” while on this "
+                                    f"call with him: “{' '.join(parts)[:160]}”. Mention it on the call the way "
+                                    "you would — a word about what you were doing.", who=contact.id))
         groupchat.spend(group, contact.id)
         await self._group_actions(group, contact, actions)
         for member in group.members:
             if member != contact.id:
                 self._read_later(group, member)
+
+    @staticmethod
+    def _answering(group, contact, unread):
+        """
+        What their post answers, when it needs saying: something he asked them
+        that others have talked over since — then the reply quotes it, as a
+        phone does. The latest message needs no quote.
+        """
+        asked = [m for m in unread if m.get("from") == "me" and m.get("id") and groupchat.addressed(m["text"], contact)]
+        if not asked:
+            return None
+        latest = (group.messages() or [{}])[-1]
+        return asked[-1]["id"] if latest.get("id") != asked[-1]["id"] else None
 
     async def _dm_from_group(self, contact, text):
         from ..engine.session import REACH_MARKER
@@ -307,11 +370,10 @@ class GroupChats:
             # Taken private: a text to him, in their thread, as they'd send it.
             self._spawn(self._dm_from_group(contact, actions["dm"]))
         for name in actions.get("add", [])[:1]:
-            newcomer = next((c for c in self.directory
-                             if name.lower() in (c.name.lower(), c.full_name.lower(), c.id)), None)
+            newcomer = self.directory.find(name)
             if (newcomer and newcomer.id != contact.id and newcomer.id not in group.members
                     and (actions.get("asked") or groupchat.may_add(group, contact, newcomer))
-                    and group.add_member(newcomer.id)):
+                    and group.add_member(newcomer.id, backlog=0 if groupchat.outside(newcomer.id) else 6)):
                 groupchat.note_added(group)
                 line = group.system(f"{contact.name} added {newcomer.name}")
                 log.info("%s added %s to group %s", contact.id, newcomer.id, group.id)
@@ -319,8 +381,7 @@ class GroupChats:
                 await self.broadcast({"type": "group_updated", "group": self.group_payload(group)})
                 self._read_later(group, newcomer.id)
         for name in actions.get("remove", []):
-            member = next((c for c in self.directory
-                           if name.lower() in (c.name.lower(), c.full_name.lower(), c.id)), None)
+            member = self.directory.find(name)
             if (member and member.id != contact.id and member.id in group.members
                     and len(group.members) > 1
                     and (actions.get("asked") or groupchat.may_remove(group, contact, member))
@@ -345,9 +406,13 @@ class GroupChats:
                 self._read_later(group, member)
 
     async def _drop_member(self, group, contact_id):
-        """Out of the group: whatever they were reading or writing for it stops now."""
+        """
+        Out of the group: whatever they were waiting to read stops now. Mid-
+        sentence, they're left to finish and find they can't post — cancelled
+        there, the lock let go while the model was still writing for them.
+        """
         task = self._group_readers.pop((group.id, contact_id), None)
-        if task:
+        if task and (group.id, contact_id) not in self._group_writing:
             task.cancel()
         await self.broadcast({"type": "group_idle", "group": group.id, "speaker": contact_id})
 
@@ -368,7 +433,7 @@ class GroupChats:
             await self.broadcast({"type": "group_message", "group": group.id, "message": line})
         for cid in add:
             contact = self.directory.get(cid)
-            if contact and group.add_member(cid):
+            if contact and group.add_member(cid, backlog=0 if groupchat.outside(cid) else 6):
                 line = group.system(f"You added {contact.name}", said=f"{self._bruce()} added {contact.name}")
                 await self.broadcast({"type": "group_message", "group": group.id, "message": line})
                 self._read_later(group, cid)
@@ -452,14 +517,14 @@ class GroupChats:
                        and not any(k == (group.id, c.id) for k in self._group_readers)]
             if not chasers:
                 continue
-            meta = group.meta()
-            meta["chased"] = (meta.get("chased", []) + [asked["id"]])[-20:]
-            group._save_meta(meta)
+            group.update_meta(lambda meta, seen=asked["id"]: meta.update(chased=(meta.get("chased", []) + [seen])[-20:]))
             state = presence.of(absent).now()
             from ..memory.history import describe_gap
-            chase = {"name": absent.name, "ago": describe_gap(age),
-                     "doing": state["doing"] if absent.shares_status else ""}
             chaser = random.choice(chasers)
+            # Where they are is only the chaser's to pass on if they'd know it —
+            # Selina isn't told Cass is on patrol.
+            known = absent.shares_status and not groupchat.outside(chaser.id)
+            chase = {"name": absent.name, "ago": describe_gap(age), "doing": state["doing"] if known else ""}
             log.info("%s chasing %s in group %s", chaser.id, absent.id, group.id)
             self._spawn(self._post_as(group, chaser, chase=chase))
             return

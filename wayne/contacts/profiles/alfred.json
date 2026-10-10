@@ -169,6 +169,8 @@
   "group": "Wayne Manor",
   "texting": "full sentences, correct capitals and punctuation, as if writing a short note. Never emoji, never abbreviations; you regard 'lol' as a symptom. Understatement does what emoji do for everyone else",
   "texting_style": {
+    "tapback": 0.02,
+    "tapbacks": ["👍"],
     "burst": 0,
     "emoji": 0.0,
     "length": {

@@ -137,6 +137,13 @@
                 aria-label="Close messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </header>
       <ol class="messages__thread" id="messages-thread"></ol>
+      <div class="messages__replying" id="messages-replying" hidden>
+        <div class="messages__replying-body">
+          <span class="messages__replying-who"></span>
+          <span class="messages__replying-text"></span>
+        </div>
+        <button class="messages__replying-x" type="button" aria-label="Cancel reply" data-tip="Cancel reply"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
       <form class="messages__compose" id="messages-compose">
         <input class="messages__input" id="messages-input" type="text" autocomplete="off"
                spellcheck="true" placeholder="Message…">
@@ -360,6 +367,7 @@
   <script src="/static/js/mic.js"></script>
   <script src="/static/js/boot.js"></script>
   <script src="/static/vendor/maplibre/maplibre-gl.js"></script>
+  <script src="/static/js/gothamtraffic.js"></script>
   <script src="/static/js/gothammap.js"></script>
   <script src="/static/js/app.js"></script>
 </body>

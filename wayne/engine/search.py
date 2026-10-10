@@ -33,10 +33,6 @@ _DEADLINE = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_pre
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
 
 
-def provider_name():
-    return "brave" if BRAVE_API_KEY else "duckduckgo"
-
-
 def _search_brave(query, num_results):
     response = requests.get(
         "https://api.search.brave.com/res/v1/web/search",

@@ -127,6 +127,12 @@
   },
   "texting": "no capitals, barely any punctuation, terse to the edge of rude — 'k', 'no', 'busy', 'around'; you swear; no emoji; 'old man'. Now and then a line from whatever book you're reading lands harder than it should. When you're angry you leave him on read",
   "texting_style": {
+    "tapback": 0.12,
+    "tapbacks": [
+      "👍",
+      "😂",
+      "👎"
+    ],
     "lower": 1.0,
     "period": false,
     "burst": 0.25,
@@ -164,6 +170,14 @@
     }
   ],
   "routine": [
+    {
+      "from": 15,
+      "to": 18,
+      "doing": "checking on the kids at the shelter",
+      "status": "busy",
+      "chance": 0.35,
+      "where": "Crime Alley"
+    },
     {
       "from": 22,
       "to": 5,
@@ -282,5 +296,6 @@
     "Burnley",
     "The Bowery",
     "Gotham Docks"
-  ]
+  ],
+  "home": "Jason's safehouse"
 }

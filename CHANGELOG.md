@@ -5,7 +5,126 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ## [Unreleased]
 
+### Added
+
+- **A city that moves.** The subway runs under the streets — light passing
+  beneath the grid, easing into every station — and the surface trains run on
+  their lines, dipping into the tunnel under Robinson Park and over their
+  bridges; ferries cross between their piers (the Statue Ferry by way of
+  Justice and Paris Islands, a water taxi round the harbour); container ships
+  come in from the sea and tugs bring them alongside; planes land and take off
+  at Archie Goodwin International; police, news, medevac, tour and Wayne
+  helicopters fly their own errands; sailboats tack off the marina; the
+  lighthouse turns at night. All of it is worked out from the clock, on
+  timetables that follow the hour: trains every few minutes at the rush, a
+  handful in the small hours, no flights after one.
+- **Journeys, not jumps.** When where someone is changes, they go there — along
+  the roads, over the bridges, taking as long as the roads take (Wayne Manor
+  to Wayne Tower is about forty minutes) — and their dot moves along the way.
+  The trail shows the roads they took and the road ahead; following someone
+  keeps them in view. What they're told on a call includes it: "you're on your
+  way there now, about twelve minutes out."
+- **Last seen.** Jason, Selina and Randy keep their whereabouts to themselves;
+  the map now shows where Bruce last knew them to be — they told him, they took
+  a case, a sighting on the scanner — faded, with how long ago.
+- **Gotham, filled in.** Eighty-odd new places with their own history, from canon
+  where there is one: Gotham Academy, Burnside College, Arkham Mansion and its
+  gardens, Kane Industries, the Monarch Playing Card Company beside Ace
+  Chemicals, Daggett Industries, GothCorp, Gotham National Bank, the GBC tower,
+  the Globe, Fort Dumas under the Statue of Justice, Little Paris and the old
+  quarantine hospital on Paris Island, precinct houses, courts, hotels, a mall,
+  Randy's apartment and Jason's safehouse. Every district has a character
+  sketch, shown when you click it, with what's in it — and when someone names a
+  place, the contact knows it as the city has it.
+- **Landmarks built as themselves**: the university's quads, domed library and
+  bell tower; Ace's vats, catwalks, tank farm and outfall; S.T.A.R. Labs' ring;
+  the hospitals with helipads; a four-chimneyed power station; the Knightsdome's
+  roof and car parks; a whole airport — terminal, concourses and gates, taxiways
+  and lights, garage and lots, cargo apron and hangars.
+- **Where the city plays and lives**: soccer pitches, ball fields, a running
+  track, courts, a country club with nine fairways, a racecourse, Slaughter
+  Swamp; cafés, gyms, cinemas, hotels and shops; car parks with their stalls;
+  tree-lined suburban streets.
+- **Read receipts both ways.** Opening a thread shows them you've read it; left
+  on read, they know whether you read it or never opened it — and chase (or
+  don't) accordingly.
+- **They quote-reply too**, in a group to anyone's message, in a DM to one of
+  yours, when the conversation's moved on — as a phone does.
+- **Reactions as a habit, not a reflex**: how often each person reacts is
+  theirs (Alfred almost never, Cass more than she writes), more in groups, less
+  straight after they've just reacted; a reaction can be the whole answer.
+- **Availability in waves**: everyone's phone habits ride a city-wide tide (the
+  commute, lunch, the evening scroll, the dead small hours, the odd moment
+  everyone's on at once) and spells of their own — a flowing hour, then a dry
+  afternoon — shaping how fast they read, whether they leave you on read, how
+  long they write.
+- **Days of their own**: nobody patrols at noon unless you ask; Barbara has the
+  lab, Jason the kids at the shelter, Randy the hangar, Selina the galleries.
+- **Map handling**: click someone again to let them go; a click on nothing, or
+  Escape, puts down what was picked up; a hidden contact takes their trail with
+  them.
+- **The console's own cursor**: a cyan-edged arrow, a reticle over anything
+  clickable, an amber target for dropping a pin.
+
 ### Fixed
+
+- **Assigning a case did nothing** since the last sweep removed a helper it still
+  used; cases now set off by road, arriving when the journey does.
+- **Dick couldn't recall the group text he'd just sent** — posting with others'
+  messages unread hid his own from him. And mid-call, a group chat waits till
+  he's off the phone; if he does answer it, he says so on the line.
+- **Alfred said he was at home while the map had him in the Diamond District**:
+  mid-call, the note on where he was went missing. Where they are now rides on
+  every turn, the same place the map shows.
+- **"(by text) I'm working."** — the transcript's own note on a texted message,
+  copied into a reply, which also hid that it repeated the last one.
+- **Reactions that didn't fit**: a ❓ on an instruction. Each reaction now comes
+  with what it means; asked to "thumbs up my message", they react to that
+  message instead of texting a 👍.
+- **Geography**: the Atlantic was labelled on Burnside; four bridges reached
+  Arkham Island (now one, guarded); the Burnside Bridge landed outside Burnside;
+  Drake Manor stood inside the Wayne estate; Ace Chemicals sat among the
+  museums (now on the Ironworks shore, as works are); roads that met a river
+  stopped at it (now bridged); Blüdhaven's creek had no crossing; ferries
+  sailed through islands.
+- **Trees at the edge of a park** no longer lean over the pavement or a roof;
+  nothing stands on a road — buildings, trees, pylons — checked at every build.
+- **The road network was in 368 pieces**; it's one, with every place on it.
+
+- **A remaster sweep**, from five parallel audits of the code (prompting,
+  calls and chats, lives and rules, the front end, architecture):
+  - *Calls:* texting or adding someone whose phone is ringing no longer makes
+    them pick up; ringing a group ends the call he was on; pick-ups and
+    refusals from a ring he'd moved on from are ignored; someone still ringing
+    can be dropped; a pause nobody fills (or a sign-off) always reaches the
+    page, so group calls drift to an end; "did Dick call you?" no longer rings
+    Dick in, and his line is always answered before anyone's rung.
+  - *Group chats:* posting no longer marks unread questions as read; posts
+    never land in a deleted group or from someone removed; a removed member's
+    reader stops; the next member sees a reply still being typed; someone added
+    catches up on the last few messages — none, if they're outside the secret.
+  - *Texts:* the afterthought runs after every text again (promises kept,
+    worry noticed, cases closed — broken since 5eec161); a reply held "for
+    later" survives other turns and new texts; buzzing someone awake no longer
+    crashes; only a reply that actually talks to the room is moved into a group.
+  - *What they're told:* texts get rules for texting, not the call's
+    read-aloud ones; where they are and who with rides on every turn; with
+    Selina on the line, nobody is handed casework or the tracker; joining a
+    call, nobody hears the first caller's private texts; the grapevine keeps
+    patrols and rogues from outsiders; questions about Gotham aren't searched
+    on the real web; another contact's line on a call isn't read as his;
+    markers never leak into what's said; playing Bruce, a shared past is the
+    world's to remember.
+  - *Lives:* last night's routine survives today's plan being written; any
+    current activity puts them somewhere sensible; "together" needs both;
+    company never gives away someone private; whims keep daytime hours; cases
+    are rarer and paid for from the same daily budget; per-persona redial,
+    worry check-ins and resurfacing after being ghosted; scanner geography;
+    Tim on his houseboat, Cass in Burnside, Lucius at the office.
+  - *Architecture:* background tasks are kept and their failures logged; one
+    helper for background model calls (keeping the model loaded); history and
+    group settings written under locks; place lookups and the scanner cached;
+    one name lookup; one reach-out budget; dead code removed; the log rotates.
 
 - **"With" means the same place, for both of them.** Barbara's plan said she was
   patrolling with Cass while Cass was across the city on a case: the map, the
@@ -82,6 +201,11 @@ A full review of the code turned up, among others:
   a dry "sir".
 
 ### Added
+
+- **Things moving on the map:** trains on the subway lines, ferries on their
+  routes, and a police helicopter over the worst report on the scanner.
+- **A layout for any width:** the map stays beside the chat, its panel folding
+  into a drawer when squeezed; narrow windows keep the directory as portraits.
 
 - **@Bruce pings you, and @everyone pings the chat.** A tag on you gets its own
   tone, a toast that says so, an "@" badge on the group and a lit message;

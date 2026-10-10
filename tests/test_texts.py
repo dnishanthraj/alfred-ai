@@ -48,6 +48,18 @@ def test_the_thread_pages_back_and_records_reads(tmp_path):
     assert log.last()["text"] == "m4"     # a missed call isn't a message
 
 
+def test_opening_the_thread_shows_them_hes_read_it(tmp_path):
+    log = _log(tmp_path)
+    log.add("them", "you up?", at=100)
+    log.add("them", "", kind="missed_call", at=101)
+    log.add("me", "barely", at=102)
+    assert log.mark_seen(at=150) == 1
+    theirs, call, mine = log.page()
+    assert theirs["seen_at"] == 150
+    assert "seen_at" not in call and "seen_at" not in mine
+    assert log.mark_seen(at=200) == 0 and log.page()[0]["seen_at"] == 150     # read once, when first read
+
+
 # --- presence ------------------------------------------------------------------
 
 def test_what_the_conversation_set_outranks_being_online_and_the_routine():
@@ -90,7 +102,8 @@ def test_a_night_past_midnight_belongs_to_the_night_it_began():
     assert state.now(sunday_1am)["doing"] == ""
 
 
-def test_how_soon_they_read_depends_on_what_theyre_doing():
+def test_how_soon_they_read_depends_on_what_theyre_doing(monkeypatch):
+    monkeypatch.setattr(presence, "engagement", lambda c, t=None: 1.0)     # an ordinary moment
     contact = _contact(texting_pace={"online_read": [1, 2], "idle_read": [100, 200],
                                      "busy_read": [1000, 2000], "glance": 0})
     steady = SimpleNamespace(random=lambda: 0.5, uniform=random.uniform)    # not one of the slow ones
@@ -101,6 +114,27 @@ def test_how_soon_they_read_depends_on_what_theyre_doing():
 
 
 # --- style -----------------------------------------------------------------------
+
+def test_availability_comes_in_waves_not_dice(monkeypatch):
+    chronic = _contact(id="nightwing", texting_pace={"phone": 0.4, "online_read": [10, 10]})
+    dry = _contact(id="batwing", texting_pace={"phone": 0.1, "online_read": [10, 10]})
+    day = time.mktime((2026, 10, 10, 0, 0, 0, 0, 0, -1))
+    minutes = [day + m * 60 for m in range(24 * 60)]
+    # Smooth: a minute on, they're much as they were — spells, not a coin per text.
+    jumps = [abs(presence.mood(chronic, a) - presence.mood(chronic, a + 60)) for a in minutes]
+    assert max(jumps) < 0.15
+    # Their own habit carries it: the chronic texter is glued more of the day than the dry one.
+    assert (sum(presence.mood(chronic, t) for t in minutes) > 1.5 * sum(presence.mood(dry, t) for t in minutes))
+    # And the city's pull is the same for everyone at once: the evening outdraws the small hours.
+    evening, small_hours = day + 21.5 * 3600, day + 4 * 3600
+    assert presence.tide(evening) > presence.tide(small_hours)
+    # Glued, a text's read sooner than in a dry spell.
+    steady = SimpleNamespace(random=lambda: 0.5, uniform=lambda a, b: a)
+    monkeypatch.setattr(presence, "engagement", lambda c, t=None: 2.0)
+    glued = presence.read_delay(chronic, {"status": "online"}, steady)
+    monkeypatch.setattr(presence, "engagement", lambda c, t=None: 0.4)
+    assert glued < presence.read_delay(chronic, {"status": "online"}, steady)
+
 
 def test_texting_style_is_applied_in_code():
     contact = _contact(texting_style={"lower": 1.0, "period": False, "burst": 1.0})
@@ -146,6 +180,7 @@ def test_saying_theyre_free_ends_the_activity():
 
 def _console(tmp_path, monkeypatch, contact):
     console = web.Console.__new__(web.Console)
+    console._adding, console._dropped_adds, console._closing = set(), set(), set()
     console._pending_texts, console._texters, console.call, console.current_id = {}, {}, None, None
     console.sessions, console._shown_presence, console._incoming = {}, {}, None
     console._ring_timer, console._release, console.clients = None, None, {object()}
@@ -179,7 +214,7 @@ def _console(tmp_path, monkeypatch, contact):
 def _wrote(text, **turn):
     """What _write_text hands back: the reply, and what the turn decided."""
     return {"text": text, "choice": None, "deferred": None, "group_task": None, "meant": None,
-            "take": None, "react": None, **turn}
+            "take": None, "react": None, "quote": None, **turn}
 
 
 def test_texts_in_a_row_are_read_and_answered_together(tmp_path, monkeypatch):
@@ -274,6 +309,31 @@ def test_nobody_texts_out_of_the_blue_past_the_daily_budget(tmp_path, monkeypatc
     assert sent == ["impulse"]
 
 
+def test_a_chase_knows_whether_he_read_it_or_never_opened_it(tmp_path, monkeypatch):
+    contact = _contact(initiative={"per_day": 0})
+    presence.of(contact).touch()
+    console, events = _console(tmp_path, monkeypatch, contact)
+    sent = []
+
+    async def unprompted(c, about, why):
+        sent.append((why, about))
+    console._send_unprompted = unprompted
+    monkeypatch.setattr(web.config, "QUIET_HOURS", "0-0")
+    console._tasks, console._count_initiative, console._initiative_log = set(), lambda: None, lambda: []
+    log = _log(tmp_path)
+
+    async def chase(seen):
+        asked = log.add("them", f"dinner {seen}?", at=time.time() - 3600)
+        if seen:
+            log.mark_seen(at=time.time() - 600)
+        presence.of(contact).put("chase", {"id": asked["id"], "at": time.time() - 60})
+        await console._maybe_reach_out(time.time())
+        await asyncio.sleep(0.01)
+    asyncio.run(chase(seen=True))
+    asyncio.run(chase(seen=False))
+    assert sent == [("chase", "read 10 minutes ago"), ("chase", "not opened")]
+
+
 # --- not picking up ----------------------------------------------------------------
 
 def test_who_picks_up_depends_on_what_theyre_doing():
@@ -299,6 +359,7 @@ def test_a_declined_call_closes_the_line_and_leaves_a_callback(tmp_path, monkeyp
     class FakeCall:
         def __init__(self):
             self.members = []
+            self.invited = set()
 
         def join(self, s):
             self.members.append(s)
@@ -428,3 +489,21 @@ def test_a_reply_held_for_later_still_arrives(tmp_path, monkeypatch):
 
     asyncio.run(run())
     assert recorded == ["fine."] and [e for e in events if e["type"] == "text_reply"]
+
+
+def test_where_they_are_is_told_even_mid_conversation(monkeypatch):
+    from wayne import contacts
+    alfred = _contact(id="alfred", name="Alfred", full_name="Alfred Pennyworth", home="Wayne Manor",
+                      routine=({"from": 0, "to": 24, "doing": "in the garden", "status": "idle", "where": "Wayne Manor"},))
+    monkeypatch.setattr(contacts, "directory", lambda: SimpleNamespace(get=lambda cid: None, __iter__=lambda self: iter([])))
+    monkeypatch.setattr(presence, "together", lambda p, t=None: (p, [p]))
+    state = presence.of(alfred)
+    state.touch()                      # on the phone with him: engaged, but still in the garden
+    note = state.note()
+    assert "in the garden" in note and "Wayne Manor" in note
+
+
+def test_a_transcript_note_never_reaches_a_reply():
+    from wayne.engine.session import _TRANSCRIPT_NOTE
+    assert _TRANSCRIPT_NOTE.sub("", "(by text) I'm working.") == "I'm working."
+    assert _TRANSCRIPT_NOTE.sub("", "on it (texted)") == "on it "

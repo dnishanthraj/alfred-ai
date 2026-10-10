@@ -25,6 +25,7 @@ class _Voice:
 
 def _console():
     console = Console.__new__(Console)
+    console._adding, console._dropped_adds, console._closing = set(), set(), set()
     console.voice = _Voice()
     console.clients = set()
     console.audio_clips = OrderedDict()

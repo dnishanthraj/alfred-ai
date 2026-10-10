@@ -22,6 +22,7 @@ import time
 
 from .. import operator
 from ..memory import groups as store
+from ..memory import texts
 
 # Energy a thread starts with when Bruce posts, and what each autonomous
 # message keeps of it. Three or four rounds between them, then quiet.
@@ -66,7 +67,9 @@ def transcript(messages, name):
         if m.get("kind") == "system":
             lines.append(f"({m.get('said') or m['text']})")
             continue
-        line = f"{name(m['from'])}: {m['text']}"
+        quoted = m.get("reply_to")
+        line = (f"{name(m['from'])} (replying to {name(quoted['from'])}: \"{quoted['text']}\"): {m['text']}"
+                if quoted else f"{name(m['from'])}: {m['text']}")
         reactions = m.get("reactions") or {}
         if reactions:
             line += "  [" + ", ".join(f"{e} from {name(who)}" for who, e in reactions.items()) + "]"
@@ -81,21 +84,31 @@ def relations(contact, group, directory):
     In the middle of a long background those got lost: Dick, in a chat with
     Randy, asked him "what did you do?" as if he didn't know the whole story.
     """
-    import re as _re
     text = " ".join(contact.system) if isinstance(contact.system, (list, tuple)) else str(contact.system)
-    sentences = _re.split(r"(?<=[.!?])\s+", text)
+    sentences = re.split(r"(?<=[.!?])\s+", text)
     lines = []
     for member in group.members:
         other = directory.get(member)
         if other is None or other.id == contact.id:
             continue
-        about = [s for s in sentences if _re.match(rf"^\W*{_re.escape(other.name)}\b", s)
+        about = [s for s in sentences if re.match(rf"^\W*{re.escape(other.name)}\b", s)
                  or f" {other.name}:" in f" {s}"]
         if about:
             said = " ".join(about[:2])
-            said = _re.sub(rf"^\W*{_re.escape(other.name)}\s*:\s*", "", said)
+            said = re.sub(rf"^\W*{re.escape(other.name)}\s*:\s*", "", said)
             lines.append(f"{other.name}: {said}"[:400])
     return lines
+
+
+def insiders():
+    """Who knows about the masks (the operator profile says), or an empty set if nobody's told."""
+    return set((operator.profile().get("secrets") or {}).get("known_by") or [])
+
+
+def outside(contact_id):
+    """Someone who doesn't know about the masks — when anyone is meant not to."""
+    known = insiders()
+    return bool(known) and contact_id not in known
 
 
 def secrets_note(group, contact_id):
@@ -104,14 +117,15 @@ def secrets_note(group, contact_id):
     away. Selina in a chat with the family is told nothing, and the family are
     told she's there.
     """
-    secrets = operator.profile().get("secrets") or {}
-    known = set(secrets.get("known_by") or [])
+    from ..contacts import directory
+    known = insiders()
     if not known or contact_id not in known:
         return ""
     outsiders = [m for m in group.members if m not in known]
     if not outsiders:
         return ""
-    who = ", ".join(outsiders)
+    book = directory()
+    who = ", ".join(book.get(m).name if book.get(m) else m for m in outsiders)
     return (f"Not everyone in this chat knows about the masks ({who} doesn't). In front of {who}: "
             "no patrols, cases, villains, suits, gear, the cave, or who anyone really is — only what "
             "a family and its friends would say. Real names only.")
@@ -126,7 +140,7 @@ def block(contact_id, directory, now=None):
     name = names(directory)
     parts = []
     for group in store.groups_with(contact_id):
-        seen = [m for m in group.seen_by(contact_id, limit=8) if now - m["at"] < RECENT]
+        seen = [m for m in group.seen_by(contact_id, limit=5) if now - m["at"] < 86400]
         if not seen:
             continue
         members = ", ".join([operator.name()] + [name(m) for m in group.members if m != contact_id])
@@ -168,13 +182,10 @@ def handles(group, directory, sender=None):
 EVERYONE = {"everyone", "all", "everybody", "here", "channel", "team", "guys"}
 
 
-def fix_tags(text, group, directory, sender):
+def _naming(group, directory, sender):
     """
-    A tag is someone in the chat, written the way it shows — "@Barbara",
-    "@Bruce", "@everyone". The model half-writes them ("@b", "@Barb",
-    "@timmy") or tags someone who isn't here: a half-tag that can only mean one
-    of them becomes theirs, a stray letter or two that could mean anyone goes,
-    and anyone not in the chat is just a name.
+    Who's in the chat as {id: name}, and a way to tell who a word means —
+    "Barbara", "barb", "timmy", "Bruce" — when it can only mean one of them.
     """
     names = handles(group, directory, sender)
     known = {}
@@ -193,6 +204,38 @@ def fix_tags(text, group, directory, sender):
         close = {cid for cid, said in known.items()
                  if any(s.startswith(word) or (len(s) >= 3 and word.startswith(s)) for s in said)}
         return close.pop() if len(close) == 1 else None
+    return names, who
+
+
+def quoting(group, said, directory, sender):
+    """
+    The message a post quotes, from what they put in [reply: …]: a name
+    ("Tim"), or a name and a few of its words ("Tim: the car") — that
+    person's latest, or the one those words are from. None when it's the
+    latest message in the chat anyway (nobody quotes what's right above it)
+    or the name is nobody here.
+    """
+    name, _, words = (said or "").partition(":")
+    first = name.strip().lstrip("@").split()
+    cid = _naming(group, directory, sender)[1](first[0]) if first else None
+    if cid is None:
+        return None
+    messages = [m for m in group.messages()[-20:] if m.get("kind") != "system" and m.get("id")]
+    target = texts.quoted_by([m for m in messages if m["from"] == cid], words, fallback=True)
+    if target is None or messages[-1]["id"] == target["id"]:
+        return None
+    return target["id"]
+
+
+def fix_tags(text, group, directory, sender):
+    """
+    A tag is someone in the chat, written the way it shows — "@Barbara",
+    "@Bruce", "@everyone". The model half-writes them ("@b", "@Barb",
+    "@timmy") or tags someone who isn't here: a half-tag that can only mean one
+    of them becomes theirs, a stray letter or two that could mean anyone goes,
+    and anyone not in the chat is just a name.
+    """
+    names, who = _naming(group, directory, sender)
 
     def fix(match):
         word, tail = match.group(1), match.group(2)
@@ -244,11 +287,23 @@ def meant_group(text, contact, directory):
 
 
 def speaks_to_group(text, group, directory, sender):
-    """Written to the room — "you guys", or someone else in it by name — not to him alone."""
-    if _TO_A_ROOM.search(text or ""):
+    """
+    Written to the room — a line that opens on "you guys", that tags someone,
+    or that turns to someone else in it ("and randy, quit ghosting us") — not
+    to him alone. "will do, I'll let everyone know" and "I'll tell Tim" are to him.
+    """
+    text = text or ""
+    if re.search(r"(?<![\w@])@everyone\b", text, re.I):
         return True
-    return any(re.search(rf"(?<!\w)@?{re.escape(directory.get(cid).name)}\b", text or "", re.I)
-               for cid in group.members if cid != sender and directory.get(cid))
+    others = [directory.get(cid).name for cid in group.members if cid != sender and directory.get(cid)]
+    for line in text.splitlines():
+        if re.match(r"(?i)\W*(hey |ok |okay |so )?" + _TO_A_ROOM.pattern.replace("(?i)", ""), line):
+            return True
+        for name in others:
+            if (re.match(rf"(?i)\W*(and |hey |ok |so )?@?{re.escape(name)}\b\s*[,:!—-]", line)
+                    or re.search(rf"(?<![\w@])@{re.escape(name)}\b", line, re.I)):
+                return True
+    return False
 
 
 def needless_tags(text, group, directory, sender):
@@ -321,17 +376,16 @@ def may_add(group, adder, newcomer, now=None):
     members haven't added anyone in the last half hour — Dick, given the power,
     added Tim, Cass and Jason in three minutes after being told to keep it small.
     """
-    import re as _re
     now = now or time.time()
     recent = [m for m in group.messages()[-8:] if m["from"] == "me"]
-    if any(_re.search(_ASKS_TO_ADD.format(name=_re.escape(newcomer.name)), m["text"]) for m in recent):
+    if any(re.search(_ASKS_TO_ADD.format(name=re.escape(newcomer.name)), m["text"]) for m in recent):
         return True
     meta = group.meta()
     if now - (meta.get("removed") or {}).get(newcomer.id, 0) < 86400:
         return False
     if now - meta.get("member_added_at", 0) < 1800:
         return False
-    keep_small = any(_re.search(r"(?i)\b(just|only|between) (you|us)\b|\bkeep it (small|between)|"
+    keep_small = any(re.search(r"(?i)\b(just|only|between) (you|us)\b|\bkeep it (small|between)|"
                                 r"\bno(body| one) else\b|\bremove\b", m["text"]) for m in recent)
     return not keep_small
 
@@ -345,10 +399,9 @@ def may_remove(group, remover, member, now=None):
     out", "remove them all" — or to undo an add of their own a moment ago.
     Never on a whim, and never Bruce's own members out from under him.
     """
-    import re as _re
     now = now or time.time()
     recent = [m for m in group.messages()[-8:] if m["from"] == "me"]
-    if any(_re.search(_ASKS_TO_REMOVE.format(name=_re.escape(member.name)), m["text"]) for m in recent):
+    if any(re.search(_ASKS_TO_REMOVE.format(name=re.escape(member.name)), m["text"]) for m in recent):
         return True
     added = [m for m in group.messages()[-12:] if m.get("kind") == "system"
              and m["text"] == f"{remover.name} added {member.name}" and now - m["at"] < 900]
@@ -356,9 +409,7 @@ def may_remove(group, remover, member, now=None):
 
 
 def note_added(group, now=None):
-    meta = group.meta()
-    meta["member_added_at"] = now or time.time()
-    group._save_meta(meta)
+    group.update_meta(lambda meta: meta.update(member_added_at=now or time.time()))
 
 
 def energy(group):
@@ -367,10 +418,10 @@ def energy(group):
 
 def spend(group, sender):
     """After a message: Bruce restores the thread; anyone else uses some of it up."""
-    meta = group.meta()
-    meta["energy"] = FULL if sender == "me" else max(0.0, float(meta.get("energy", FULL)) * DECAY)
-    group._save_meta(meta)
-    return meta["energy"]
+    def drain(meta):
+        meta["energy"] = FULL if sender == "me" else max(0.0, float(meta.get("energy", FULL)) * DECAY)
+    meta = group.update_meta(drain)
+    return meta["energy"] if meta else FULL
 
 
 def wants_to_start(contact, tick_seconds, rng=random):
@@ -384,6 +435,4 @@ def wants_to_start(contact, tick_seconds, rng=random):
 
 def refresh(group):
     """A fresh conversation starts with its energy back."""
-    meta = group.meta()
-    meta["energy"] = FULL
-    group._save_meta(meta)
+    group.update_meta(lambda meta: meta.update(energy=FULL))

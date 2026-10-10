@@ -171,7 +171,7 @@ def write_dispatch(report, model, options):
     callers saw, how many, what state they're in. Gotham is what it is: the
     worst of these are said plainly, however grim. Blocking; run when idle.
     """
-    import ollama
+    from . import model as llm
     hour = time.strftime("%H:%M", time.localtime(report["at"]))
     force = ("Blüdhaven PD dispatch, across the bay from Gotham" if report["area"] == "Blüdhaven"
              else "GCPD dispatch in Gotham City")
@@ -183,8 +183,8 @@ def write_dispatch(report, model, options):
         "on. This is Gotham — when it's bad, say it plainly, however grim or strange. Never mention "
         "Batman or any vigilante. Reply with only the dispatch.")
     try:
-        reply = ollama.chat(model=model, think=False, options={**options, "temperature": 0.95, "num_predict": 110},
-                            messages=[{"role": "user", "content": instruction}])["message"]["content"]
+        reply = llm.ask(model, [{"role": "user", "content": instruction}],
+                        {**options, "temperature": 0.95, "num_predict": 110}, purpose="a dispatch")
     except Exception:
         return ""
     text = " ".join(reply.strip().strip('"').split())[:320]

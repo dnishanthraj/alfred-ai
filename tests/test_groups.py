@@ -25,6 +25,10 @@ class Directory:
     def get(self, cid):
         return BOOK.get(cid)
 
+    def find(self, name):
+        said = name.strip().lower()
+        return next((c for c in BOOK.values() if said in (c.name.lower(), c.full_name.lower(), c.id)), None)
+
     def __iter__(self):
         return iter(BOOK.values())
 
@@ -41,12 +45,16 @@ def private_data(tmp_path, monkeypatch):
 def test_what_a_member_knows_is_what_they_have_read():
     group = store.create("Night shift", ["nightwing", "robin"])
     first = group.add("me", "docks at midnight?", at=100)
+    group.mark_read("robin", 105)                   # Tim reads it, and answers
     group.add("robin", "on it", at=110)
     assert group.read_upto("robin") == 110          # you've read what you wrote
     assert [m["text"] for m in group.unread_for("nightwing")] == ["docks at midnight?", "on it"]
     group.mark_read("nightwing", 105)
     assert [m["text"] for m in group.seen_by("nightwing")] == ["docks at midnight?"]
     assert group.readers_of(first) == ["nightwing", "robin"]
+    group.add("me", "and bring the cable", at=111)  # lands while Tim is typing his next
+    group.add("robin", "on my way", at=112)
+    assert group.read_upto("robin") == 110          # ...so it's still unread: posting isn't reading
 
 
 def test_their_group_chats_ride_along_with_everything_they_say():
@@ -62,7 +70,7 @@ def test_their_group_chats_ride_along_with_everything_they_say():
 
 def test_someone_outside_the_secret_is_flagged_to_those_inside_it():
     group = store.create("Sunday", ["nightwing", "catwoman"])
-    assert "catwoman" in groupchat.secrets_note(group, "nightwing")
+    assert "Selina" in groupchat.secrets_note(group, "nightwing")      # by name, not by id
     assert groupchat.secrets_note(group, "catwoman") == ""     # she isn't told there's a secret
 
 
@@ -82,6 +90,7 @@ def test_named_members_answer_and_a_thread_runs_out_of_energy():
 
 def test_he_posts_and_each_member_reads_in_their_own_time(monkeypatch):
     console = web.Console.__new__(web.Console)
+    console._adding, console._dropped_adds, console._closing = set(), set(), set()
     console.directory, console.clients, console._tasks = Directory(), {object()}, set()
     console._typing_now = set()
     console._init_groups()
@@ -148,6 +157,7 @@ def test_nobody_puts_back_someone_he_removed_but_he_can_ask_for_anyone():
 
 def test_a_member_walking_out_or_bringing_someone_in(monkeypatch):
     console = web.Console.__new__(web.Console)
+    console._adding, console._dropped_adds, console._closing = set(), set(), set()
     console.directory, console.clients, console._tasks = Directory(), {object()}, set()
     console._typing_now = set()
     console._init_groups()
@@ -179,3 +189,37 @@ def test_a_chat_is_livelier_when_more_of_them_are_around(monkeypatch):
     for c in BOOK.values():
         presence.of(c).touch()
     assert groupchat.liveliness(group, Directory()) > quiet
+
+
+def test_a_reply_quotes_whoever_they_name_unless_its_right_above():
+    group = store.create("Night shift", ["nightwing", "robin", "catwoman"])
+    car = group.add("robin", "who took the car", at=100)
+    group.add("robin", "also we're out of coffee", at=101)
+    group.add("me", "I did", at=102)
+    group.add("catwoman", "bold of you", at=103)
+    book = Directory()
+    assert groupchat.quoting(group, "Tim: the car", book, "nightwing") == car["id"]
+    assert groupchat.quoting(group, "@timmy", book, "nightwing") == group.messages()[1]["id"]   # his latest
+    assert groupchat.quoting(group, "Bruce", book, "nightwing") == group.messages()[2]["id"]
+    assert groupchat.quoting(group, "Selina", book, "nightwing") is None      # right above: no quote needed
+    assert groupchat.quoting(group, "Jason", book, "nightwing") is None       # nobody here
+
+
+def test_a_dm_reply_quotes_the_text_of_his_it_answers():
+    from wayne.memory.texts import TextLog, quoted_by
+    log = TextLog("robin")
+    first = log.add("me", "did you eat", at=100)
+    last = log.add("me", "also where is the car", at=101)
+    assert quoted_by([first, last], "did you eat")["id"] == first["id"]
+    assert web._quoting(log, [first, last], "did you eat") == first["id"]
+    assert web._quoting(log, [first, last], "the car") is None        # his last: nothing to quote
+    assert web._quoting(log, [first, last], "something else") is None
+    assert web._quoting(log, [first, last], None) is None
+
+
+def test_they_always_know_what_they_wrote_themselves():
+    group = store.create("Night shift", ["nightwing", "robin"])
+    group.add("robin", "anyone up", at=100)
+    group.add("nightwing", "told randy to come home", at=101)    # Tim's message still unread for Dick
+    assert group.read_upto("nightwing") < 100
+    assert "told randy to come home" in [m["text"] for m in group.seen_by("nightwing")]

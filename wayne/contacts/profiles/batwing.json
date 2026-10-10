@@ -123,6 +123,10 @@
   },
   "texting": "lowercase, few words, no emoji, flat — 'no', 'busy', 'k', or nothing at all; you leave him on read more often than not. Once in a long while, late at night, a long bitter message you'd never say out loud, and then silence again",
   "texting_style": {
+    "tapback": 0.1,
+    "tapbacks": [
+      "👍"
+    ],
     "lower": 1.0,
     "period": false,
     "burst": 0.3,
@@ -196,6 +200,14 @@
     ]
   },
   "routine": [
+    {
+      "from": 14,
+      "to": 19,
+      "doing": "at the hangar, working on the suit",
+      "status": "busy",
+      "chance": 0.55,
+      "where": "Hangar 9"
+    },
     {
       "from": 21,
       "to": 4,
@@ -275,5 +287,6 @@
     "Burnley",
     "Amusement Mile",
     "Arkham Asylum"
-  ]
+  ],
+  "home": "Randy's apartment"
 }

@@ -52,4 +52,4 @@ def test_pronunciations_change_the_voice_not_the_screen(monkeypatch):
     monkeypatch.setattr(delivery.config, "PRONUNCIATIONS", {"Fox": "Focks"})
     event = events.sentence(0, "Mr. Fox will see you.")
     assert event["text"] == "Mr. Fox will see you."
-    assert event["voice"] == "Mr. Focks will see you."
+    assert event["voice"] == "Mister Focks will see you."      # titles said in full, as they're spoken

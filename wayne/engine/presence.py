@@ -42,7 +42,7 @@ import uuid
 
 from .. import paths
 from ..memory.store import atomic_write, read_text
-from . import places
+from . import places, travel
 
 ONLINE, IDLE, BUSY, OFFLINE = "online", "idle", "busy", "offline"
 STATUSES = (ONLINE, IDLE, BUSY, OFFLINE)
@@ -69,6 +69,54 @@ def _draw(*parts):
     """A random number fixed by its inputs: the same day gives the same answer."""
     digest = hashlib.sha1("|".join(str(p) for p in parts).encode()).digest()
     return int.from_bytes(digest[:8], "big") / 2 ** 64
+
+
+def _drift(seed, t, knot):
+    """
+    Noise that wanders rather than jumps: a value in [0, 1] at time t, eased
+    between random values `knot` seconds apart — the same at the same moment,
+    for everyone who asks.
+    """
+    k = t / knot
+    i = math.floor(k)
+    f = k - i
+    f = f * f * (3 - 2 * f)
+    a, b = _draw(seed, i), _draw(seed, i + 1)
+    return a + (b - a) * f
+
+
+def tide(t=None):
+    """
+    How much the whole city is on its phones right now, about 0.4–1.9: the
+    day's own shape — the commute, lunch, the evening scroll, the dead small
+    hours — on waves nobody could name, so now and then everyone happens to be
+    online at once, and now and then nobody is.
+    """
+    t = t or time.time()
+    local = time.localtime(t)
+    hour = local.tm_hour + local.tm_min / 60
+    shape = (0.5 if hour < 6 else 1.05 if hour < 9.5 else 0.85 if hour < 12 else 1.15 if hour < 13.75
+             else 0.85 if hour < 17 else 1.0 if hour < 20 else 1.3 if hour < 23.5 else 0.95)
+    wave = 0.7 + 0.6 * _drift("tide", t, 1500)
+    surge = 1.0 + 0.45 * max(0.0, _drift("surge", t, 700) - 0.82) / 0.18     # the odd everyone-at-once
+    return shape * wave * surge
+
+
+def mood(contact, t=None):
+    """
+    How glued to their phone they are right now, about 0.3–2: their habit —
+    Dick lives on his, Randy barely touches his — carried on slow waves of
+    their own: a flowing hour, then an afternoon of one-word answers.
+    """
+    t = t or time.time()
+    habit = float((contact.texting_pace or {}).get("phone", 0.3))
+    knot = 1200 + 1800 * _draw(contact.id, "knot")          # how long their spells run: 20–50 minutes
+    return (0.55 + habit * 1.6) * (0.4 + 1.2 * _drift(f"mood:{contact.id}", t, knot))
+
+
+def engagement(contact, t=None):
+    """The two together — the city's pull and their own — kept to something a person could be."""
+    return max(0.3, min(2.2, tide(t) * mood(contact, t)))
 
 
 # Two plans a short walk apart put people in the same place (in map units).
@@ -169,6 +217,9 @@ class Presence:
         # kept promise came back from a stale copy and was kept twice.
         self._lock = threading.RLock()
         self._state = self._load()
+        # When the page last looked: a move it saw happen is travelled; one that
+        # happened while nobody watched (overnight, the console off) just is.
+        self._looked = None
 
     # --- storage -----------------------------------------------------------
 
@@ -274,6 +325,9 @@ class Presence:
         hour = time.localtime(t).tm_hour
         night = hour >= 20 or hour < 4
         share = pace.get("phone_night", pace.get("phone", 0.3)) if night else pace.get("phone", 0.3)
+        # On the city's waves and their own: some evenings everyone's on, some
+        # afternoons nobody is.
+        share = min(0.95, share * engagement(self.contact, t))
         return ONLINE if _draw(self.contact.id, int(t // _SPELL)) < share else IDLE
 
     # --- now ---------------------------------------------------------------
@@ -435,10 +489,6 @@ class Presence:
                 points.append({"at": at, "where": where, **spot})
         return points
 
-    def spot(self, t=None):
-        """Their dot on the map, or None if where they are isn't on it."""
-        return places.resolve(self.whereabouts(t)[0])
-
     def public(self, t=None):
         """
         What the page is told. Someone who doesn't share their status — Jason,
@@ -448,41 +498,121 @@ class Presence:
         state = self.now(t)
         if not self.contact.shares_status:
             shown = getattr(self.contact, "hidden_as", "unknown") or "unknown"
-            return {"status": shown, "doing": "", "last_active": None, "line": self.line(t)}
+            out = {"status": shown, "doing": "", "last_active": None, "line": self.line(t)}
+            seen = self._state.get("seen")
+            if seen and (t or time.time()) - seen.get("at", 0) < 48 * 3600:
+                out["last_seen"] = seen          # the last he knows of where they were, and how
+            return out
         shown = {"status": state["status"], "doing": state["doing"],
                  "last_active": state["last_active"] or None, "line": self.line(t)}
         if getattr(self.contact, "shares_location", True):
             shown["where"], company = self.whereabouts(t)
             shown["with"] = sharing(company)
             shown["spot"] = places.resolve(shown["where"])
+            trip = self.trip(shown["where"], shown["spot"], t)
+            if trip:
+                shown["route"] = {"pts": trip["pts"], "start": trip["start"], "end": trip["end"], "from": trip.get("from", "")}
         return shown
+
+    # --- getting about -----------------------------------------------------
+
+    def trip(self, where, spot, t=None):
+        """
+        Their journey, while they're making one: when where they are changes,
+        they go there — from wherever they were, mid-journey or not — along
+        the roads, taking as long as the roads take (see wayne.engine.travel).
+        None once they've arrived, or if the move happened while no one looked.
+        """
+        if not spot:
+            return None
+        t = t or time.time()
+        with self._lock:
+            looked, self._looked = self._looked, t
+            trip = self._state.get("trip")
+            here = (spot["x"], spot["y"])
+            if trip and trip.get("to") == where:
+                return trip if t < trip["end"] else None
+            moving = trip and trip.get("pts") and t < trip["end"]
+            origin = travel.position(trip, t) if trip and trip.get("pts") else None
+            seen = looked is not None and t - looked < 20 * 60
+            if origin is None or not seen or math.dist(origin, here) < 0.8:
+                self._state["trip"] = {"to": where, "pts": [list(here)], "start": t, "end": t}
+                self.save()
+                return None
+            pts, minutes = travel.route(origin, here, None if moving else trip.get("to"), spot["name"],
+                                        patrol=places.is_patrol(self.now(t).get("doing")))
+            trip = {"to": where, "from": "" if moving else trip.get("to", ""), "pts": pts, "start": t,
+                    "end": t + minutes * 60}
+            self._state["trip"] = trip
+            self._state["trips"] = (self._state.get("trips") or [])[-7:] + [trip]
+            self.save()
+            return trip
+
+    def trips(self, since):
+        """The journeys they've made since `since`, oldest first — the roads behind them on the map."""
+        return [tr for tr in (self._state.get("trips") or []) if tr.get("end", 0) >= since and len(tr.get("pts") or []) > 1]
+
+    def seen_at(self, where, how, t=None):
+        """
+        Someone who keeps their whereabouts to themselves was seen, or said,
+        where they are: the last he knows, and how he knows it.
+        """
+        spot = places.resolve(where)
+        if not spot:
+            return
+        with self._lock:
+            self._state["seen"] = {"where": spot["name"], "x": spot["x"], "y": spot["y"], "at": t or time.time(),
+                                   "how": how}
+            self.save()
 
     def note(self, t=None):
         """
-        One line for the model, when what they're doing matters — so a call
-        to someone on patrol is answered from a rooftop, and one at 4am by
-        someone he woke. Free time and being mid-conversation need no note.
+        One line for the model: what they're doing and where — the place the
+        map shows him, so "where are you?" gets the truth, not "at home" — and
+        anyone with them. A call to someone on patrol is answered from a
+        rooftop, one at 4am by someone he woke. Talking to him changes their
+        status, not their day: mid-call, Alfred is still in the garden.
         """
         from ..contacts import directory
+        t = t or time.time()
         state = self.now(t)
+        block, _, firm = self._situation(t)
+        doing = (block.get("doing") or "").strip()
         where, company = self.whereabouts(t)
         book = directory()
         names = [book.get(c).name for c in company if book.get(c)]
-        if state["source"] not in ("conversation", "routine") or not state["doing"]:
-            # Nothing of their own on, but someone's plans have them along.
-            return (f"Right now you're with {' and '.join(names)}" + (f" ({where})" if where else "")
-                    + ".") if names else ""
-        how_long = describe_until(state["until"], t)
-        shown = where if state["source"] == "routine" else ""
-        line = (f"Right now you're {state['doing']}" + (f" ({shown})" if shown else "")
-                + (f", {how_long}" if how_long else "") + ".")
+        # The line they set, which he can see — "didn't you read my status?"
+        status = self.line(t)
+        said = f' Your status line, which he can see, says "{status}".' if status else ""
+        place = self._spoken_place(where)
+        if doing:
+            how_long = describe_until(block.get("until", 0), t) if firm else ""
+            line = (f"Right now you're {doing}"
+                    + (f", at {place}" if place and place.split(" (")[0].lower() not in doing.lower() else "")
+                    + (f", {how_long}" if how_long else "") + ".")
+        else:
+            line = f"Right now you're at {place}." if place else ""
         if names:
             line += f" You're with {' and '.join(names)}."
+        trip = self._state.get("trip")
+        if trip and len(trip.get("pts") or []) > 1 and t < trip.get("end", 0):
+            left = max(1, round((trip["end"] - t) / 60))
+            line += f" You're on your way there now, about {left} minute{'s' if left != 1 else ''} out."
         if state["status"] == OFFLINE:
             line += " Your phone wasn't in your hand; he's reached you anyway."
-        elif state["status"] == BUSY:
+        elif state["status"] == BUSY and doing:
             line += " You're in the middle of it."
-        return line
+        return (line + said).strip()
+
+    def _spoken_place(self, where):
+        """'Home, Blüdhaven' as they'd think of it — home; anywhere else, by its name."""
+        if not where:
+            return ""
+        home = getattr(self.contact, "home", "") or ""
+        if where == home or re.match(r"(?i)\s*home\b", where):
+            rest = where.split(",", 1)[1].strip() if "," in where else (where if where != "Home" else "")
+            return f"home ({rest})" if rest and rest.lower() != "home" else "home"
+        return where
 
     # --- changes -----------------------------------------------------------
 
@@ -502,6 +632,8 @@ class Presence:
                                        "where": (where or "").strip()[:60],
                                        "with": [c for c in company if c != self.contact.id]}
             self.save()
+        if where and not getattr(self.contact, "shares_status", True):
+            self.seen_at(where, "they told you", t)
 
     def clear_activity(self):
         with self._lock:
@@ -574,6 +706,10 @@ class Presence:
 _ANSWERS = {ONLINE: 0.97, IDLE: 0.9, BUSY: 0.45, OFFLINE: 0.25}
 
 
+_DO_NOT_DISTURB = re.compile(r"(?i)\b(do not disturb|dnd|don'?t call|no calls|not now|leave me alone|"
+                             r"asleep|sleeping|off the grid|offline)\b|💤|🔕|😴|🛌")
+
+
 def answers(contact, state, again=False, rng=random):
     """
     Whether they pick up: None if they do, else "declined" (they saw it and
@@ -582,6 +718,11 @@ def answers(contact, state, again=False, rng=random):
     """
     odds = {**_ANSWERS, **(contact.initiative or {}).get("answers", {})}
     chance = odds.get(state["status"], 0.9)
+    # They said so on their status — "do not disturb", 💤 — and mean it: the
+    # first call mostly goes unanswered. A second one soon after gets through,
+    # as phones let repeated calls through a do-not-disturb.
+    if not again and _DO_NOT_DISTURB.search(of(contact).line() or ""):
+        chance *= 0.35
     # Each call hard on the heels of the last cuts the chance of ignoring it —
     # by how much is theirs (`redial`): Alfred picks up the second time almost
     # surely; Randy, who doesn't answer, mostly still doesn't.
@@ -604,14 +745,16 @@ def read_delay(contact, state, rng=random):
     """
     pace = contact.texting_pace or {}
     status = state["status"]
+    # Glued to it, a text's read in seconds; in a dry spell it waits.
+    pull = engagement(contact) ** 0.8
     if status == ONLINE:
         if rng.random() < 0.1:
-            return rng.uniform(30, 180)      # saw it, finished what they were doing first
-        return rng.uniform(*pace.get("online_read", [2, 9]))
+            return rng.uniform(30, 180) / pull      # saw it, finished what they were doing first
+        return rng.uniform(*pace.get("online_read", [2, 9])) / pull
     if status == IDLE:
-        return rng.uniform(*pace.get("idle_read", [60, 600]))
+        return rng.uniform(*pace.get("idle_read", [60, 600])) / pull
     if status == BUSY:
-        if rng.random() < pace.get("glance", 0.3):
+        if rng.random() < min(0.9, pace.get("glance", 0.3) * pull):
             return rng.uniform(20, 150)     # a glance between things
-        return rng.uniform(*pace.get("busy_read", [900, 3600]))
+        return rng.uniform(*pace.get("busy_read", [900, 3600])) / pull
     return None

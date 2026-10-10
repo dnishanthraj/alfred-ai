@@ -52,8 +52,15 @@ def resolve(text):
     """
     A spot for a place as people write it — "Little Italy, Blüdhaven", "the
     Clocktower", "Wayne Tower R&D" — or None if it isn't somewhere on the map.
+    The same words always land on the same spot, so it's worked out once (a
+    trail asked it a hundred times a request); each caller gets its own copy.
     """
-    lowered = (text or "").lower()
+    spot = _resolve((text or "").lower())
+    return dict(spot) if spot else None
+
+
+@lru_cache(maxsize=4096)
+def _resolve(lowered):
     if not lowered.strip():
         return None
     data = gazetteer()
@@ -70,6 +77,40 @@ def resolve(text):
     best = (_match([p for p in data["places"] if p["area"] not in regions], lowered)
             or _match([p for p in data["places"] if p["area"] in regions], lowered, by_name_only=True))
     return _spot(best) if best else None
+
+
+def note(text, most=2):
+    """
+    What anyone from Gotham knows of the places he's just named — a district's
+    character and what's in it, a landmark's story — from the map itself, so
+    "what's in Burnside?" is answered with the Burnside on the map, not a guess.
+    "" when he named none. Only proper names and specific ways of saying them
+    count: "the docks" in passing doesn't bring the docks' history with it.
+    """
+    lowered = (text or "").lower()
+    if len(lowered) < 4:
+        return ""
+    data = gazetteer()
+    found = []
+    for place in data["places"]:
+        terms = [place["name"].lower()] + [m for m in place.get("match", []) if len(m) >= 7]
+        hit = max((len(t) for t in terms if re.search(rf"(?<!\w){re.escape(t)}(?!\w)", lowered)), default=0)
+        if hit:
+            found.append((hit, place))
+    found = [p for _, p in sorted(found, key=lambda f: -f[0])]
+    # Not both a district and something inside it that only matched because of it.
+    lines = []
+    for place in found[:most]:
+        if place["kind"] == "district":
+            here = [q["name"] for q in data["places"] if q["area"] == place["area"] and q["kind"] != "district"][:9]
+            sketch = data.get("areas", {}).get(place["name"], "")
+            lines.append(f"{place['name']}: {sketch}" + (f" In it: {', '.join(here)}." if here else ""))
+        elif place.get("bio"):
+            lines.append(f"{place['name']} ({place['area']}): {place['bio']}")
+    if not lines:
+        return ""
+    return ("What you know of the places he mentioned, as anyone who knows Gotham would — use it only if it "
+            "fits, in your own words:\n" + "\n".join(lines))
 
 
 def names():

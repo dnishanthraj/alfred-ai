@@ -51,7 +51,8 @@ VOICE_DIRECTIVE = (
     "just before the words it colours, only where you would truly make that "
     "sound — most replies have none, and never more than two. CAPITALS for the "
     "one word you would hit hard; an ellipsis for a real pause. No other "
-    "bracketed cues."
+    "bracketed cues — except the markers a turn tells you about ([react: …], "
+    "[take: …] and the like), which are for the console, not the actor."
 )
 
 # The single biggest tell that something is a machine is that every reply is
@@ -309,7 +310,28 @@ def time_context(now=None):
     return time.strftime(f"%A, %d %B %Y, %H:%M ({period})", now)
 
 
-def standing_directives(contact):
+# Texts are written, not spoken: the call's rules about being read aloud, the
+# actor's cues and short spoken turns sat in every text's prompt beside a
+# texting primer full of emoji, and fought it.
+TEXT_CONSTRAINT = (
+    "Reply only in English, never in another script, and never write "
+    "instructions to yourself. These are text messages, typed on your phone: "
+    "plain text the way you text — no markdown, headings or bullet lists, no "
+    "stage directions. Emoji only if you'd really use them. The only brackets "
+    "are the markers a turn tells you about ([react: …] and the like)."
+)
+TEXT_PRESENCE = (
+    "You're texting from wherever you are, in the middle of your own life. You "
+    "can't see him or know where he is unless he says. Never offer food or drink "
+    "or describe his surroundings."
+)
+TEXT_LENGTH = (
+    "Texts are short: a line, a few words, sometimes one — longer only when it's "
+    "earned. Never pad, and stop when done."
+)
+
+
+def standing_directives(contact, texting=False):
     """
     The instructions that are identical on every turn.
 
@@ -319,10 +341,14 @@ def standing_directives(contact):
     SYSTEM block, because a system message sent at runtime would replace that
     personality rather than sit alongside it.
     """
-    parts = [SPEECH_CONSTRAINT, PRESENCE_DIRECTIVE, GROUNDING_DIRECTIVE,
-             CHARACTER_DIRECTIVE, REGISTER_DIRECTIVE, LENGTH_GUIDANCE]
-    if delivery.supported():
-        parts.insert(1, VOICE_DIRECTIVE)
+    if texting:
+        parts = [TEXT_CONSTRAINT, TEXT_PRESENCE, GROUNDING_DIRECTIVE,
+                 CHARACTER_DIRECTIVE, REGISTER_DIRECTIVE, TEXT_LENGTH]
+    else:
+        parts = [SPEECH_CONSTRAINT, PRESENCE_DIRECTIVE, GROUNDING_DIRECTIVE,
+                 CHARACTER_DIRECTIVE, REGISTER_DIRECTIVE, LENGTH_GUIDANCE]
+        if delivery.supported():
+            parts.insert(1, VOICE_DIRECTIVE)
     if contact.can_search:
         parts += [LOOKUP_DIRECTIVE, SEARCH_DIRECTIVE]
     return "\n\n".join(parts)
@@ -447,7 +473,7 @@ def build_payload(contact, history, user_turn, texting=False):
         story = story_so_far(contact)
         if story:
             parts.append(story)
-        parts.append(standing_directives(contact))
+        parts.append(standing_directives(contact, texting))
         script = _primer_script(contact, texting)
         if script:
             parts.append(script)
@@ -466,6 +492,9 @@ def story_so_far(contact):
     facts = Story(contact.id).entries()
     if not facts:
         return ""
+    if operator.roleplay():
+        return ("=== YOUR STORY WITH HIM ===\nEstablished between you, and true from then on:\n"
+                + "\n".join(f"- {fact}" for fact in facts))
     return ("=== YOUR STORY WITH HIM — the game he plays as Bruce Wayne ===\n"
             "Established between you in the game. True inside the game, always; never "
             "part of his real life, and never brought into it.\n"

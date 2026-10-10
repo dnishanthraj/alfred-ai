@@ -19,10 +19,9 @@ import re
 import threading
 import time
 
-import ollama
-
 from .. import operator, paths
 from ..memory.store import atomic_write, read_text
+from . import model
 
 # How long news takes to travel, in seconds: from half an hour to most of a day.
 _DELAY = (30 * 60, 14 * 3600)
@@ -47,11 +46,23 @@ def closeness(a, b):
     return float(net.get(f"{a}|{b}", net.get(f"{b}|{a}", 0.0)))
 
 
+# The night's work, whatever it's called: the masks' names alone let "Bruce
+# asked Dick to stake out the docks for Black Mask's shipment" and "Tim got
+# hurt on patrol" through to Selina.
+_THE_WORK = re.compile(
+    r"(?i)\b(patrol\w*|stake ?outs?|staking (it )?out|suits?|cowls?|capes?|masks?|gear|grapple\w*|"
+    r"rooftops?|vigilante\w*|bat-?signal|batmobile|utility belt|cases?|the scanner|"
+    r"joker|riddler|penguin|two-face|scarecrow|bane|poison ivy|ivy|mr\.? freeze|harley|killer croc|"
+    r"hush|black mask|ra'?s al ghul|talia|deathstroke|zsasz|mad hatter|clayface|firefly|"
+    r"arkham|blackgate)\b")
+
+
 def _crosses_secret(text, contact_id):
     secrets = operator.profile().get("secrets", {})
-    if contact_id in secrets.get("known_by", []):
+    if not secrets.get("known_by") or contact_id in secrets.get("known_by", []):
         return False
-    return any(re.search(rf"\b{re.escape(t)}\b", text, re.I) for t in secrets.get("terms", []))
+    return (any(re.search(rf"\b{re.escape(t)}\b", text, re.I) for t in secrets.get("terms", []))
+            or bool(_THE_WORK.search(text)))
 
 
 def heard(contact_id, now=None):
@@ -78,7 +89,7 @@ def block(contact_id):
 
 def _notable(session, exchanges):
     """One model pass: what from this call might be passed on. [] if nothing."""
-    transcript = "\n".join(f"{'Bruce' if m['role'] == 'user' else session.contact.name}: {m['content']}"
+    transcript = "\n".join(f"{operator.name() if m['role'] == 'user' else session.contact.name}: {m['content']}"
                            for m in exchanges)
     instruction = (
         f"Here is a conversation between {operator.full_name()} and {session.contact.full_name}.\n\n"
@@ -88,9 +99,9 @@ def _notable(session, exchanges):
         f"said. Leave out anything {operator.name()} asked to keep private or quiet. Write each as a "
         f"short line beginning with '{operator.name()}'. If nothing is worth passing on, write NONE.")
     try:
-        reply = ollama.chat(model=session.contact.model, think=False,
-                            options={**session.contact.options, "temperature": 0, "num_predict": 120},
-                            messages=[{"role": "user", "content": instruction}])["message"]["content"]
+        reply = model.ask(session.contact.model, [{"role": "user", "content": instruction}],
+                          {**session.contact.options, "temperature": 0, "num_predict": 120},
+                          think=model.thinking(session.contact), purpose="the grapevine")
     except Exception:
         return []
     if re.search(r"\bNONE\b", reply):

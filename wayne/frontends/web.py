@@ -17,7 +17,7 @@ are released to the page strictly in order.
 import asyncio
 import json
 import logging
-import math
+import logging.handlers
 import random
 import re
 import threading
@@ -44,13 +44,16 @@ from ..engine import (
     initiative,
     places,
     presence,
+    travel,
     world,
 )
 from ..engine.party import MAX_CONTACTS, Call
+from ..engine.session import ASKS_REACTION
 from ..memory import groups as group_store
 from ..memory import migrate_legacy
+from ..memory.history import describe_gap
 from ..memory.store import atomic_write, read_text
-from ..memory.texts import TextLog
+from ..memory.texts import TextLog, quoted_by
 from ..paths import WEB_DIR
 from .groupchats import GroupChats
 
@@ -67,7 +70,10 @@ TALK_OVER = 0.12
 RING_REMARK = 0.55
 if not log.handlers:
     paths.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    _handler = logging.FileHandler(paths.DATA_DIR / "console.log")
+    # A line per sentence adds up over months of evenings: two megabytes, then
+    # it rolls over, keeping the last two.
+    _handler = logging.handlers.RotatingFileHandler(paths.DATA_DIR / "console.log", maxBytes=2_000_000,
+                                                    backupCount=2)
     _handler.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
     log.addHandler(_handler)
     log.setLevel(logging.INFO)
@@ -112,6 +118,8 @@ class Console(GroupChats):
     The console as a whole: a directory of contacts, one live session per
     contact you have spoken to, and the fan-out to connected browser tabs.
     """
+    # The ring in progress (to one, or to a group), and who a group ring invites.
+    _ring_token = _group_ring = _inviting = call = None
 
     # Every sentence sent to the page gets a key that is never reused. The
     # engine numbers sentences from 0 within each reply, and the page used
@@ -168,6 +176,7 @@ class Console(GroupChats):
         # him in the gap while the line is still being opened.
         self._connecting = False
         self._tasks = set()
+        self._adding, self._dropped_adds = set(), set()     # rung in and still ringing; stopped
         self._closing = set()        # cases being wound up, so the tick doesn't start another
         self._writing_lines = False
         self._typing_now = set()
@@ -459,6 +468,10 @@ class Console(GroupChats):
             session = self.session_for(contact_id)
             self.call = Call()
             self.call.join(session)
+            # Everyone rung together is invited from the start, so a quick
+            # decliner can still dial back in.
+            self.call.invited.update(self._inviting or ())
+            self._inviting = None
             await self.broadcast(events.contact_changed(contact_id))
             await self.broadcast(events.party([contact_id]))
 
@@ -473,11 +486,13 @@ class Console(GroupChats):
             refused = None if (incoming or ensure) else presence.answers(contact, state, again=rung)
             if refused:
                 # Not picking up. The ring happens outside the lock, so texts
-                # to anyone else carry on meanwhile.
+                # to anyone else carry on meanwhile. The ring has a token of its
+                # own: a text or an add meanwhile used to bump the shared epoch,
+                # the refusal was forgotten, and they "answered" after all.
                 self._ringing_out = contact_id
-                epoch = self.turn_epoch
+                ring = self._ring_token = object()
         if refused:
-            return await self._let_it_ring(contact, refused, state, epoch)
+            return await self._let_it_ring(contact, refused, state, ring)
         async with self.turn_lock:
             if self.current_id != contact_id:
                 return
@@ -501,6 +516,8 @@ class Console(GroupChats):
                 self.migrated = []
             await self.drive(session.boot(incoming, rung, also_ringing), contact, self.interrupt(),
                              release_at=pickup)
+            if self.current_id != contact_id:
+                return          # he'd moved on to another line while this one booted
             await self.broadcast({"type": "picked_up", "speaker": contact_id})
             self._call_attempts.pop(contact_id, None)
             presence.of(contact).touch()
@@ -517,7 +534,7 @@ class Console(GroupChats):
         contact = self.directory.get(self._ringing_out) if self._ringing_out else None
         if contact is None or self.current_id != contact.id:
             return False
-        self._ringing_out = None
+        self._ringing_out = self._ring_token = None
         self._refused_at[contact.id] = time.time()    # ringing straight back is urgent
         self.current_id = None
         if self.call:
@@ -529,7 +546,7 @@ class Console(GroupChats):
         self._spawn(self._after_refusal(contact, "no_answer", state))
         return True
 
-    async def _let_it_ring(self, contact, how, state, epoch):
+    async def _let_it_ring(self, contact, how, state, ring):
         """
         A call they won't take. It rings — briefly if they reject it, until it
         gives up if they don't — then the line closes, and what they do about
@@ -537,10 +554,9 @@ class Console(GroupChats):
         they're free, a text later with or without a reason, or nothing.
         """
         await asyncio.sleep(random.uniform(*(DECLINE_AFTER if how == "declined" else NO_ANSWER_AFTER)))
-        if self._ringing_out == contact.id:
-            self._ringing_out = None
-        if self.turn_epoch != epoch or self.current_id != contact.id:
-            return          # he hung up, or rang someone else, first
+        if self._ring_token is not ring or self.current_id != contact.id:
+            return          # he hung up, or rang someone else (or them again), first
+        self._ringing_out = self._ring_token = None
         self._refused_at[contact.id] = time.time()
         self.current_id = None
         if self.call:
@@ -625,6 +641,7 @@ class Console(GroupChats):
         a later call re-greets rather than resuming mid-sentence.
         """
         self.interrupt()
+        self._group_ring = None
         if self._abandon_ring():
             return
         async with self.turn_lock:
@@ -686,14 +703,28 @@ class Console(GroupChats):
         who is on the line and the last few things said, and greet the call.
         """
         contact = self.directory.get(contact_id)
-        if (contact is None or not self.call or contact_id in self._members()
+        if (contact is None or not self.call or contact_id in self._members() or self._ringing_out
                 or not contact.availability.is_available()):
             return
+        call = self.call
         if len(self.call.members) >= MAX_CONTACTS:
             await self.broadcast(events.notice(
                 f"The line's full — {contact.name} can't be patched in until someone drops off.", "warn"))
             return
         self.call.invited.add(contact_id)
+        self._adding.add(contact_id)
+        try:
+            return await self._ring_in(contact, call, ensure, note, willing, by_him, remark)
+        finally:
+            self._adding.discard(contact_id)
+            self._dropped_adds.discard(contact_id)
+
+    async def _ring_in(self, contact, call, ensure, note, willing, by_him, remark):
+        """The ring itself, for add(): every step checks it's still that call, and still wanted."""
+        contact_id = contact.id
+
+        def gone():
+            return self.call is not call or contact_id in self._dropped_adds
         state = presence.of(contact).now()
         how = presence.answers(contact, state,
                                again=self._attempt(self._call_attempts, contact_id, RING_AGAIN))
@@ -705,6 +736,8 @@ class Console(GroupChats):
             wait = random.uniform(*(DECLINE_AFTER if how == "declined" else NO_ANSWER_AFTER))
             await asyncio.sleep(max(0.0, wait - (asyncio.get_running_loop().time() - rang)))
             self._refused_at[contact_id] = time.time()
+            if gone():
+                return          # hung up meanwhile, or he stopped ringing them
             await self.broadcast({"type": "call_refused", "speaker": contact_id, "how": how})
             await self.broadcast(events.party(self._members()))
             self._spawn(self._after_refusal(contact, how, state))
@@ -723,14 +756,21 @@ class Console(GroupChats):
             await self._while_it_rings(contact)
         async with self.turn_lock:
             newcomer = self.session_for(contact_id)
-            if not self.call or not self.call.join(newcomer):
+            if gone() or not self.call.join(newcomer):
+                # The call's gone, he stopped the ring, or the line filled: their seat goes.
+                if self.call is call:
+                    await self.broadcast(events.party(self._members(), removed=contact_id))
                 return
             # The greeting is made while it rings and released when they "pick up".
             pickup = max(rang + 2.6 + random.uniform(0.3, 1.6), loop.time() + 0.5)
             await self.drive(self.call.greet(newcomer, note, willing), contact,
                              self.turn_epoch if epoch != self.turn_epoch else epoch, release_at=pickup)
-        # Whatever happened to the greeting, they've picked up.
+        if self.call is not call or newcomer not in self.call.members:
+            return
+        # Whatever happened to the greeting, they've picked up — and the page is
+        # told who's on the line now, whatever else it was told meanwhile.
         await self.broadcast({"type": "picked_up", "speaker": contact_id})
+        await self.broadcast(events.party(self._members()))
         if getattr(newcomer, "_hanging_up", False):
             # Picked up only to say no, and gone: the others may say something.
             await self._hang_ups(reason="said their piece on joining and hung up")
@@ -745,6 +785,11 @@ class Console(GroupChats):
 
     async def drop(self, contact_id):
         """Let one contact off the call. They say goodbye; the call goes on."""
+        if self.call and contact_id in self._adding and contact_id not in self._members():
+            # Still ringing: he's thought better of it.
+            self._dropped_adds.add(contact_id)
+            await self.broadcast(events.party(self._members(), removed=contact_id))
+            return
         if not self.call or contact_id not in self._members():
             return
         if len(self.call.members) == 1:
@@ -823,21 +868,22 @@ class Console(GroupChats):
         if presence.answers(contact, state, again=2):
             log.info("%s didn't respond to %s chasing them", contact.id, by.id)
             if random.random() < 0.65 and by.id in self._members():
-                await self._react(self._chase_came_back(contact, state), who=by.id)
+                await self._react(self._chase_came_back(contact, state, by), who=by.id)
             return
         log.info("%s joined after %s chased them", contact.id, by.id)
         await self.add(contact.id, ensure=True, willing=True,
                        note=f"{by.name} texted you to get on this call — you've only just seen it.")
 
     @staticmethod
-    def _chase_came_back(contact, state):
+    def _chase_came_back(contact, state, by=None):
         """
         What the one who chased them has heard back — from where they really
-        are, since that's what their reply would say. The private say nothing.
+        are, since that's what their reply would say. The private say nothing,
+        and nobody tells someone outside the secret that they're on patrol.
         """
         doing = state.get("doing") or ""
         if (not contact.shares_status or not doing or state["status"] == presence.OFFLINE
-                or random.random() < 0.3):
+                or (by is not None and groupchat.outside(by.id)) or random.random() < 0.3):
             return (f"You texted {contact.name} to get on the call a minute ago; nothing back yet. "
                     "Tell the call, if you'd bother.")
         return (f"{contact.name} has just texted you back: they can't get on right now — they're "
@@ -850,8 +896,7 @@ class Console(GroupChats):
         for member in list(self.call.members):
             for name in getattr(member, "_call_add", [])[:1]:
                 member._call_add = []
-                wanted = next((c for c in self.directory
-                               if name.lower() in (c.name.lower(), c.full_name.lower(), c.id)), None)
+                wanted = self.directory.find(name)
                 if wanted and wanted.id not in self._members() and len(self.call.members) < MAX_CONTACTS:
                     log.info("%s is ringing %s into the call", member.contact.id, wanted.id)
                     await self.add(wanted.id)
@@ -871,7 +916,12 @@ class Console(GroupChats):
                 if self.current_id == member.contact.id and self.call.members:
                     self.current_id = self.call.members[0].contact.id
                 await self.broadcast(events.party(self._members(), removed=member.contact.id))
-                if random.random() < 0.6:
+                # Whoever was in the room with them saw why they went — and may be going too.
+                beside = [m for m in self.call.members if member.contact.name in self.call.in_the_room(m)]
+                if beside:
+                    await self._react(f"{member.contact.name}, who's right there with you, {reason}. You saw why; "
+                                      "if it's yours to deal with too, you'd be going as well.", who=beside[0].contact.id)
+                elif random.random() < 0.6:
                     await self._react(f"{member.contact.name} {reason}.")
 
     async def call_many(self, ids):
@@ -885,19 +935,37 @@ class Console(GroupChats):
             return
         if len(contacts) == 1:
             return await self.connect(contacts[0].id)
+        if self.current_id or self.call:
+            # Ringing a group from a call is leaving that call: it ends here,
+            # whether or not anyone picks up — not left running under the ring.
+            await self.disconnect()
+        ring = self._group_ring = object()
         decisions = {c.id: presence.answers(c, presence.of(c).now()) for c in contacts}
+        # Those who are together share the moment: busy for one is busy for both,
+        # and one picking up brings the other on — "Tim's here, you're on speaker".
+        for c in contacts:
+            _, group = presence.together(presence.of(c))
+            beside = [o for o in contacts if o is not c and o.id in {p.contact.id for p in group}]
+            if not beside:
+                continue
+            if decisions[c.id] == "declined" and random.random() < 0.7:
+                for o in beside:
+                    decisions[o.id] = decisions[o.id] or "declined"
+            elif decisions[c.id] is None:
+                for o in beside:
+                    if decisions[o.id] == "no_answer" and random.random() < 0.8:
+                        decisions[o.id] = None
         await self.broadcast({"type": "group_ringing", "members": [c.id for c in contacts]})
         answering = [c for c in contacts if decisions[c.id] is None]
         for c in contacts:
             if decisions[c.id]:
-                self._spawn(self._refuse_group_ring(c, decisions[c.id]))
+                self._spawn(self._refuse_group_ring(c, decisions[c.id], ring))
         if not answering:
             return
         first, rest = answering[0], answering[1:]
         others = [c.name for c in contacts if c is not first]
+        self._inviting = {c.id for c in contacts}
         await self.connect(first.id, ensure=True, also_ringing=others)
-        if self.call:
-            self.call.invited.update(c.id for c in contacts)
         for contact in rest:
             if self.call and self.current_id:
                 together = [c.name for c in contacts if c is not contact]
@@ -905,16 +973,18 @@ class Console(GroupChats):
                 await self.add(contact.id, ensure=True, remark=False,
                                note=f"he rang you along with {' and '.join(together)}, all at once")
 
-    async def _refuse_group_ring(self, contact, how):
+    async def _refuse_group_ring(self, contact, how, ring):
         await asyncio.sleep(random.uniform(*(DECLINE_AFTER if how == "declined" else NO_ANSWER_AFTER)))
         self._refused_at[contact.id] = time.time()
+        if self._group_ring is not ring:
+            return          # that ring's long over: he hung up, or rang again
         await self.broadcast({"type": "call_refused", "speaker": contact.id, "how": how, "group": True})
         self._spawn(self._after_refusal(contact, how, presence.of(contact).now()))
         if self.call and self.call.members:
             missed = "didn't pick up" if how == "no_answer" else "declined"
             await self._react(f"{contact.name} {missed} — he'd rung them too.", absent=contact)
 
-    async def text(self, contact_id, body):
+    async def text(self, contact_id, body, reply_to=None):
         """
         A text message to a contact — any contact, on a call or not.
 
@@ -930,10 +1000,10 @@ class Console(GroupChats):
         if contact is None or not body:
             return
         thread = TextLog(contact_id)
-        message = thread.add("me", body)
+        message = thread.add("me", body, reply_to=reply_to)
         await self.broadcast({"type": "text_sent", "speaker": contact_id, "message": message})
 
-        if contact_id in self._members() or contact_id == self.current_id:
+        if (contact_id in self._members() or contact_id == self.current_id) and self._ringing_out != contact_id:
             read_at = thread.mark_read([message["id"]])
             await self.broadcast({"type": "text_read", "speaker": contact_id,
                                   "ids": [message["id"]], "at": read_at})
@@ -983,7 +1053,9 @@ class Console(GroupChats):
             thread = TextLog(contact.id)
             ids = [m["id"] for m in batch]
             body = "\n".join(m["text"] for m in batch)
-            ghost = pace.get("ghost", 0)
+            # Dry spells leave more on read and more unanswered; a flowing hour, less.
+            dry = max(0.35, 1.6 - 0.6 * presence.engagement(contact))
+            ghost = min(0.95, pace.get("ghost", 0) * dry)
             if _URGENT.search(body):
                 ghost *= 0.1        # even Randy answers "are you okay"
             if random.random() < ghost:
@@ -1007,15 +1079,17 @@ class Console(GroupChats):
             if not glancing:
                 whereabouts.touch()
             await self._presence_changed(contact)
-            if not glancing and random.random() < pace.get("on_read", 0):
-                # Left on read, for a while. Some people do.
+            if not glancing and random.random() < min(0.95, pace.get("on_read", 0) * dry):
+                # Left on read, for a while. Some people do — and having done it,
+                # they aren't offered it again when they get round to answering.
+                self.session_for(contact.id).left_on_read = True
                 await asyncio.sleep(random.uniform(*pace.get("on_read_for", [180, 1200])))
             else:
                 await asyncio.sleep(random.uniform(0.8, 3.0))
             # Written first, typed after: the dots only appear once there's
             # something to type. Shown while the model worked, they sat there
             # for minutes whenever it was busy with something else.
-            turn = await self._write_text(contact, "\n".join(m["text"] for m in batch))
+            turn = await self._write_text(contact, "\n".join(_as_read(m) for m in batch))
             reply, session = turn["text"], self.session_for(contact.id)
             if turn["choice"] == "none":
                 log.info("%s chose not to answer", contact.id)
@@ -1026,6 +1100,9 @@ class Console(GroupChats):
                 waiting = len(self._pending_texts.get(contact.id, []))
                 await asyncio.sleep(random.uniform(*pace.get("on_read_for", [480, 2700])))
                 if len(self._pending_texts.get(contact.id, [])) > waiting:
+                    # He texted again meanwhile: what they held back goes in with
+                    # the new ones, answered together — not dropped.
+                    self._pending_texts[contact.id] = batch + self._pending_texts.get(contact.id, [])
                     return
                 said, held = turn["deferred"]
                 session.history.record_exchange(said, held, via="text")
@@ -1047,12 +1124,25 @@ class Console(GroupChats):
                 reply = ""
             if turn["take"]:
                 self._spawn(self._take_by_name(contact, turn["take"]))
+            asked = ASKS_REACTION.search(batch[-1]["text"] or "")
+            if asked and not turn["react"]:
+                # Asked to react, they sent the emoji as a text: it's the reaction he asked for.
+                lone = [ln for ln in reply.splitlines() if ln.strip() in _TAPBACKS]
+                if lone:
+                    turn["react"] = lone[0].strip()
+                    reply = "\n".join(ln for ln in reply.splitlines() if ln.strip() not in _TAPBACKS).strip()
             if turn["react"]:
                 if reply.strip(" .").lower() in ("", "mm"):
                     reply = ""          # the reaction was the reply
-                await self._tapback_text(contact, batch[-1]["id"], "them", turn["react"])
+                # "Thumbs up my message" means the one before it, if there is one.
+                target = batch[-1]["id"]
+                if asked:
+                    earlier = [m for m in thread.page(limit=12) if m["from"] == "me" and m["id"] != batch[-1]["id"]
+                               and not m.get("kind")]
+                    target = earlier[-1]["id"] if earlier else target
+                await self._tapback_text(contact, target, "them", turn["react"])
             if reply:
-                await self._deliver(contact, reply, loop.time())
+                await self._deliver(contact, reply, loop.time(), reply_to=_quoting(thread, batch, turn["quote"]))
                 whereabouts.drop("callback")     # back in touch; no need to ring him back
             else:
                 await self.broadcast({"type": "text_idle", "speaker": contact.id})
@@ -1061,7 +1151,8 @@ class Console(GroupChats):
             if reply or turn["react"] or group_task:
                 if not glancing:
                     whereabouts.touch()
-                    if random.random() < (contact.texting_pace or {}).get("drift", 0):
+                    if random.random() < min(0.9, (contact.texting_pace or {}).get("drift", 0)
+                                             * max(0.4, 1.5 - 0.5 * presence.engagement(contact))):
                         # And then they put the phone down, mid-conversation,
                         # as people do: the next text waits.
                         whereabouts.touch(time.time() - presence.ENGAGED_FOR)
@@ -1113,10 +1204,11 @@ class Console(GroupChats):
             await asyncio.sleep(RECHECK_SECONDS if deadline is None
                                 else min(RECHECK_SECONDS, max(0.05, deadline - time.time())))
 
-    async def _deliver(self, contact, reply, started, origin=None):
+    async def _deliver(self, contact, reply, started, origin=None, reply_to=None):
         """
         A reply sent as they'd send it: one composed message, or three in a
-        row, each typed at their own speed (less the time spent thinking).
+        row, each typed at their own speed (less the time spent thinking) —
+        the first quoting `reply_to`, when it answers one text in particular.
         """
         loop = asyncio.get_running_loop()
         per_second = max(1.0, (contact.texting_pace or {}).get("wpm", 50) * 5 / 60)
@@ -1127,7 +1219,7 @@ class Console(GroupChats):
             await self.broadcast({"type": "text_typing", "speaker": contact.id})
             await self._type_out(contact.id, part, per_second,
                                  already=(loop.time() - started) if i == 0 else 0)
-            sent = thread.add("them", part, origin=origin)
+            sent = thread.add("them", part, origin=origin, reply_to=reply_to if i == 0 else None)
             await self.broadcast({"type": "text_reply", "speaker": contact.id, "message": sent})
             if i < len(parts) - 1:
                 await asyncio.sleep(random.uniform(0.4, 1.4))
@@ -1243,8 +1335,9 @@ class Console(GroupChats):
                           group_task=getattr(session, "_group_task", None),
                           meant=getattr(session, "_meant_group", None),
                           take=getattr(session, "_take_case", None),
-                          react=getattr(session, "_text_react", None))
-            session._deferred = session._take_case = session._text_react = None
+                          react=getattr(session, "_text_react", None),
+                          quote=getattr(session, "_text_quote", None))
+            session._deferred = session._take_case = session._text_react = session._text_quote = None
         return result
 
     async def _text_into_call(self, contact_id, body):
@@ -1312,6 +1405,12 @@ class Console(GroupChats):
         now = time.time()
         for contact in self.directory:
             await self._presence_changed(contact)
+            if not contact.shares_status and places.is_patrol(presence.of(contact).now(now)["doing"]) \
+                    and random.random() < 0.6 * PULSE_SECONDS / 3600:
+                # Out on the rooftops, someone who keeps their whereabouts to
+                # themselves gets seen now and then: a sighting on the scanner.
+                where, _ = presence.of(contact).whereabouts(now)
+                presence.of(contact).seen_at(where, "a sighting on the scanner", now)
         await self._write_status_lines()
         await self._keep_up()
         await self._write_day_plans()
@@ -1384,11 +1483,19 @@ class Console(GroupChats):
         open_ = [r for r in incidents.at() if r["id"] not in taken and r["status"] != "resolved"]
         if not open_:
             return
-        labels = {f"{r['place']} {r['area']} {r['kind']}".lower(): r for r in open_}
-        hit = difflib.get_close_matches(named.lower(), list(labels), 1, 0.1)
-        report = labels[hit[0]] if hit else None
+        said = named.lower().strip(" .")
+        if said in ("", "the place", "it", "that", "this", "one"):
+            return              # the instruction's own placeholder, or nothing to go on
+        # By what it names — the place, the district, the kind of call — first;
+        # only then a close match. At a cutoff of 0.1, "the docks" took a
+        # mugging at the cathedral.
+        report = next((r for r in open_ if r["place"].lower() in said or said in r["place"].lower()), None) \
+            or next((r for r in open_ if r["area"].lower() in said or said in r["area"].lower()), None) \
+            or next((r for r in open_ if r["kind"].lower() in said), None)
         if report is None:
-            report = next((r for r in open_ if named.lower() in (r["place"] + r["area"] + r["kind"]).lower()), None)
+            labels = {f"{r['place']} {r['area']} {r['kind']}".lower(): r for r in open_}
+            hit = difflib.get_close_matches(said, list(labels), 1, 0.6)
+            report = labels[hit[0]] if hit else None
         if report:
             await self.assign_case(report["id"], contact.id, by="him", tell=False)
 
@@ -1418,11 +1525,17 @@ class Console(GroupChats):
         current = cases.active(contact_id)
         if current and current["id"] != report_id:
             cases.drop(current["id"])          # off the last one, on to this
-        here = presence.of(contact).spot()
-        far = math.hypot(here["x"] - report["x"], here["y"] - report["y"]) if here else 30
-        case = cases.assign(report, contact_id, by=by, travel=4 + far / 3)
-        presence.of(contact).set_activity(f"on the way to the {report['kind'].lower()} at {report['place']}",
-                                          presence.BUSY, 90, where=(here or {}).get("name", ""))
+        # From wherever they are, by the roads, as long as the roads take — and the
+        # map shows them on their way there, arriving when the case does.
+        whereabouts = presence.of(contact)
+        here = places.resolve(whereabouts.whereabouts()[0])
+        minutes = (travel.route((here["x"], here["y"]), (report["x"], report["y"]), here["name"], report["place"])[1]
+                   if here else 12.0)
+        case = cases.assign(report, contact_id, by=by, travel=minutes)
+        whereabouts.set_activity(f"on the way to the {report['kind'].lower()} at {report['place']}",
+                                 presence.BUSY, max(90, int(minutes) + 60), where=report["place"])
+        if not contact.shares_status:
+            whereabouts.seen_at(report["place"], "on a case")
         log.info("%s on case %s (%s at %s, %s)", contact_id, report_id, report["kind"], report["place"], by)
         await self._presence_changed(contact)
         await self.broadcast({"type": "cases"})
@@ -1459,6 +1572,8 @@ class Console(GroupChats):
                 await self.assign_case(mine[0]["id"], cid, by="self")
                 busy.add(cid)
         for case in cases.advance(now, arrived=self._on_scene):
+            if self.current_id:
+                break           # he's on a call: the write-up waits, rather than taking the model from it
             if case["id"] not in self._closing:
                 self._closing.add(case["id"])
                 self._spawn(self._close_case(case))
@@ -1666,14 +1781,17 @@ class Console(GroupChats):
             contact = random.choice(chases)
             presence.of(contact).put("chase", {"id": (presence.of(contact).get("chase") or {}).get("id")})
             self._count_initiative()
-            self._spawn(self._send_unprompted(contact, "", "chase"))
+            last = TextLog(contact.id).last() or {}
+            # Their phone shows whether he's opened it, as anyone's does.
+            seen = f"read {describe_gap(now - last['seen_at'])}" if last.get("seen_at") else "not opened"
+            self._spawn(self._send_unprompted(contact, seen, "chase"))
         elif impulses:
             contact = random.choice(impulses)
             about = initiative.impulse(self.session_for(contact.id))
             last = TextLog(contact.id).last()
             if about and last and last["from"] == "them":
-                about += (" (he never answered your last text — mention that, or don't, "
-                          "whatever you'd actually do)")
+                about += (f" (he never answered your last text — {'he read it' if last.get('seen_at') else 'never even opened it'}; "
+                          "mention that, or don't, whatever you'd actually do)")
             if about:
                 self._count_initiative()
                 self._spawn(self._send_unprompted(contact, about, "impulse"))
@@ -1769,6 +1887,9 @@ class Console(GroupChats):
         if not self.current_id or self._ringing_out:
             return
         if self.call and self.call.is_group:
+            if kind == "sign_off":
+                # The quiet's run its course: the page rings off on this.
+                return await self.broadcast(events.turn_complete())
             return await self._lull()
         # The epoch is taken before waiting, as submit does: bumping it after
         # the wait cancelled whatever he'd said in the meantime, and his words
@@ -1788,7 +1909,9 @@ class Console(GroupChats):
         """
         self._lulls += 1
         if random.random() >= self._lull_energy:
-            return
+            # Nobody fills it — and the page, waiting to hear, is told so, or its
+            # timer stopped and the call never drifted to an end.
+            return await self.broadcast(events.turn_complete())
         members = list(self.call.members)
         weights = [(0.25 + (m.contact.initiative or {}).get("per_day", 0.5) * 0.4)
                    * (1 - (m.contact.texting_pace or {}).get("on_read", 0) * 0.7)
@@ -1803,7 +1926,7 @@ class Console(GroupChats):
         epoch = self.turn_epoch
         async with self.turn_lock:
             if epoch != self.turn_epoch or not self.call or member not in self.call.members:
-                return
+                return await self.broadcast(events.turn_complete())
             turn = (self.call.collide(member, second, self._lulls)
                     if second is not None and second in self.call.members
                     else self.call.lull(member, self._lulls))
@@ -1833,10 +1956,8 @@ class Console(GroupChats):
             return      # nobody on the line — it's ringing, and they won't answer
         if spoken and self._is_own_echo(text):
             return
+        wanted = self._asked_to_add(text) if self.call else None
         if self.call:
-            wanted = self._asked_to_add(text)
-            if wanted:
-                return await self.add(wanted, by_him=True)
             leaving = self._asked_to_drop(text)
             if leaving:
                 return await self.drop(leaving)
@@ -1861,6 +1982,9 @@ class Console(GroupChats):
         if group:
             await self._hang_ups()
         await self._call_adds()
+        if wanted and self.call and wanted not in self._members():
+            # He asked for them: whoever he asked has answered him; now it rings.
+            await self.add(wanted)
         for member in (self.call.members if self.call else []):
             taking = getattr(member, "_take_case", None)
             if taking:
@@ -1868,8 +1992,19 @@ class Console(GroupChats):
                 self._spawn(self._take_by_name(member.contact, taking))
 
     def _asked_to_add(self, text):
-        """'Alfred, get Lucius on the line' — a contact not on the call, asked for."""
-        if not re.search(r"\b(get|bring|add|patch|loop|call|ring|grab|put)\b", text, re.I):
+        """
+        'Alfred, get Lucius on the line' — a contact not on the call, asked for
+        plainly: ringing someone in, by name, onto the line. "Did Dick call you?"
+        and "get me what Barbara found" aren't, and nor is "don't add Tim".
+        """
+        if re.search(r"(?i)\b(don'?t|do not|no need to|never mind)\b", text):
+            return None
+        if not re.search(r"(?i)\b(get|bring|add|patch|loop|ring|put|pull|conference)\b", text):
+            return None
+        if not re.search(r"(?i)\b(on|onto|into|to|in on) (the |this )?(line|call)\b|"
+                         r"\b(patch|loop|bring|pull|get|ring)\b[^.?!]{0,30}\bin\b", text):
+            return None
+        if text.rstrip().endswith("?") and not re.match(r"(?i)\W*(\w+,\s*)?(can|could|would|will) you\b", text):
             return None
         for contact in self.directory:
             if contact.id in self._members():
@@ -1883,6 +2018,8 @@ class Console(GroupChats):
         """'Selina, you can drop off' — someone on the call, let go."""
         if not self.call or not self.call.is_group:
             return None
+        if re.search(r"(?i)\b(don'?t|do not|no need to|not yet)\b", text) or text.rstrip().endswith("?"):
+            return None         # "Tim, don't hang up yet" keeps Tim
         if not re.search(r"\b(drop (off|out)|you can go|hang up|leave the call|"
                          r"let (her|him) go|sign off|head off)\b", text, re.I):
             return None
@@ -1891,6 +2028,29 @@ class Console(GroupChats):
 
 
 console = Console()
+
+
+# The reactions a phone offers at a tap, sent alone as a text when asked to react.
+_TAPBACKS = {"👍", "👍🏻", "👍🏼", "👍🏽", "👍🏾", "👍🏿", "❤️", "😂", "‼️", "❓", "👎"}
+
+
+def _quoting(thread, batch, said):
+    """
+    Which of his texts their reply quotes — the one of `batch` the words in
+    [reply: …] are from. None if none is, or it's his last text anyway.
+    """
+    target = quoted_by(batch, said) if said else None
+    last = thread.last()
+    return target["id"] if target and last and last["id"] != target["id"] else None
+
+
+def _as_read(message):
+    """One of his texts as they read it — with the one it answers, when he replied to a particular one."""
+    quoted = message.get("reply_to")
+    if not quoted:
+        return message["text"]
+    whose = "your" if quoted["from"] == "them" else "his own earlier"
+    return f'(replying to {whose} text: "{quoted["text"]}") {message["text"]}'
 
 
 def _clock(hours):
@@ -2045,7 +2205,7 @@ async def session_info():
         "current": console.current_id,
         "default": config.DEFAULT_CONTACT,
         # Gotham, for the little map on a status card.
-        "map": {k: v for k, v in places.gazetteer().items() if k in ("places", "regions")},
+        "map": {k: v for k, v in places.gazetteer().items() if k in ("places", "regions", "areas")},
     })
 
 
@@ -2124,7 +2284,11 @@ async def map_trail(contact_id: str, hours: float = 2.0):
     contact = console.directory.get(contact_id)
     if contact is None or not contact.shares_location:
         return JSONResponse({"trail": []})
-    return JSONResponse({"trail": presence.of(contact).trail(hours=max(0.25, min(hours, 12)))})
+    hours = max(0.25, min(hours, 12))
+    whereabouts = presence.of(contact)
+    trail = await asyncio.to_thread(whereabouts.trail, hours)
+    # And the roads they took between those places, as they took them.
+    return JSONResponse({"trail": trail, "trips": whereabouts.trips(time.time() - hours * 3600)})
 
 
 @app.post("/api/unlock")
@@ -2319,16 +2483,22 @@ async def websocket_endpoint(websocket: WebSocket):
             elif kind == "signoff":
                 console._spawn(console.nudge("sign_off"))
             elif kind == "text":
-                console._spawn(console.text(payload.get("id", ""), payload.get("text", "")))
+                console._spawn(console.text(payload.get("id", ""), payload.get("text", ""), payload.get("reply_to")))
             elif kind == "answer":
                 console._spawn(console.answer(payload.get("id", "")))
             elif kind == "decline":
                 console._spawn(console.decline(payload.get("id", "")))
             elif kind == "group_text":
-                console._spawn(console.group_text(payload.get("id", ""), payload.get("text", "")))
+                console._spawn(console.group_text(payload.get("id", ""), payload.get("text", ""), payload.get("reply_to")))
             elif kind == "text_react":
                 console._spawn(console.text_react(payload.get("id", ""), payload.get("message", ""),
                                                        payload.get("emoji", "")))
+            elif kind == "seen":
+                TextLog(str(payload.get("id", ""))).mark_seen()
+            elif kind == "group_seen":
+                seen = group_store.of(str(payload.get("id", "")))
+                if seen is not None:
+                    seen.mark_read("me")
             elif kind == "group_react":
                 console._spawn(console.group_react(payload.get("id", ""), payload.get("message", ""),
                                                         payload.get("emoji", "")))

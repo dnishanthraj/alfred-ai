@@ -52,6 +52,14 @@ def _knows(fact, contact_id):
     return known == "*" or contact_id in known
 
 
+def roleplay():
+    """
+    Whether who he plays is a character (Bruce) rather than himself: then the
+    world's past is theirs to share, and nothing is "real life" to protect.
+    """
+    return bool(profile().get("roleplay"))
+
+
 def briefing(contact_id):
     """Who he is, what this contact calls him, and what this contact knows."""
     p = profile()

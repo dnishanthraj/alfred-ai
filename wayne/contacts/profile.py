@@ -317,6 +317,20 @@ class Directory:
     def get(self, contact_id):
         return self._contacts.get(contact_id)
 
+    def find(self, name):
+        """
+        The contact a name means, however it's written — "Tim", "tim drake",
+        "robin", "Cassandra" — or None. The one way of asking, where there were six.
+        """
+        said = (name or "").strip().strip("@ .,!?").lower()
+        if not said:
+            return None
+        for contact in self._contacts.values():
+            if said in (contact.name.lower(), contact.full_name.lower(), contact.id,
+                        contact.full_name.split()[0].lower()):
+                return contact
+        return None
+
     def ids(self):
         return list(self._contacts)
 

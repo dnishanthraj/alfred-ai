@@ -55,6 +55,9 @@ def test_an_interrupted_reply_is_remembered_as_far_as_it_got(session):
 
 
 def test_an_unknown_shared_memory_is_flagged_and_a_known_one_is_not(session, monkeypatch):
+    """For an operator who is himself, not a character: no invented shared past."""
+    from wayne import operator
+    monkeypatch.setattr(operator, "roleplay", lambda: False)
     monkeypatch.setattr(Vault, "mentions", lambda self, prompt: False)
     notes = session._awareness("You remember that weekend in Cornwall, right?", False)
     assert any("do not remember it" in n for n in notes)
@@ -151,10 +154,22 @@ def test_story_facts_are_kept_apart_from_real_ones(session, tmp_path, monkeypatc
     assert story.entries() == []
 
 
-def test_reaching_for_the_story_is_played_along_with(session):
+def test_reaching_for_the_story_is_played_along_with(session, monkeypatch):
+    from wayne import operator
+    monkeypatch.setattr(operator, "roleplay", lambda: False)
     session.story.mentions = lambda prompt: False
     session.history.messages = [{"role": "user", "content": "I am Bruce."},
                                 {"role": "assistant", "content": "Of course you are."}]
     notes = session._awareness("You don't remember our son, Randy?", False)
     assert any("true in your story" in n for n in notes)
+    assert not any("do not remember it" in n for n in notes)
+
+
+def test_playing_bruce_the_worlds_past_is_theirs_to_share(session, monkeypatch):
+    """Alfred, asked if he remembers teaching him to ride a bike, was told he didn't."""
+    from wayne import operator
+    monkeypatch.setattr(operator, "roleplay", lambda: True)
+    monkeypatch.setattr(Vault, "mentions", lambda self, prompt: False)
+    notes = session._awareness("Remember when you taught me to ride a bike?", False)
+    assert any("past together" in n for n in notes)
     assert not any("do not remember it" in n for n in notes)

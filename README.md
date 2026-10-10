@@ -69,18 +69,21 @@ Each one is a JSON profile in [`wayne/contacts/profiles/`](wayne/contacts/profil
 </td><td width="50%" valign="top">
 
 ### 💬 Texts and group chats
-- **Read receipts at their pace.** Seconds if their phone's in hand, hours if they're on patrol, never if they're Randy in a mood. Typing dots, then one message or three in a row, in their own style.
-- **Left on read, chased, or ghosted**, depending on who it is.
+- **Read receipts at their pace, both ways.** Seconds if their phone's in hand, hours if they're on patrol, never if they're Randy in a mood. Typing dots, then one message or three in a row, in their own style. They can see when you've read theirs, too.
+- **Left on read, chased, or ghosted**, depending on who it is — and whether you read it or never opened it.
+- **Moods in waves.** Phones ride the city's rhythm (the commute, the evening scroll, the dead small hours) and spells of their own: a flowing hour, then a dry afternoon of one-word answers.
+- **Replies that quote.** Reply to one message in particular; they quote-reply too, to you or to each other.
 - **Group chats** that live without you. They answer each other, go quiet when everyone's asleep, chase a question nobody's read, and take a private aside to your DMs.
 - **@tags that ping.** `@Tim`, `@everyone`, and `@Bruce` lights up *your* screen with its own tone and badge.
-- **Emoji and reactions.** A picker in the composer, reactions from a hover button, and they sometimes answer a ❓ you leave on their message.
+- **Emoji and reactions.** A picker in the composer, reactions from a hover button. Reacting is a habit of theirs, not a reflex: Alfred almost never, Cass more than she writes, and a 👍 can be the whole answer.
 
 </td></tr>
 <tr><td valign="top">
 
 ### 🗓️ Their lives
 - **A day of their own**, planned each morning by the model: sleep, work, patrol, errands, a film they wanted to catch.
-- **Where they are** comes from what they're doing, and agrees for everyone. If Barbara's patrolling with Cass, they're in the same place on the map, on the hover card and in what they say.
+- **Where they are** comes from what they're doing, and agrees for everyone. If Barbara's patrolling with Cass, they're in the same place on the map, on the hover card and in what they say. When it changes, they **travel** there by road, over the bridges, as long as it takes.
+- **Days of their own.** Nobody patrols at noon unless you ask: Lucius is at the office, Barbara at the lab, Randy at the hangar.
 - **They get in touch first.** They report back when they said they would, check in when a call worried them, close a case and tell you how it went, or text because something reminded them of you.
 - **Hobbies that stay current.** What they follow is searched daily, so three months from now they've seen the new season too.
 
@@ -88,7 +91,7 @@ Each one is a JSON profile in [`wayne/contacts/profiles/`](wayne/contacts/profil
 
 ### 🚨 The city
 - **A police scanner** with a steady stream of reports drawn from each district's own trouble: Crime Alley far more than the Upper East Side, and three times busier at night. GCPD dispatches are written by the model, and some of them are as grim as Gotham gets.
-- **Cases.** Put someone on a report from the map, or just tell them in conversation. Whoever is near may take it on their own. They head there, talk about it, and close it when they say it's handled.
+- **Cases.** Put someone on a report from the map, or just tell them in conversation. Awake, they take it about as readily as they take orders (Dick nearly always, Randy rarely); asleep, they get your text when they wake. They travel there, talk about it, and close it when they say it's handled. Now and then a patrol takes a call on its own.
 - **Hearsay.** What one of them hears may reach another, with who said it.
 - **Secrets that stay secret.** Every fact about you is tagged with who knows it, so Lucius never learns who's under the Batwing mask.
 
@@ -117,16 +120,18 @@ Press <kbd>M</kbd>. Gotham is drawn from [`wayne/engine/gotham.json`](wayne/engi
 <details>
 <summary><b>Everything that's on it</b></summary>
 
-- **The people.** Everyone who shares their location appears as their portrait, moving live, with the trail of where they've been tonight. Click one to follow them.
-- **Eighty-odd places**, each with a bio, and **a note from Bruce** about it ("Every time we clear it out, someone moves back in.").
+- **The people.** Everyone who shares their location appears as their portrait, moving along the roads when they're on their way somewhere, with the roads they took tonight. Click one to follow them. The ones who don't share show where you last knew them to be.
+- **Over a hundred and seventy places**, from canon where there is one (Gotham Academy, Arkham Mansion, Kane Industries, the Monarch Playing Card Company, Daggett Industries, Fort Dumas), each with a bio and **a note from Bruce** about it ("Every time we clear it out, someone moves back in."). Every district has a character of its own; click one to see it and what's there. Name a place to anyone and they know it.
 - **Districts and how safe they are.** Turn on the safety layer for a heat map of the city's trouble.
 - **The scanner** on the map: pulsing warnings, severity from amber to red, the dispatch on hover, and who's on it. Assign someone straight from the card.
 - **The city itself:**
-  - roads in a real network (the Skyway on its piers, roundabouts, a star junction);
-  - three subway lines, ferries, and the airport;
-  - container yards at the docks, cranes over building sites, water towers and helipads on the roofs;
-  - clubs, bars, diners, churches, fire stations and schools, each named;
-  - lit windows, and terrain you can see in 3D.
+  - roads in one real network (the Skyway on its piers, roundabouts, a star junction), every river crossed by a bridge;
+  - landmarks built as themselves: the university's quads and domed library, Ace's vats and catwalks, a four-chimneyed power station, the Knightsdome, a whole airport with gates, taxiways, lights, car parks and hangars;
+  - subway, rail, ferries and shipping channels; container terminals, cranes over building sites, water towers and helipads;
+  - pitches, ball fields, courts, a running track, a country club, a racecourse, Slaughter Swamp;
+  - clubs, bars, diners, cafés, gyms, cinemas, hotels, shops, churches, fire stations and schools, each named;
+  - tree-lined suburbs, lit windows, and terrain you can see in 3D — with nothing standing on a road.
+- **Things moving, on timetables that follow the hour:** subway trains under the streets and trains on their lines, ferries between piers, ships coming in with their tugs, planes landing and taking off, police, news, medevac and tour helicopters, sailboats off the marina, the lighthouse turning, traffic on the highways.
 - **At night**, the Bat-Signal over GCPD.
 - **Search** (<kbd>/</kbd>) for people, places, pins and reports. Use **Layers** to toggle what's drawn, and right-click to drop **pins** of your own.
 
@@ -151,6 +156,8 @@ Tick them off as you go.
 - [ ] React ❓ to one of Barbara's texts.
 - [ ] Ask Lucius what he's watching this week.
 - [ ] Open the map at night and find the Bat-Signal.
+- [ ] Ask Dick to come to Wayne Tower, then watch him drive in from Blüdhaven.
+- [ ] Ask anyone what's in Burnside.
 - [ ] Take the 3D view down to Amusement Mile.
 
 ## 🚀 Setup
