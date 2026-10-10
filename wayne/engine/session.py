@@ -1860,7 +1860,11 @@ class ContactSession:
         # "don't mention patrols" warning sat beside "your case is yours to talk about".
         guarded = bool(self.call and not groupchat.outside(self.contact.id)
                        and any(groupchat.outside(m.contact.id) for m in self.call.members if m is not self))
-        tracker = "" if guarded or from_contact else self._tracker(prompt)
+        if getattr(self.contact, "sees_whereabouts", False):
+            # Alfred in the cave, Barbara at her screens: everything the console shows him, they can see.
+            tracker = "" if guarded or from_contact else self._batcomputer(prompt)
+        else:
+            tracker = "" if guarded or from_contact else self._tracker(prompt)
         if tracker:
             awareness.append(tracker)
         work = "" if guarded or from_contact else self._casework(prompt, brief=head is None)
@@ -2099,6 +2103,89 @@ class ContactSession:
                          r"check (it|that) out|on the scanner|need you (on|at|over)|get (over|down) to|"
                          r"joker|scarecrow|riddler|penguin|two-face|bane|ivy|freeze|croc|black mask|zsasz|"
                          r"hatter|firefly|hush|clayface|harley|deathstroke|falcone|thorne|breakout|stabbing|machete)\b")
+
+    def _batcomputer(self, prompt):
+        """
+        The Batcomputer, as the ones who run it see it — Alfred in the cave, Barbara
+        at the clock tower: where he is and how he's getting there, where each of the
+        family is, every case and who's on it, the scanner, the Batwing, the rogues
+        caught or loose, this morning's papers. All of it, every turn; what's said
+        about it is theirs — asked where Cass is or what's at the docks, they look.
+        """
+        from ..contacts import directory
+        from ..memory.history import describe_gap
+        from . import batman, cases, codex, incidents, jet
+        book = directory()
+        now = time.time()
+        lines = [batman.note(now) + (f"; the Batwing: {jet.state(now)['status']}")]
+        dark = []
+        for other in book:
+            if other.id == self.contact.id:
+                continue
+            them = presence.of(other)
+            if not other.shares_location:
+                seen = them.get("seen")
+                dark.append(f"{other.name} (last seen {seen['where']}, {describe_gap(now - seen['at'])} — {seen['how']})"
+                            if seen and now - seen.get("at", 0) < 48 * 3600 else other.name)
+                continue
+            state, (where, company) = them.now(now), them.whereabouts(now)
+            with_ = [book.get(c).name for c in presence.sharing(company) if book.get(c)]
+            journey = them.trip(where, them.spot(where, now), now) if where else None
+            if journey:
+                left = max(1, round((journey["end"] - now) / 60))
+                lines.append(f"{other.name}: on the way to {them.label(where)}, {journey.get('by') or 'travelling'}, "
+                             f"{left} min out")
+                continue
+            walking = them.patrolling(where, now) if where else None
+            spot = (f"on patrol in {where}" + (f", by {walking['near']}" if walking and walking["near"] else "")
+                    if walking else them.label(where) if where else "")
+            lines.append(f"{other.name}: {state['status']}" + (f", {state['doing']}" if state["doing"] else "")
+                         + (f" — {spot}" if spot else "") + (f", with {' and '.join(with_)}" if with_ else ""))
+        names = {c.id: c.name for c in book} | {"bruce": "Bruce"}
+        board = []
+        for c in cases.board(now)[:8]:
+            who = " and ".join(names.get(m, m) for m in cases.team(c))
+            if c["status"] == "closed":
+                board.append(f"{c['kind'].lower()} at {c['place']}: {who} — over, {(c.get('result') or {}).get('how', '')}"
+                             f" ({c.get('outcome', '')[:90]})")
+            else:
+                board.append(f"{c['kind'].lower()} at {c['place']}: {who}, {cases.phase(c, now)[0]}"
+                             + (f" — {c['crew']} of them" if c.get("crew", 1) >= 4 else ""))
+        reports = sorted(incidents.at(now), key=lambda r: (-r["severity"], -r["at"]))
+
+        def call(r):
+            toll = incidents.toll_text(r.get("toll") or {})
+            bits = [f"{r['kind'].lower()} — {r['place']}, {r['area']}"]
+            if r.get("was"):
+                bits.append(f"was {' then '.join(w.lower() for w in r['was'])}")
+            if r.get("moving"):
+                bits.append("on the move" + (" on foot" if (r.get("route") or {}).get("mode") == "foot" else " by car"))
+            if r.get("fled"):
+                bits.append("suspects fled")
+            if r.get("suspect"):
+                bits.append(f"{r['suspect']} behind it")
+            elif r.get("gang"):
+                bits.append(r["gang"])
+            if r.get("crew", 1) >= 4:
+                bits.append(f"{r['crew']} of them")
+            if toll:
+                bits.append(toll)
+            return ", ".join(bits) + f" ({r['status']})"
+        loose = []
+        for rogue in incidents.rogues():
+            where = codex.where(rogue, now)
+            if where.get("how") and now - (where.get("since") or 0) < 36 * 3600:
+                loose.append(f"{rogue['name']} {where['how']}")
+        papers = "; ".join(f"{i['outlet']}: “{i['headline']}”" for i in (gazette.today() or [])[:4])
+        return ("The Batcomputer — everything on his console, on your screens (your phone, if you're away from "
+                "them). You can see all of it; use it the way you would, answer what he asks from it, never recite "
+                "it:\n- Where everyone is: " + "; ".join(lines)
+                + (f". Not sharing: {', '.join(dark)}" if dark else "") + ".\n"
+                + (f"- The case board: {'; '.join(board)}.\n" if board else "- No cases on the board.\n")
+                + (f"- The scanner ({len(reports)} open): {'; '.join(call(r) for r in reports[:8])}.\n" if reports
+                   else "- The scanner's quiet.\n")
+                + (f"- The rogues lately: {'; '.join(loose)}.\n" if loose else "")
+                + (f"- This morning's papers: {papers}." if papers else ""))
 
     def _casework(self, prompt, brief=True):
         """

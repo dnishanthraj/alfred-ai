@@ -95,3 +95,14 @@ def test_comms_know_whether_he_is_on_it_and_where_he_is(private_data, monkeypatc
     assert "isn't on this one" in note and "Wayne Manor" in note and "Barbara" in note
     session, group = _comms(monkeypatch, ["batgirl", "bruce"], "on it")
     assert "on this one with you" in session._comms_note(group)
+
+
+def test_alfred_sees_everything_on_the_console(private_data, monkeypatch):
+    from wayne.contacts import directory
+    from wayne.engine import ContactSession
+    from wayne.memory import History
+    monkeypatch.setattr(History, "save", lambda self: None)
+    alfred = ContactSession(directory().get("alfred"))
+    view = alfred._batcomputer("what's going on tonight")
+    assert "Where everyone is" in view and "Bruce: at" in view and "Batwing" in view
+    assert "scanner" in view.lower()

@@ -2077,8 +2077,12 @@ class Console(GroupChats):
         contact = self.directory.get(who or case["assignee"])
         mine = (case.get("members") or {}).get(who or case["assignee"]) or {"by": case.get("by")}
         if contact is not None:
+            # Working it till it's done: an hour and a half that ran out first had them driving
+            # home from a case the board still had them on.
+            left = max(20, int((case.get("due", time.time()) - time.time()) / 60) + 15)
             presence.of(contact).set_activity(f"working the {case['kind'].lower()} at {case['place']}",
-                                              presence.BUSY, 90, where=case["place"])
+                                              presence.BUSY, left, where=case["place"],
+                                              xy=(case["x"], case["y"]) if case.get("chase") else None)
             self._spawn(self._presence_changed(contact))
             odds = (contact.initiative or {}).get("case_updates", 0.4)
             if mine.get("by") == "him" and contact.id not in self._members() and random.random() < odds:
