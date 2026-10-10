@@ -117,7 +117,7 @@ TOLL = {
 # Places that don't get scanner calls of their own: nobody calls the police
 # from inside Blackgate, or on Wayne Manor, or on the police.
 QUIET_PLACES = {"prison", "asylum", "statue", "lighthouse", "observatory", "garden", "water", "cemetery",
-                "manor", "police", "clock"}
+                "manor", "police", "clock", "home"}      # and nobody's home: the family's are theirs, not the scanner's
 # A hospital is where the night's calls end up, not where they start.
 _CALM = {"hospital": 0.3}
 
@@ -143,7 +143,11 @@ def _spots():
     if _spot_cache is not None:
         return _spot_cache
     levels = _crime_by_area()
-    found = [p for p in places.gazetteer()["places"] if p.get("icon") not in QUIET_PLACES]
+    # Wherever one of the family lives isn't a place a call comes from, however it's marked.
+    from ..contacts import directory
+    homes = {(getattr(c, "home", "") or "").lower() for c in directory()}
+    found = [p for p in places.gazetteer()["places"] if p.get("icon") not in QUIET_PLACES
+             and p["name"].lower() not in homes]
     per_area = {}
     for p in found:
         per_area[p["area"]] = per_area.get(p["area"], 0) + 1

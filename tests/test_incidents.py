@@ -126,3 +126,11 @@ def test_a_gang_crime_names_the_crew_whose_streets_they_are():
     for r in reports:
         assert r["kind"] in incidents._GANG_KINDS
         assert all(crew in incidents.GANGS[r["area"]] for crew in r["gang"].split(" and "))
+
+
+def test_nobody_in_the_family_has_a_call_come_from_their_home():
+    from wayne.contacts.profile import directory
+    homes = {(c.home or "").lower() for c in directory()}
+    incidents._spot_cache = None
+    places_used = {r["place"].lower() for r in _reports(range(0, 24, 2), days=4)}
+    assert places_used and not places_used & homes
