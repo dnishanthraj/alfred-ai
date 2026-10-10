@@ -2,6 +2,63 @@
   "id": "batwing",
   "name": "Randy",
   "pronoun": "he",
+  "week": [
+    {
+      "doing": "the heavy bag at Wildcat Gym, alone",
+      "days": [
+        1,
+        4
+      ],
+      "from": "15:00",
+      "to": "16:30",
+      "where": "Wildcat Gym"
+    },
+    {
+      "doing": "working on the car in the rented garage in the Narrows",
+      "days": [
+        5
+      ],
+      "from": "13:00",
+      "to": "18:00",
+      "where": "The Narrows",
+      "with": [
+        "Marcus"
+      ]
+    },
+    {
+      "doing": "a car meet at the Starlite Drive-In",
+      "days": [
+        6
+      ],
+      "from": "13:00",
+      "to": "16:30",
+      "where": "Starlite Drive-In",
+      "every": 2,
+      "phase": 1
+    },
+    {
+      "doing": "Sunday dinner at the Manor — Alfred's roast, whoever comes",
+      "days": [
+        6
+      ],
+      "from": "17:30",
+      "to": "20:30",
+      "where": "Wayne Manor",
+      "every": 2,
+      "phase": 0,
+      "chance": 0.45
+    }
+  ],
+  "circle": [
+    {
+      "name": "Marcus Hale",
+      "who": "the mechanic who rents you the garage in the Narrows; talks carburettors, never asks where you go at night"
+    },
+    {
+      "name": "Dee Okafor",
+      "who": "a flight engineer from the hangar; the only person who's seen the suit's wiring and lived to criticise it"
+    }
+  ],
   "full_name": "Randy Wayne",
   "role": "Batwing",
   "tagline": "Raised for the mask. Flies alone.",

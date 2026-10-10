@@ -2,6 +2,79 @@
   "id": "alfred",
   "name": "Alfred",
   "pronoun": "he",
+  "week": [
+    {
+      "doing": "at Coventry Market Hall for the week's produce",
+      "days": [
+        5
+      ],
+      "from": "09:30",
+      "to": "11:00",
+      "where": "Coventry Market Hall"
+    },
+    {
+      "doing": "in the rose garden and the kitchen garden",
+      "days": [
+        6
+      ],
+      "from": "08:30",
+      "to": "11:30",
+      "where": "Wayne Manor"
+    },
+    {
+      "doing": "at a matinee at the Gotham Opera House",
+      "days": [
+        2
+      ],
+      "from": "14:00",
+      "to": "17:00",
+      "where": "Gotham Opera House",
+      "every": 2
+    },
+    {
+      "doing": "tea with Leslie at her clinic",
+      "days": [
+        3
+      ],
+      "from": "15:00",
+      "to": "16:30",
+      "where": "Thompkins Clinic",
+      "with": [
+        "Leslie"
+      ],
+      "every": 2
+    },
+    {
+      "doing": "Sunday dinner at the Manor — your roast, whoever comes",
+      "days": [
+        6
+      ],
+      "from": "17:30",
+      "to": "20:30",
+      "where": "Wayne Manor",
+      "every": 2,
+      "phase": 0,
+      "chance": 0.97
+    }
+  ],
+  "circle": [
+    {
+      "name": "Leslie Thompkins",
+      "who": "the doctor at the Crime Alley clinic; the oldest friend you have in Gotham, and the only one who scolds you back"
+    },
+    {
+      "name": "Julia Pennyworth",
+      "who": "your daughter, ex-forces like you once were; calls on Sundays when she remembers"
+    },
+    {
+      "name": "Major Reggie Hollis",
+      "who": "an old friend from the regiment, in Hampshire; chess by post, one move a fortnight, insults in the margins"
+    },
+    {
+      "name": "Mrs. Delgado",
+      "who": "the greengrocer at Coventry Market Hall who keeps the best tomatoes back for you"
+    }
+  ],
   "full_name": "Alfred Pennyworth",
   "role": "Wayne Manor",
   "tagline": "Oldest friend. Least impressed.",

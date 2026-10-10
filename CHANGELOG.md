@@ -7,6 +7,35 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Added
 
+- **Plans, kept.** Say "everyone — the Silver Comet, Saturday at 7?" in a group
+  chat, a text or on a call and it's read as a plan (what, where, when, who);
+  each of them answers their own way from what their day holds then — in, out
+  and why, or maybe — and on the night the ones who said yes set off in time,
+  by road, and are there together: on the map, on each other's cards, and in
+  what they say. A maybe is a coin they toss on the day.
+
+- **Their week, and their people.** Everyone has a loose weekly rhythm built on
+  real places — Dick on the trapeze Mondays, Wednesdays and Fridays, Lucius on
+  the golf course on Saturday mornings, Tim at the pictures with Bernard on
+  Wednesdays, Cass and Steph at the beach every third Sunday, dinner at the
+  Manor every other Sunday for whoever comes — and a circle of friends beyond
+  the family (Wally, Roy, Dinah, Steph, Bernard, Holly and the rest) they see,
+  mention and text about. The day planner builds on the week; a day with no
+  plan falls back to it.
+
+- **Gotham's own news.** A morning paper, written once a day from what actually
+  happened in the city — the scanner's worst, who broke out and who was sent
+  back — and the stories that run for weeks: the mayoral race (Nakano against
+  Grange, the polls moving daily towards Election Day), the Knights in October,
+  the Narrows audit. Evelyn Adams on the crime desk, Vicki Vale, Knox, Jack
+  Ryder on GBS, Summer Gleeson on GCN, the Globe in capitals. They bring it up
+  the way people do; the city's figures are known by name or title, and are in
+  the Codex.
+
+- **The city as people know it.** Everyone knows the districts and landmarks;
+  the bars, cafés and shops they know round where they live, work and play,
+  and elsewhere only some — asked about one they don't, they say so.
+
 - **The Codex** (<kbd>C</kbd>). Everyone in Bruce's world — the family, the
   company, the city, friends, Vicki Vale, Talia, Kate, Duke, Clark — and every
   rogue, as a file: the vital details, then one biography of his to rewrite (a

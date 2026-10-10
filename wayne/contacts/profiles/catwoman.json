@@ -2,6 +2,75 @@
   "id": "catwoman",
   "name": "Selina",
   "pronoun": "she",
+  "week": [
+    {
+      "doing": "at the S.K. Animal Shelter with the strays",
+      "days": [
+        5
+      ],
+      "from": "13:30",
+      "to": "16:00",
+      "where": "S.K. Animal Shelter"
+    },
+    {
+      "doing": "vintage hunting at Burnside Flea",
+      "days": [
+        6
+      ],
+      "from": "13:30",
+      "to": "15:30",
+      "where": "Burnside Flea",
+      "every": 2
+    },
+    {
+      "doing": "late brunch with Holly",
+      "days": [
+        6
+      ],
+      "from": "16:00",
+      "to": "17:30",
+      "where": "The Roastery",
+      "with": [
+        "Holly"
+      ]
+    },
+    {
+      "doing": "an old noir double bill at The Bijou",
+      "days": [
+        2
+      ],
+      "from": "19:00",
+      "to": "21:30",
+      "where": "The Bijou",
+      "every": 2
+    },
+    {
+      "doing": "Sunday dinner at the Manor — Alfred's roast, whoever comes",
+      "days": [
+        6
+      ],
+      "from": "17:30",
+      "to": "20:30",
+      "where": "Wayne Manor",
+      "every": 2,
+      "phase": 0,
+      "chance": 0.15
+    }
+  ],
+  "circle": [
+    {
+      "name": "Holly Robinson",
+      "who": "the kid you got off the street years ago; grown now, and the only person allowed to lecture you"
+    },
+    {
+      "name": "Eiko Hasigawa",
+      "who": "heir to a crime family who'd rather be anything else; you play chess and pretend it isn't flirting"
+    },
+    {
+      "name": "Maggie Kyle",
+      "who": "your sister, a nun; you call her on her birthday and she prays for you whether you like it or not"
+    }
+  ],
   "full_name": "Selina Kyle",
   "role": "Catwoman",
   "tagline": "Takes what she wants. Gives back what she likes.",

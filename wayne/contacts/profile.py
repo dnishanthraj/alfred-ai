@@ -134,8 +134,16 @@ class Contact:
     # What home sounds like behind them on a call — "cats_home" for Selina's cats,
     # "houseboat" for Tim's (see wayne.audio.ambience.SCENES). Empty: an ordinary home.
     home_sound: str = ""
-    # "he", "she" or "they" — for the page's labels ("Who she is to me").
+    # "he", "she" or "they" — for anything written about them.
     pronoun: str = "they"
+    # Their week, loosely: the things they do most weeks (or every few) —
+    # {"doing", "days": [0-6, Mon=0], "from": "HH:MM", "to": "HH:MM", "where",
+    # "with": [first names], "every": weeks}. The day planner builds on it; a
+    # day with no plan of its own falls back to it.
+    week: tuple = ()
+    # The people in their life beyond the family — friends he may never have
+    # met: [{"name", "who"}]. Who they hang out with, and who they mention.
+    circle: tuple = ()
     # Hobbies, games, viewing, music, reading, takes — and the topics they keep
     # up with, which engine.culture searches for what's new.
     interests: dict = field(default_factory=dict)
@@ -290,6 +298,8 @@ def _load_profile(path):
         gets_about=str(raw.get("gets_about", "drive")),
         home_sound=str(raw.get("home_sound", "")),
         pronoun=str(raw.get("pronoun", "they")),
+        week=tuple(raw.get("week", [])),
+        circle=tuple(raw.get("circle", [])),
     )
 
 

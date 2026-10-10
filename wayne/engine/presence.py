@@ -42,7 +42,8 @@ import uuid
 
 from .. import paths
 from ..memory.store import atomic_write, read_text
-from . import places, travel
+from . import places, travel, week
+from . import plans as plans_made
 
 ONLINE, IDLE, BUSY, OFFLINE = "online", "idle", "busy", "offline"
 STATUSES = (ONLINE, IDLE, BUSY, OFFLINE)
@@ -51,6 +52,7 @@ STATUSES = (ONLINE, IDLE, BUSY, OFFLINE)
 ENGAGED_FOR = 300
 # Free time comes in spells this long: phone in hand, or put down.
 _SPELL = 1200
+_LEADS = {}         # (plan, contact) -> minutes to set off before it
 
 _lock = threading.Lock()
 _registry = {}
@@ -245,6 +247,10 @@ class Presence:
         schedule, not a timetable: each block's edges drift by up to an hour or
         so, differently every day, and some days it doesn't happen at all.
         """
+        # A plan made with him comes first: they set off in time, and they're there.
+        kept = plans_made.block(self.contact, t, self._lead)
+        if kept:
+            return kept
         local = time.localtime(t)
         hour = local.tm_hour + local.tm_min / 60
         plans = self._state.get("plans") or {}
@@ -257,6 +263,12 @@ class Presence:
                 at = hour + (24 if began < t - 1 else 0)
                 if start <= at < end:
                     return block
+        # A day with no plan of its own runs on their week: the gym on a Monday,
+        # golf on a Saturday morning, dinner at the Manor every other Sunday.
+        if not plans.get(time.strftime("%Y-%m-%d", time.localtime(t))):
+            habit = week.block(self.contact, t)
+            if habit:
+                return habit
         for index, block in enumerate(self.contact.routine):
             for began in (t, t - 86400):        # a night may have begun yesterday
                 day = time.localtime(began)
@@ -276,6 +288,22 @@ class Presence:
                 if start <= at < end:
                     return block
         return None
+
+    def _lead(self, plan):
+        """How long before a plan they set off: the drive from home to there, and five minutes' slack."""
+        key = (plan["id"], self.contact.id)
+        if key not in _LEADS:
+            home = places.resolve(getattr(self.contact, "home", "") or "")
+            there = places.resolve(plan.get("where") or "")
+            minutes = 30
+            if home and there:
+                try:
+                    _pts, minutes = travel.route((home["x"], home["y"]), (there["x"], there["y"]), home["name"],
+                                                 there["name"], mode=getattr(self.contact, "gets_about", "drive") or "drive")
+                except Exception:
+                    minutes = 30
+            _LEADS[key] = max(10, min(90, round(minutes) + 5))
+        return _LEADS[key]
 
     def has_plan(self, t=None):
         key = time.strftime("%Y-%m-%d", time.localtime(t or time.time()))

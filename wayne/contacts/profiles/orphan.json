@@ -2,6 +2,71 @@
   "id": "orphan",
   "name": "Cass",
   "pronoun": "she",
+  "week": [
+    {
+      "doing": "noodles at Jackie's with Steph",
+      "days": [
+        4
+      ],
+      "from": "19:00",
+      "to": "20:30",
+      "where": "Jackie's",
+      "with": [
+        "Steph"
+      ]
+    },
+    {
+      "doing": "at the market with Steph",
+      "days": [
+        5
+      ],
+      "from": "12:30",
+      "to": "14:00",
+      "where": "Coventry Market Hall",
+      "with": [
+        "Steph"
+      ]
+    },
+    {
+      "doing": "a day at the beach with Steph",
+      "days": [
+        6
+      ],
+      "from": "12:30",
+      "to": "16:30",
+      "where": "The Boardwalk",
+      "with": [
+        "Steph"
+      ],
+      "every": 3
+    },
+    {
+      "doing": "Sunday dinner at the Manor — Alfred's roast, whoever comes",
+      "days": [
+        6
+      ],
+      "from": "17:30",
+      "to": "20:30",
+      "where": "Wayne Manor",
+      "every": 2,
+      "phase": 0,
+      "chance": 0.85
+    }
+  ],
+  "circle": [
+    {
+      "name": "Stephanie Brown",
+      "who": "Spoiler; your best friend, who talks enough for both of you"
+    },
+    {
+      "name": "Harper Row",
+      "who": "Bluebird; a friend from the Narrows who fixes things and doesn't need you to talk"
+    },
+    {
+      "name": "Mrs. Wu",
+      "who": "who runs the noodle counter at Jackie's and saves you the burnt bits you like"
+    }
+  ],
   "full_name": "Cassandra Cain",
   "role": "Orphan",
   "tagline": "Reads everyone. Says little. Means all of it.",

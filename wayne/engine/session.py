@@ -34,7 +34,19 @@ import ollama
 from .. import config, delivery, events, operator
 from ..memory import History, Story, Vault
 from ..memory.texts import TextLog
-from . import culture, grapevine, groupchat, guards, initiative, places, presence, prompting, world
+from . import (
+    culture,
+    gazette,
+    grapevine,
+    groupchat,
+    guards,
+    initiative,
+    places,
+    plans,
+    presence,
+    prompting,
+    world,
+)
 from .search import format_search_results, google_search, is_factual_lookup, subject_of_a_take
 
 # Searches run on a worker so the holding line can be written meanwhile.
@@ -553,6 +565,12 @@ class ContactSession:
                 buffer = _GROUP_TASK.sub("", buffer)
             elif "[group" in buffer.lower() and "]" not in buffer[buffer.lower().rfind("[group"):]:
                 continue        # half a marker so far; wait for the rest
+            said = plans.RSVP.search(buffer)
+            if said:
+                self._rsvp = said.group(1).lower()
+                buffer = plans.RSVP.sub("", buffer)
+            elif "[rsvp" in buffer.lower() and "]" not in buffer[buffer.lower().rfind("[rsvp"):]:
+                continue        # half a marker so far
             taking = _TAKE.search(buffer)
             if taking:
                 self._take_case = taking.group(1).strip()
@@ -1063,6 +1081,27 @@ class ContactSession:
                 notes.append("He cut you off mid-sentence. Let it go and answer what he asked.")
         return notes
 
+    def _plans_note(self, prompt):
+        """
+        A plan he's making right now — read once, kept for everyone asked — and
+        the plans they've been asked to or said they'll keep, for this turn.
+        """
+        from ..contacts import directory
+        book = directory()
+        if plans.maybe_proposal(prompt):
+            asked = [(m.contact.id, m.contact.name) for m in self.call.members] if self.call else \
+                [(self.contact.id, self.contact.name)]
+            plan = plans.read_once(prompt, asked, self.contact.model, self.contact.options)
+            if plan:
+                plans.add(plan, made_in="call" if self.call else f"dm:{self.contact.id}")
+        where = presence.of(self.contact)
+
+        def then(at):
+            doing = where.now(at).get("doing") or ""
+            spot, _ = where.whereabouts(at)
+            return ", ".join(x for x in (doing, f"at {spot}" if spot else "") if x)
+        return plans.note(self.contact, book, schedule=then)
+
     def _in_the_game(self, prompt):
         """
         Whether this turn is part of the game: Gotham's words in it or in what
@@ -1278,6 +1317,13 @@ class ContactSession:
         out = places.outing(" ".join(m["text"] for m in (unread or [])[-4:]), spot["x"], spot["y"]) if spot else ""
         if out:
             context.append(out)
+        planned = self._plans_note("")
+        if planned:
+            context.append(planned)
+        heard = " ".join(m["text"] for m in (unread or [])[-4:]) or (opening or "")
+        for line in (gazette.note(self.contact, heard), gazette.who(heard)):
+            if line:
+                context.append(line)
         style = f" ({self.contact.texting})" if self.contact.texting else ""
         if task:
             ask = (f"{operator_name()} asked you privately to do this in the group: {task}. Do it now, in your own "
@@ -1341,6 +1387,13 @@ class ContactSession:
             "remove": [m.strip() for m in re.findall(r"\[\s*remove\s*:\s*([^\]]+)\]", text, re.I)],
             "react": _tapback_emoji(next(iter(re.findall(r"\[\s*react\s*:\s*([^\]]{1,24})\]", text, re.I)), "")),
             "dm": next(iter(re.findall(r"\[\s*dm\s*:\s*([^\]]+)\]", text, re.I)), "").strip()}
+        said = plans.RSVP.search(text)
+        text = plans.RSVP.sub("", text)
+        if said:
+            waiting = plans.pending(self.contact.id)
+            mine = [p for p in waiting if p.get("made_in") == f"g:{group.id}"] or waiting
+            if mine:
+                plans.answer(mine[0]["id"], self.contact.id, said.group(1).lower(), delivery.clean(text))
         text = re.sub(r"\[\s*(leave|(add|remove|react|dm)\s*:[^\]]*)\]", "", text, flags=re.I)
         text = _LEFTOVER_MARKER.sub("", text)
         text = re.sub(r"\s*\[[^\]]{0,14}\]", "", text)     # a marker half-written: "[]", "[react]"
@@ -1551,6 +1604,11 @@ class ContactSession:
                 return
 
         awareness = [] if from_contact else self._awareness(prompt, interrupted, confidence)
+        self._rsvp = None
+        if not from_contact:
+            planned = self._plans_note(prompt)
+            if planned:
+                awareness.append(planned)
         texting = via == "text"
         self._reply_choice, self._deferred, self._group_task = None, None, None
         self._meant_group = None
@@ -1687,8 +1745,12 @@ class ContactSession:
         lately = "" if from_contact else culture.note(self.contact, prompt)
         if lately:
             awareness.append(lately)
+        # Gotham's own news this morning, and the city's figures he names.
+        for line in ([] if from_contact else [gazette.note(self.contact, prompt), gazette.who(prompt)]):
+            if line:
+                awareness.append(line)
         # The places he names, as the city knows them.
-        city = "" if from_contact else places.note(prompt)
+        city = "" if from_contact else places.note(prompt, contact=self.contact)
         if city:
             awareness.append(city)
         # Plans to go somewhere — a drink, a coffee — find real places near them, not invented ones.
@@ -1789,6 +1851,12 @@ class ContactSession:
             if reply == _SEARCH_REQUESTED:
                 reply = ""
 
+        if getattr(self, "_rsvp", None):
+            waiting = plans.pending(self.contact.id)
+            if waiting:
+                plans.answer(waiting[0]["id"], self.contact.id, self._rsvp,
+                             delivery.clean(reply if isinstance(reply, str) else ""))
+            self._rsvp = None
         if not isinstance(reply, str) or not reply:
             reply = reply if isinstance(reply, str) and reply else "Mm."
         if texting and self._reply_choice == "none":

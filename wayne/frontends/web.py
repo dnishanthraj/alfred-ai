@@ -1487,6 +1487,7 @@ class Console(GroupChats):
         await self._write_status_lines()
         await self._keep_up()
         await self._write_day_plans()
+        await self._write_gazette()
         await self._write_dispatches()
         if not self.clients:
             return      # nobody at the console to hear about it
@@ -1743,6 +1744,23 @@ class Console(GroupChats):
                 # Nothing came back (offline, rate-limited): try someone else
                 # next time rather than hammering the same searches.
                 culture.mark_tried(contact)
+        finally:
+            self._writing_lines = False
+
+    async def _write_gazette(self):
+        """This morning's Gotham news, once a day, while the model's loaded and nothing else is happening."""
+        from ..engine import gazette
+        if (self._writing_lines or not self.clients or self.current_id or self._texters
+                or self.turn_lock.locked() or gazette.written()):
+            return
+        writer = self.directory.get("alfred") or next(iter(self.directory), None)
+        if writer is None or not await asyncio.to_thread(_model_loaded, writer.model):
+            return
+        self._writing_lines = True
+        try:
+            items = await asyncio.to_thread(gazette.write, writer.model, writer.options)
+            if items:
+                log.info("the morning news: %d items", len(items))
         finally:
             self._writing_lines = False
 

@@ -264,9 +264,18 @@ def day_plan(contact, when=None, others="", people=()):
     day = time.strftime("%A %-d %B", time.localtime(when))
     season = holidays.note(when)
     weekend = time.localtime(when).tm_wday >= 5
+    from . import plans, week
+    habits, usual, friends = week.today(contact, when), week.describe(contact), week.circle(contact)
+    end_of_day = time.mktime(time.localtime(when)[:3] + (23, 59, 0, 0, 0, -1))
+    promised = "; ".join(f"{p['what']}" + (f" at {p['where']}" if p["where"] else "") + f", {plans.when(p['at'], when)}"
+                         for p in plans.kept(contact.id, when, ahead=end_of_day - when + 60) if p["at"] <= end_of_day)
     instruction = (
         f"It's {day}" + (f" — {season}" if season else "")
         + (". The weekend: no classes, and no office unless you'd go in anyway" if weekend else "")
+        + (f". Your week, as it usually goes — {usual}" if usual else "")
+        + (f". Today, out of habit: {habits} — keep them unless you'd really skip one today" if habits else "")
+        + (f". Your circle beyond the family, people you might see or hear from: {friends}" if friends else "")
+        + (f". You've told Bruce you'll be at {promised} — keep it" if promised else "")
         + ". Sketch your day today and tonight as loose blocks of time, the way your "
         "life actually runs — sleep, work, patrol if you'd go out tonight, and two or three "
         "things that are yours today: errands, people, plans, a whim. The masks come out after "
@@ -275,8 +284,8 @@ def day_plan(contact, when=None, others="", people=()):
         "(around, phone down), busy (occupied — a glance at most), offline (asleep or "
         "unreachable). Where: the actual place, as it would show on a map to someone else "
         "(\"Home, Blüdhaven\", not \"my flat\") — in Gotham, by its district or landmark where "
-        f"you can ({', '.join(places.names())}). With: anyone from your circle you'd be with "
-        "(first names), usually nobody."
+        f"you can ({', '.join(places.names())}). With: anyone from the family or your circle you'd be with "
+        "(first names), often nobody."
         + (f" Things you've seen lately in what you follow — if any of it would shape your day "
            f"(a film to catch, a match to watch, a release to queue for), it can: "
            f"{' | '.join(culture.seen(contact)[:6])}." if culture.seen(contact) else "")
@@ -396,6 +405,21 @@ def impulse(session):
              for item in line.split(": ", 1)[-1].split(" | ") if item.strip()]
     if items:
         options.append(("world", f"something you just saw: {random.choice(items)}"))
+    from . import gazette
+    local = gazette.today()
+    if local:
+        # Gotham's own news: "you see Evelyn Adams' piece this morning?"
+        item = random.choice(local)
+        options.append(("gotham", f"something in Gotham's news this morning — {item['outlet']}"
+                                  + (f", {item['by']}" if item["by"] and item["by"] != item["outlet"] else "")
+                                  + f": \u201c{item['headline']}\u201d ({item['dek']}) — with your own take on it, "
+                                  "the way you'd text it"))
+    friends = getattr(contact, "circle", ()) or ()
+    if friends:
+        # Their own people: a friend he may never have met, as they'd mention them.
+        friend = random.choice(friends)
+        options.append(("circle", f"something to do with {friend['name']} ({friend['who']}) — something they did "
+                                  "or said, or a plan with them, as you'd mention a friend he may not know well"))
     if not options:
         return None
     return random.choice(options)[1]

@@ -14,7 +14,7 @@ import logging
 import random
 import time
 
-from ..engine import groupchat, initiative, presence
+from ..engine import groupchat, initiative, plans, presence
 from ..memory import groups as store
 
 log = logging.getLogger("wayne")
@@ -77,8 +77,22 @@ class GroupChats:
         groupchat.spend(group, "me")
         await self.broadcast({"type": "group_sent", "group": group_id, "message": message})
         await self._ping(group, body, "me")
+        if plans.maybe_proposal(body):
+            # "Everyone, Ralli's Friday at eight" — read before anyone gets to it, so
+            # each of them answers it their own way when they do.
+            await self._read_plan(group, body)
         for member in group.members:
             self._read_later(group, member)
+
+    async def _read_plan(self, group, body):
+        asked = [(m, self.directory.get(m).name) for m in group.members if self.directory.get(m)]
+        if not asked:
+            return
+        reader = self.directory.get(asked[0][0])
+        plan = await asyncio.to_thread(plans.read_once, body, asked, reader.model, reader.options)
+        if plan:
+            plans.add(plan, made_in=f"g:{group.id}")
+            log.info("plan in %s: %s at %s, %s", group.id, plan["what"], plan["where"], plans.when(plan["at"]))
 
     async def _ping(self, group, body, sender):
         """

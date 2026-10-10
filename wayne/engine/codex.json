@@ -430,6 +430,183 @@
       "bio": "A Kansas farm boy in Metropolis, and Bruce's closest friend outside the cave — whatever either of them would say about it.",
       "first": "Action Comics #1 (1938)",
       "pronoun": "he"
+    },
+    {
+      "id": "nakano",
+      "name": "Christopher Nakano",
+      "alias": "The Mayor",
+      "group": "Gotham",
+      "pronoun": "he",
+      "age": 52,
+      "born": "",
+      "height": "5′10″ (178 cm)",
+      "weight": "",
+      "eyes": "Brown",
+      "hair": "Black, greying",
+      "home": "The mayor's residence, Upper East Side",
+      "occupation": "Mayor of Gotham City",
+      "bio": "A law-and-order mayor who ran on cleaning up the city and means the vigilantes too: he's spent his term trying to make the masks illegal and the drones legal. Up for re-election in November against Marion Grange, and not as safe as he'd like.",
+      "canon": "Batman (2020s)",
+      "reach": [
+        "lucius"
+      ]
+    },
+    {
+      "id": "grange",
+      "name": "Marion Grange",
+      "alias": "",
+      "group": "Gotham",
+      "pronoun": "she",
+      "age": 49,
+      "born": "",
+      "height": "5′6″ (168 cm)",
+      "weight": "",
+      "eyes": "Hazel",
+      "hair": "Auburn",
+      "home": "Coventry",
+      "occupation": "City councilwoman, running for mayor",
+      "bio": "Councilwoman for the Narrows and Coventry, running against Nakano on housing, police reform and the Narrows rebuilding money. Says what she thinks of the vigilantes depends on what they're stopping.",
+      "canon": "Mayor Marion Grange (Batman, 2000s)",
+      "reach": [
+        "lucius"
+      ]
+    },
+    {
+      "id": "vandorn",
+      "name": "Janet Van Dorn",
+      "alias": "The DA",
+      "group": "Gotham",
+      "pronoun": "she",
+      "age": 46,
+      "born": "",
+      "height": "5′8″ (173 cm)",
+      "weight": "",
+      "eyes": "Grey",
+      "hair": "Blonde",
+      "home": "Upper West Side",
+      "occupation": "District Attorney of Gotham County",
+      "bio": "Tough, ambitious and very good at her job; puts away what the GCPD brings her and makes speeches about the rest. Nakano's DA, for now.",
+      "canon": "Batman: The Animated Series (1992)",
+      "reach": [
+        "batgirl"
+      ]
+    },
+    {
+      "id": "evelyn",
+      "name": "Evelyn Adams",
+      "alias": "",
+      "group": "Gotham",
+      "pronoun": "she",
+      "age": 34,
+      "born": "",
+      "height": "5′5″ (165 cm)",
+      "weight": "",
+      "eyes": "Brown",
+      "hair": "Dark, cropped",
+      "home": "Old Gotham",
+      "occupation": "Crime reporter, Gotham Gazette",
+      "bio": "The Gazette's crime desk: first at every scene, a scanner on her nightstand and no friends at City Hall. Writes the morning's worst before the coffee's on; owes nobody.",
+      "reach": [
+        "batgirl"
+      ]
+    },
+    {
+      "id": "ryder",
+      "name": "Jack Ryder",
+      "alias": "",
+      "group": "Gotham",
+      "pronoun": "he",
+      "age": 44,
+      "born": "",
+      "height": "6′0″ (183 cm)",
+      "weight": "",
+      "eyes": "Blue",
+      "hair": "Black",
+      "home": "Diamond District",
+      "occupation": "Host, GBS",
+      "bio": "GBS's nightly loudmouth — ratings over truth, every time. Hates the vigilantes on Mondays and loves them on Fridays, depending on what played.",
+      "canon": "Showcase #73 (1968)",
+      "reach": []
+    },
+    {
+      "id": "gleeson",
+      "name": "Summer Gleeson",
+      "alias": "",
+      "group": "Gotham",
+      "pronoun": "she",
+      "age": 38,
+      "born": "",
+      "height": "5′7″ (170 cm)",
+      "weight": "",
+      "eyes": "Green",
+      "hair": "Blonde",
+      "home": "Upper East Side",
+      "occupation": "Anchor, GCN",
+      "bio": "GCN's six o'clock anchor — weather, traffic and the human story; the face half of Gotham has dinner with.",
+      "canon": "Batman: The Animated Series (1992)",
+      "reach": [
+        "lucius"
+      ]
+    },
+    {
+      "id": "knox",
+      "name": "Alexander Knox",
+      "alias": "",
+      "group": "Gotham",
+      "pronoun": "he",
+      "age": 41,
+      "born": "",
+      "height": "5′9″ (175 cm)",
+      "weight": "",
+      "eyes": "Brown",
+      "hair": "Brown, untidy",
+      "home": "Burnley",
+      "occupation": "Investigations, Gotham Gazette",
+      "bio": "Follows the money and sees bats in every shadow; on the Narrows audit and Daggett's contracts this month, and closer than Daggett would like.",
+      "canon": "Batman (1989)",
+      "reach": [
+        "batgirl"
+      ]
+    },
+    {
+      "id": "saint",
+      "name": "Simon Saint",
+      "alias": "",
+      "group": "Gotham",
+      "pronoun": "he",
+      "age": 58,
+      "born": "",
+      "height": "6′1″ (185 cm)",
+      "weight": "",
+      "eyes": "Blue",
+      "hair": "Silver",
+      "home": "Upper East Side",
+      "occupation": "CEO, Saint Industries",
+      "bio": "Drones, security contracts and the mayor's ear. Wants Gotham policed by machines he builds, and has the donations on record to prove he means it.",
+      "canon": "Future State / Batman (2021)",
+      "reach": [
+        "lucius"
+      ]
+    },
+    {
+      "id": "daggett",
+      "name": "Roland Daggett",
+      "alias": "",
+      "group": "Gotham",
+      "pronoun": "he",
+      "age": 61,
+      "born": "",
+      "height": "5′11″ (180 cm)",
+      "weight": "",
+      "eyes": "Brown",
+      "hair": "Bald",
+      "home": "Kane Heights",
+      "occupation": "Chairman, Daggett Industries",
+      "bio": "Developer behind half the Narrows rebuilding contracts — and the audit into them. Smiles in photographs with whoever is mayor.",
+      "canon": "Batman: The Animated Series (1992)",
+      "reach": [
+        "lucius"
+      ]
     }
   ],
   "rogues": {

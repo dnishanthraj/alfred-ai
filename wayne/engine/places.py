@@ -116,7 +116,25 @@ def _resolve(lowered):
     return _spot(best) if best else None
 
 
-def note(text, most=2):
+def knows(contact, place):
+    """
+    Whether they'd know a place: everyone knows the districts and the landmarks;
+    the bars, cafés and shops they know round where they live, work, patrol and
+    keep their habits, and elsewhere only some — the way anyone knows their own
+    city. The same places, every time.
+    """
+    if contact is None or place.get("kind") != "venue":
+        return True
+    theirs = {getattr(contact, "home", "") or ""} | {h.get("where", "") for h in getattr(contact, "week", ()) or ()}
+    theirs |= {b.get("where", "") for b in getattr(contact, "routine", ()) or ()} | set(getattr(contact, "beat", ()) or ())
+    areas = {found["area"] for found in (resolve(w) for w in theirs if w) if found}
+    if place.get("area") in areas:
+        return True
+    import hashlib
+    return int(hashlib.sha1(f"{contact.id}:{place['name']}".encode()).hexdigest()[:8], 16) / 0xFFFFFFFF < 0.6
+
+
+def note(text, most=2, contact=None):
     """
     What anyone from Gotham knows of the places he's just named — a district's
     character and what's in it, a landmark's story — from the map itself, so
@@ -143,6 +161,10 @@ def note(text, most=2):
     lines = []
     for place in found[:most]:
         written = edits().get(place["name"])
+        if not knows(contact, place):
+            lines.append(f"{place['name']}: you don't know it — never been, never heard of it, as far as you "
+                         "remember. Say so, or guess, as you would.")
+            continue
         if place["kind"] == "district":
             here = [q["name"] for q in data["places"] if q["area"] == place["area"] and q["kind"] != "district"][:9]
             sketch = written or data.get("areas", {}).get(place["name"], "")

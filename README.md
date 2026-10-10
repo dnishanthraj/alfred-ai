@@ -84,7 +84,9 @@ Each one is a JSON profile in [`wayne/contacts/profiles/`](wayne/contacts/profil
 ### 🗓️ Their lives
 - **A day of their own**, planned each morning by the model: sleep, work, patrol, errands, a film they wanted to catch — weekdays, weekends and the holidays (Columbus Day, Halloween, Christmas Eve) as Gotham lives them.
 - **Where they are** comes from what they're doing, and agrees for everyone. If Barbara's patrolling with Cass, they're in the same place on the map, on the hover card and in what they say. When it changes, they **travel** there by road, over the bridges, as long as it takes.
-- **Days of their own.** Nobody patrols at noon unless you ask: Lucius is at the office, Barbara at the lab, Randy at the hangar.
+- **Days of their own.** Nobody patrols at noon unless you ask: Lucius is at the office, Barbara at the lab, Randy at the hangar. Each has a week too (Dick's trapeze nights, Lucius's Saturday golf, dinner at the Manor every other Sunday) and friends of their own beyond the family.
+- **Plans that get kept.** "Everyone, the Silver Comet, Saturday at 7?" Each answers their own way, and on the night the ones who said yes are there.
+- **Gotham's own news**, every morning: the Gazette's crime desk, the mayoral race, the Knights, Jack Ryder ranting on GBS, which they bring up the way people do.
 - **They get in touch first.** They report back when they said they would, check in when a call worried them, close a case and tell you how it went, or text because something reminded them of you.
 - **Hobbies that stay current.** What they follow is searched daily, so three months from now they've seen the new season too.
 

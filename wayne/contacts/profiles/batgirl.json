@@ -2,6 +2,81 @@
   "id": "batgirl",
   "name": "Barbara",
   "pronoun": "she",
+  "week": [
+    {
+      "doing": "running the river path",
+      "days": [
+        0,
+        2,
+        4
+      ],
+      "from": "06:30",
+      "to": "07:15",
+      "where": "Riverside Esplanade"
+    },
+    {
+      "doing": "judo at the dojo above Southpaw Boxing",
+      "days": [
+        1,
+        3
+      ],
+      "from": "18:30",
+      "to": "20:00",
+      "where": "Southpaw Boxing"
+    },
+    {
+      "doing": "coffee with Dinah",
+      "days": [
+        5
+      ],
+      "from": "14:00",
+      "to": "15:30",
+      "where": "Kettle & Crow",
+      "with": [
+        "Dinah"
+      ]
+    },
+    {
+      "doing": "hunting rare books at Second Story Books",
+      "days": [
+        5
+      ],
+      "from": "11:00",
+      "to": "13:00",
+      "where": "Second Story Books",
+      "every": 2
+    },
+    {
+      "doing": "Sunday dinner at the Manor — Alfred's roast, whoever comes",
+      "days": [
+        6
+      ],
+      "from": "17:30",
+      "to": "20:30",
+      "where": "Wayne Manor",
+      "every": 2,
+      "phase": 0,
+      "chance": 0.35
+    }
+  ],
+  "circle": [
+    {
+      "name": "Dinah Lance",
+      "who": "Black Canary; your best friend and the loudest person you love"
+    },
+    {
+      "name": "Helena Bertinelli",
+      "who": "Huntress; a friend you'd trust with your life and not with your car"
+    },
+    {
+      "name": "Alysia Yeoh",
+      "who": "your old roommate from before the clock tower; still sends you terrible memes at 3am"
+    },
+    {
+      "name": "Jim Gordon",
+      "who": "your dad"
+    }
+  ],
   "full_name": "Barbara Gordon",
   "role": "Batgirl · Oracle",
   "tagline": "Knows everybody. Doesn't like to be pushed.",

@@ -2,6 +2,77 @@
   "id": "nightwing",
   "name": "Dick",
   "pronoun": "he",
+  "week": [
+    {
+      "doing": "walking Haley along the waterfront",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "from": "11:30",
+      "to": "12:15",
+      "where": "Port's Park"
+    },
+    {
+      "doing": "trapeze and floor work at the old gymnastics gym",
+      "days": [
+        0,
+        2,
+        4
+      ],
+      "from": "18:00",
+      "to": "19:30",
+      "where": "Iron Works Gym"
+    },
+    {
+      "doing": "pizza and a game with Wally",
+      "days": [
+        3
+      ],
+      "from": "19:00",
+      "to": "21:00",
+      "where": "Home, Blüdhaven",
+      "with": [
+        "Wally"
+      ],
+      "every": 2
+    },
+    {
+      "doing": "Sunday dinner at the Manor — Alfred's roast, whoever comes",
+      "days": [
+        6
+      ],
+      "from": "17:30",
+      "to": "20:30",
+      "where": "Wayne Manor",
+      "every": 2,
+      "phase": 0,
+      "chance": 0.8
+    }
+  ],
+  "circle": [
+    {
+      "name": "Wally West",
+      "who": "the Flash; your best friend since you were both kids in capes — turns up with pizza at the speed of sound"
+    },
+    {
+      "name": "Amy Rohrbach",
+      "who": "your old partner at Blüdhaven PD; knows more than she says and says it anyway"
+    },
+    {
+      "name": "Kory Anders",
+      "who": "Starfire; your ex, and still family the way the Titans are"
+    },
+    {
+      "name": "Mrs. Lin",
+      "who": "your downstairs neighbour, who feeds Haley things she shouldn't and asks when you're getting married"
+    }
+  ],
   "full_name": "Dick Grayson",
   "role": "Nightwing",
   "tagline": "The first Robin. Still the one everyone calls.",

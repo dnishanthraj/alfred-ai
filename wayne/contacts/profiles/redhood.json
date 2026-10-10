@@ -2,6 +2,77 @@
   "id": "redhood",
   "name": "Jason",
   "pronoun": "he",
+  "week": [
+    {
+      "doing": "the boxing gym, before the regulars",
+      "days": [
+        0,
+        2,
+        4
+      ],
+      "from": "14:00",
+      "to": "15:00",
+      "where": "Dooley's Gym"
+    },
+    {
+      "doing": "reading in the back of Second Story Books",
+      "days": [
+        5
+      ],
+      "from": "18:30",
+      "to": "20:30",
+      "where": "Second Story Books"
+    },
+    {
+      "doing": "at the range",
+      "days": [
+        2
+      ],
+      "from": "19:00",
+      "to": "20:30",
+      "where": "Crime Alley",
+      "every": 2
+    },
+    {
+      "doing": "cooking a real meal",
+      "days": [
+        6
+      ],
+      "from": "18:00",
+      "to": "20:00",
+      "where": "Jason's safehouse"
+    },
+    {
+      "doing": "Sunday dinner at the Manor — Alfred's roast, whoever comes",
+      "days": [
+        6
+      ],
+      "from": "17:30",
+      "to": "20:30",
+      "where": "Wayne Manor",
+      "every": 2,
+      "phase": 0,
+      "chance": 0.12
+    }
+  ],
+  "circle": [
+    {
+      "name": "Roy Harper",
+      "who": "Arsenal; your best friend, an Outlaw, sober and loud about it"
+    },
+    {
+      "name": "Artemis",
+      "who": "an Amazon who fought beside you with the Outlaws; respects you exactly as much as you earn"
+    },
+    {
+      "name": "Bizarro",
+      "who": "the other Outlaw; backwards, enormous, and kinder than either of you"
+    },
+    {
+      "name": "Benny",
+      "who": "the kid who runs the corner store on Park Row; you pay him to tell you who's new on the block"
+    }
+  ],
   "full_name": "Jason Todd",
   "role": "Red Hood",
   "tagline": "Came back. Didn't come home.",

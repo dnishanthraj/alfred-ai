@@ -2,6 +2,82 @@
   "id": "robin",
   "name": "Tim",
   "pronoun": "he",
+  "week": [
+    {
+      "doing": "studying at the Gotham Public Library",
+      "days": [
+        1,
+        3
+      ],
+      "from": "15:30",
+      "to": "18:00",
+      "where": "Gotham Public Library"
+    },
+    {
+      "doing": "movie night with Bernard at The Rex",
+      "days": [
+        2
+      ],
+      "from": "19:30",
+      "to": "22:00",
+      "where": "The Rex",
+      "with": [
+        "Bernard"
+      ]
+    },
+    {
+      "doing": "skating the empty lots by the marina",
+      "days": [
+        5
+      ],
+      "from": "15:00",
+      "to": "17:00",
+      "where": "Gotham Marina"
+    },
+    {
+      "doing": "a beach day with Bernard",
+      "days": [
+        6
+      ],
+      "from": "12:30",
+      "to": "16:30",
+      "where": "The Boardwalk",
+      "with": [
+        "Bernard"
+      ],
+      "every": 3
+    },
+    {
+      "doing": "Sunday dinner at the Manor — Alfred's roast, whoever comes",
+      "days": [
+        6
+      ],
+      "from": "17:30",
+      "to": "20:30",
+      "where": "Wayne Manor",
+      "every": 2,
+      "phase": 0,
+      "chance": 0.75
+    }
+  ],
+  "circle": [
+    {
+      "name": "Bernard Dowd",
+      "who": "your boyfriend; wants you to sleep more, and is winning, slowly"
+    },
+    {
+      "name": "Stephanie Brown",
+      "who": "Spoiler; your ex and your best friend, in that order and both at once"
+    },
+    {
+      "name": "Conner Kent",
+      "who": "Superboy; your best friend from Young Justice — beats you at nothing but arm-wrestling"
+    },
+    {
+      "name": "Bart Allen",
+      "who": "Impulse; texts in bursts of forty, all of them typos"
+    }
+  ],
   "full_name": "Tim Drake",
   "role": "Robin",
   "tagline": "Worked it out at nine. Never stopped working.",
