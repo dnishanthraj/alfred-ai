@@ -71,7 +71,9 @@ def afterthought(session, exchanges, by="text"):
         f"or a bad mood is no; so is ordinary concern that was settled.\n"
         + (f"4. {contact.name} is working a case ({case['kind'].lower()} at {case['place']}). From the newest "
            f"exchange: did they say it's dealt with — caught, stopped, over? If so, how, in a few words.\n"
-           if case else "") + "\n"
+           if case else "")
+        + f"5. In the newest exchange, did {operator.name()} say he's coming to pick {contact.name} up himself — "
+          f"stay where you are, I'll come and get you, I'll give you a lift — and did they agree?\n\n"
         "Reply with JSON only, in this shape:\n"
         '{"doing": "a few words, e.g. checking the docks" or null, '
         '"where": "the place it puts them, as it would show on a map (e.g. Gotham Docks); home if it\'s something '
@@ -82,11 +84,12 @@ def afterthought(session, exchanges, by="text"):
         '"free": true if they said they are now free/back/done, '
         '"contact": {"by": "text" or "call", "in_minutes": number or null if it is "when done", '
         '"about": "the subject — e.g. what they found at the docks; never a time like when done"} '
-        'or null, "worried": "what about him worries them, in a few words" or null'
+        'or null, "worried": "what about him worries them, in a few words" or null, '
+        '"pickup": true if he is coming to pick them up and they agreed, else false'
         + (', "case_closed": "how it ended, in a few words" or null' if case else '') + '}')
     try:
         reply = model.ask(contact.model, [{"role": "user", "content": instruction}],
-                          {**contact.options, "temperature": 0, "num_predict": 160},
+                          {**contact.options, "temperature": 0, "num_predict": 200},
                           think=model.thinking(contact), fmt="json", purpose=f"{contact.id}'s afterthought")
         found = json.loads(reply)
     except Exception:

@@ -130,7 +130,7 @@
      'toasts', 'dossier-call', 'dossier-message', 'incoming', 'incoming-avatar',
      'incoming-name', 'incoming-accept', 'incoming-decline', 'groups', 'group-new',
      'group-modal', 'group-form', 'group-name', 'group-people', 'group-cancel', 'group-create',
-     'messages-delete', 'groups-wrap', 'group-info', 'group-info-name', 'group-info-members',
+     'messages-delete', 'messages-more', 'thread-menu', 'groups-wrap', 'group-info', 'group-info-name', 'group-info-members',
      'group-info-add', 'group-info-add-label', 'group-info-close', 'group-info-save', 'seats',
      'messages-call', 'call-pick', 'call-pick-form', 'call-pick-people', 'call-pick-cancel',
      'call-pick-go'].forEach(function (id) { el[id] = $(id); });
@@ -654,6 +654,7 @@
         var badge = document.createElement('span');
         badge.className = 'book__badge';
         badge.textContent = state.unread[id] > 9 ? '9+' : state.unread[id];
+        if (isMuted(id)) badge.dataset.muted = '1';
         avatar.appendChild(badge);
       }
       avatar.addEventListener('mouseenter', function () { showHovercard(id, avatar); });
@@ -670,6 +671,13 @@
       var name = document.createElement('span');
       name.className = 'book__name';
       name.textContent = contact.name;
+      if (isMuted(id) || callsMuted(id)) {
+        var bell = document.createElement('span');
+        bell.className = 'book__muted';
+        bell.innerHTML = BELL_OFF;
+        bell.setAttribute('data-tip', isMuted(id) ? (callsMuted(id) ? 'Muted, calls silenced' : 'Muted') : 'Calls silenced');
+        name.appendChild(bell);
+      }
       var role = document.createElement('span');
       role.className = 'book__role';
       role.textContent = ringing ? 'Connecting'
@@ -1379,6 +1387,7 @@
     el.messages.style.setProperty('--contact-accent', contact.accent);
     portraitStyle(el['messages-avatar'], contact, 'center 22%');
     el['messages-name'].textContent = contact.full_name;
+    paintHeadMute();
     el['messages-role'].textContent = presenceLabel(contact);
     el['messages-role'].dataset.presence = (contact.presence || {}).status || '';
     state.thread = { id: id, messages: [], more: false, loading: true, seen: {} };
@@ -1680,7 +1689,7 @@
       renderThread();
       scrollThreadToEnd();
     }
-    if (event.how === 'missed') {
+    if (event.how === 'missed' && !callsMuted(event.speaker)) {
       ConsoleTones.missed();
       notify(event.speaker, 'Missed call');
     }
@@ -1822,6 +1831,7 @@
         badge.className = 'book__badge';
         badge.textContent = state.pinged[groupKey(id)] ? '@' : (unread > 9 ? '9+' : unread);
         if (state.pinged[groupKey(id)]) badge.dataset.ping = '1';
+        if (isMuted(groupKey(id))) badge.dataset.muted = '1';
         faces.appendChild(badge);
       }
       var text = document.createElement('span');
@@ -1859,6 +1869,7 @@
     el.messages.style.removeProperty('--contact-accent');
     stackPortraits(el['messages-avatar'], g.members);
     el['messages-name'].textContent = g.name;
+    paintHeadMute();
     el['messages-role'].textContent = groupMembersLine(g);
     el['messages-role'].dataset.presence = '';
     el['messages-delete'].hidden = false;
@@ -1917,6 +1928,7 @@
         if (groupOpenFor(event.group.id)) {
           state.thread.members = event.group.members;
           el['messages-name'].textContent = event.group.name;
+          paintHeadMute();
           el['messages-role'].textContent = groupMembersLine(event.group);
           stackPortraits(el['messages-avatar'], event.group.members);
           renderThread();
@@ -1977,7 +1989,7 @@
   function notifyGroup(id, message, ping) {
     var g = state.groups[id];
     var who = state.contacts[message.from];
-    if (!g || !who) return;
+    if (!g || !who || isMuted(groupKey(id))) return;
     var card = document.createElement('div');
     card.className = 'toast';
     card.style.setProperty('--contact-accent', who.accent);
@@ -2192,9 +2204,89 @@
      thread. They leave on their own after a few seconds.
      ------------------------------------------------------------------------ */
 
+  /* Muted threads: no card, no tone — the unread count still keeps, quietly. */
+  var BELL_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" ' +
+                 'stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-9.3-5M6 8c0 7-3 9-3 9h13M13.7 21a2 2 0 0 1-3.4 0"/>' +
+                 '<path d="M3 3l18 18"/></svg>';
+  function isMuted(thread) {
+    var m = (state.mutes || {})[thread];
+    return !!(m && (m.messages === -1 || m.messages > Date.now() / 1000));
+  }
+  function callsMuted(id) { var m = (state.mutes || {})[id]; return !!(m && m.calls); }
+  function threadKey() {
+    if (state.groupOpen) return groupKey(state.groupOpen);
+    return state.messagesWith || null;
+  }
+  function paintThreadMenu() {
+    var key = threadKey(), m = (state.mutes || {})[key] || {}, now = Date.now() / 1000;
+    var on = !isMuted(key) ? 'off' : m.messages === -1 ? 'always' : (m.messages - now <= 3700 ? 'hour' : 'morning');
+    el['thread-menu'].querySelectorAll('[data-mute]').forEach(function (b) {
+      b.classList.toggle('is-on', b.dataset.mute === on);
+      b.setAttribute('aria-checked', b.dataset.mute === on ? 'true' : 'false');
+    });
+    var dm = key && key.indexOf('g:') !== 0;
+    el['thread-menu'].querySelectorAll('[data-calls-only]').forEach(function (n) { n.hidden = !dm; });
+    var calls = el['thread-menu'].querySelector('[data-act="calls"]');
+    calls.classList.toggle('is-on', !!m.calls);
+    calls.setAttribute('aria-checked', m.calls ? 'true' : 'false');
+  }
+  // The thread's own header: the struck bell by the name when it's muted, or its calls are.
+  function paintHeadMute() {
+    var key = threadKey(), name = el['messages-name'];
+    if (!name) return;
+    var old = name.querySelector('.book__muted');
+    if (old) old.remove();
+    var dm = key && key.indexOf('g:') !== 0;
+    if (key && (isMuted(key) || (dm && callsMuted(key)))) {
+      var bell = document.createElement('span');
+      bell.className = 'book__muted';
+      bell.innerHTML = BELL_OFF;
+      bell.setAttribute('data-tip', isMuted(key) ? (dm && callsMuted(key) ? 'Muted, calls silenced' : 'Muted') : 'Calls silenced');
+      name.appendChild(bell);
+    }
+  }
+  function setMute(body) {
+    var key = threadKey();
+    if (!key) return;
+    body.thread = key;
+    fetch('/api/mutes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); }).then(function (d) {
+        state.mutes = d.mutes || {};
+        paintThreadMenu();
+        paintHeadMute();
+        renderDirectory();
+        renderGroups();
+      }).catch(function () {});
+  }
+  function wireThreadMenu() {
+    var btn = el['messages-more'], menu = el['thread-menu'];
+    if (!btn || btn.dataset.wired) return;       // the session can load again: one set of listeners
+    btn.dataset.wired = '1';
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = menu.hidden;
+      menu.hidden = !open;
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) paintThreadMenu();
+    });
+    menu.addEventListener('click', function (e) {
+      var item = e.target.closest('.thread-menu__item');
+      if (!item) return;
+      e.stopPropagation();
+      if (item.dataset.mute) setMute({ messages: item.dataset.mute });
+      else if (item.dataset.act === 'calls') setMute({ calls: !item.classList.contains('is-on') });
+    });
+    document.addEventListener('click', function (e) {
+      if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) {
+        menu.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
   function notify(id, textBody) {
     var contact = state.contacts[id];
-    if (!contact) return;
+    if (!contact || isMuted(id)) return;
     var card = document.createElement('div');
     card.className = 'toast';
     card.style.setProperty('--contact-accent', contact.accent);
@@ -3368,6 +3460,12 @@
                                         body: JSON.stringify(target) })
           .then(function (r) { return r.json(); }).then(function (where) { setBruce(where); return where; });
       },
+      // A lift in the Batwing for one of them.
+      lift: function (id) {
+        return fetch('/api/bruce/lift', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ person: id }) })
+          .then(function (r) { return r.json(); }).then(function (res) { if (res && res.spot) setBruce(res); return res; });
+      },
       // Calling the Batwing to wherever he is.
       summon: function () {
         return fetch('/api/jet/summon', { method: 'POST' }).then(function (r) { return r.json(); });
@@ -3405,6 +3503,7 @@
     return fetch('/api/session').then(function (r) { return r.json(); }).then(function (info) {
       state.map = info.map || null;
       state.operatorPortrait = info.operator_portrait || '';
+      state.mutes = info.mutes || {};
       state.operatorFrame = info.operator_frame || {};
       loadBruce();
       if (!state.bruceTimer) state.bruceTimer = setInterval(loadBruce, 15000);   // and as he goes
@@ -3421,6 +3520,7 @@
       renderDirectory();
       loadGroups();
       wireMap();
+      wireThreadMenu();
       return info;
     });
   }

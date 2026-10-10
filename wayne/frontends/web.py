@@ -1378,6 +1378,11 @@ class Console(GroupChats):
                 # What, never the words: the log sits beside encrypted memory.
                 log.info("%s afterthought: doing=%s contact=%s", session.contact.id,
                          bool(found.get("doing")), bool(found.get("contact")))
+                if found.get("pickup") is True:
+                    # "Stay there, I'll come and get you": he does, in the Batwing.
+                    lifted = await self.give_lift(session.contact.id)
+                    if lifted.get("error"):
+                        log.info("%s: no lift — %s", session.contact.id, lifted["error"])
             await self._presence_changed(session.contact)
         except Exception as exc:
             log.warning("%s afterthought failed: %s", session.contact.id, str(exc)[:160])
@@ -1705,6 +1710,55 @@ class Console(GroupChats):
         await self.broadcast({"type": "bruce", "bruce": batman.state()})
         log.info("bruce on case %s (%s at %s), %.0f min out", report["id"], report["kind"], report["place"], minutes)
         return case
+
+    async def give_lift(self, contact_id, to=None):
+        """
+        He gives one of them a lift in the Batwing: they stay put, he comes down for
+        them, and drops them where they need to be — their case, or wherever they
+        were headed (or `to`: {"name", "x", "y"}). Returns his state, or {"error"}.
+        """
+        from ..engine import batman, cases, jet
+        contact = self.directory.get(contact_id)
+        if contact is None or contact_id not in cases.FIELD:
+            return {"error": "Not one for a lift"}
+        if not batman.state()["suit"]:
+            return {"error": "Not in daylight"}
+        whereabouts = presence.of(contact)
+        them = whereabouts.position()
+        mine = batman.position()
+        if them is None or mine is None:
+            return {"error": "Can't see where they are"}
+        case = cases.active(contact_id)
+        if to:
+            drop, name = (float(to["x"]), float(to["y"])), str(to.get("name") or "where he dropped them")
+        elif case:
+            drop, name = (case["x"], case["y"]), case["place"]
+        else:
+            going = whereabouts.whereabouts()[0]
+            trip = whereabouts.trip(going, whereabouts.spot(going)) if going else None
+            if not trip:
+                return {"error": "Nowhere they need to be"}
+            drop, name = tuple(trip["pts"][-1]), trip.get("to") or going
+        flights = await asyncio.to_thread(jet.lift, contact_id, mine, them, drop)
+        if flights is None:
+            return {"error": "The Batwing's too far off, or mid-flight"}
+        his, theirs = flights
+        now = time.time()
+        place = case["place"] if case else name
+        if case:
+            whereabouts.set_activity(f"on the way to the {case['kind'].lower()} at {case['place']}, on the Batwing with him",
+                                     presence.BUSY, 90, where=case["place"], xy=drop)
+            cases.retime(case["id"], contact_id, (theirs["end"] - now) / 60)
+        else:
+            whereabouts.set_activity(f"getting a lift from him in the Batwing, to {name}", presence.BUSY, 60,
+                                     where=place, xy=drop)
+        whereabouts.set_trip(place, {**theirs, "left": now})
+        batman.ferry(name, drop, his, now)
+        log.info("bruce giving %s a lift to %s", contact_id, name)
+        await self._presence_changed(contact)
+        await self.broadcast({"type": "bruce", "bruce": batman.state()})
+        await self.broadcast({"type": "cases"})
+        return batman.state()
 
     @staticmethod
     def _heading_for(report, here, who):
@@ -2356,8 +2410,11 @@ class Console(GroupChats):
     # --- calls to him -------------------------------------------------------
 
     async def _ring(self, contact, about):
-        """They call him. The page rings; he answers, declines, or misses it."""
+        """They call him. The page rings; he answers, declines, or misses it — or, muted, it never rings at all."""
         self._incoming = {"id": contact.id, "about": about}
+        if calls_muted(contact.id):
+            log.info("%s rang him, silenced", contact.id)
+            return await self._unanswered("missed")
         log.info("%s ringing him", contact.id)
         await self.broadcast({"type": "call_incoming", "speaker": contact.id})
         self._ring_timer = self._spawn(self._ring_out(contact.id))
@@ -2743,6 +2800,7 @@ async def session_info():
         "operator_portrait": codex.portrait_of("bruce"),
         "operator_frame": codex.frames().get(codex.frame_key("bruce")) or {},
         "contacts": [_contact_payload(c) for c in console.directory],
+        "mutes": mutes(),
         "current": console.current_id,
         "default": config.DEFAULT_CONTACT,
         # Gotham, for the little map on a status card.
@@ -2754,6 +2812,33 @@ async def session_info():
     })
 
 
+def _mutes_path():
+    return paths.DATA_DIR / "_mutes.json"
+
+
+def mutes(now=None):
+    """
+    The threads he's muted: {thread: {"messages": until (0 none, -1 for good), "calls": bool}} —
+    a contact's id, or "g:<group>". Lapsed mutes are left out.
+    """
+    now = now or time.time()
+    try:
+        kept = json.loads(read_text(_mutes_path()) or "{}")
+    except ValueError:
+        kept = {}
+    out = {}
+    for thread, m in kept.items():
+        until = m.get("messages", 0)
+        live = {"messages": until if (until == -1 or until > now) else 0, "calls": bool(m.get("calls"))}
+        if live["messages"] or live["calls"]:
+            out[thread] = live
+    return out
+
+
+def calls_muted(contact_id):
+    return bool(mutes().get(contact_id, {}).get("calls"))
+
+
 def _pins_path():
     return paths.DATA_DIR / "_pins.json"
 
@@ -2763,6 +2848,39 @@ def _load_pins():
         return json.loads(read_text(_pins_path()) or "[]")
     except ValueError:
         return []
+
+
+@app.get("/api/mutes")
+async def get_mutes():
+    return JSONResponse({"mutes": mutes()})
+
+
+@app.post("/api/mutes")
+async def set_mute(request: Request):
+    """Mute a thread's messages (an hour, till morning, for good — or not), and a contact's calls."""
+    body = await request.json()
+    thread = str(body.get("thread") or "")[:60]
+    if not thread:
+        return JSONResponse({"error": "which thread?"}, status_code=400)
+    kept = mutes()
+    entry = dict(kept.get(thread) or {"messages": 0, "calls": False})
+    if "messages" in body:
+        how, now = str(body["messages"]), time.time()
+        if how == "hour":
+            entry["messages"] = now + 3600
+        elif how == "morning":
+            local = time.localtime(now)
+            morning = time.mktime((local.tm_year, local.tm_mon, local.tm_mday, 8, 0, 0, 0, 0, -1))
+            entry["messages"] = morning if morning > now + 600 else morning + 86400
+        elif how == "always":
+            entry["messages"] = -1
+        else:
+            entry["messages"] = 0
+    if "calls" in body:
+        entry["calls"] = bool(body["calls"]) and not thread.startswith("g:")
+    kept[thread] = entry
+    atomic_write(_mutes_path(), json.dumps({k: v for k, v in kept.items() if v.get("messages") or v.get("calls")}))
+    return JSONResponse({"mutes": mutes()})
 
 
 @app.get("/api/map/pins")
@@ -2871,6 +2989,23 @@ async def bruce_go(request: Request):
         return JSONResponse({"error": "can't get there"}, status_code=400)
     await console.broadcast({"type": "bruce", "bruce": batman.state()})
     return JSONResponse(batman.state())
+
+
+@app.post("/api/bruce/lift")
+async def bruce_lift(request: Request):
+    """He gives one of them a lift in the Batwing, to their case or wherever they're going."""
+    body = await request.json()
+    found = await console.give_lift(str(body.get("person") or ""), body.get("to"))
+    return JSONResponse(found)
+
+
+@app.post("/api/jet/home")
+async def jet_home():
+    """Done with it: the Batwing takes itself back to the hangar."""
+    from ..engine import jet
+    found = await asyncio.to_thread(jet.send_home)
+    await console.broadcast({"type": "cases"})
+    return JSONResponse(found or {"error": "Mid-flight"})
 
 
 @app.post("/api/jet/summon")

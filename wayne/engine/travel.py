@@ -35,10 +35,11 @@ BIKE = 1.45                           # in the suit on a bike: through the traff
 BATMOBILE = 1.85                      # the roads, and faster than anything else on them
 FLIGHT = 8.0                          # Randy's suit flies: straight there, water or not (~70 km/h)
 ROOF_RANGE = 9.0                      # the furthest anyone runs the roofs when a bike would do
-# How each of them gets about in the suit, fastest first being their choice each time.
-SUITED = {"bruce": ("rooftops", "batmobile", "jet"), "nightwing": ("rooftops", "bike", "jet"),
-          "robin": ("rooftops", "bike", "jet"), "batgirl": ("rooftops", "bike", "jet"),
-          "orphan": ("rooftops", "jet"), "redhood": ("rooftops", "bike"), "batwing": ("flight",)}
+# How each of them gets about in the suit, the fastest of theirs their choice each time. The
+# Batwing is Bruce's alone to fly; the rest ride in it only when he gives them a lift (see jet.lift).
+SUITED = {"bruce": ("rooftops", "batmobile", "jet"), "nightwing": ("rooftops", "bike"),
+          "robin": ("rooftops", "bike"), "batgirl": ("rooftops", "bike"),
+          "orphan": ("rooftops",), "redhood": ("rooftops", "bike"), "batwing": ("flight",)}
 # Taken over the roads or the roofs only if it's clearly quicker: a quarter off, and three minutes.
 JET_BETTER = (0.75, 3.0)
 
@@ -380,9 +381,9 @@ def fastest(who, a, b, name_b=None, t=None, book=False, jet=True):
     """
     The quickest plausible way there in the suit, for this one of them: over the
     roofs if it's close and no more water than a glide will take; the bike, or
-    the Batmobile, on the roads; Randy flying straight there; the Batwing if
-    it's near enough to come for them and saves real time — two to a flight,
-    a second going the same way climbs aboard too. `book` takes the jet for
+    the Batmobile, on the roads; Randy flying straight there; and for Bruce
+    alone, the Batwing, if it's near enough to call and saves real time (the
+    rest ride in it only when he gives them a lift). `book` takes the jet for
     real. Returns a trip: {"pts", "start", "end", "by"} ("pickup" too, by jet).
     """
     import time as _time
@@ -415,15 +416,13 @@ def fastest(who, a, b, name_b=None, t=None, book=False, jet=True):
         trip["times"] = roofs                # fast on the lines, a sprint on the roofs
     if jet and "jet" in means:
         from . import jet as batwing
-        ride = batwing.share(who, a, b, t) if book else None
-        if ride is None:
-            deal = batwing.offer(a, b, t, who=who)
-            called = batwing.waiting_for(t) == who      # he called it: it's what he's going in, if it's no slower
-            quicker = deal and (deal["arrive"] - t) / 60 < minutes * JET_BETTER[0] and minutes - (deal["arrive"] - t) / 60 >= JET_BETTER[1]
-            if deal and (quicker or (called and (deal["arrive"] - t) / 60 <= minutes)):
-                ride = batwing.book(who, a, b, t) if book else {
-                    "pts": [list(a), list(b)], "start": deal["lift"], "end": deal["arrive"], "by": "on the Batwing",
-                    "pickup": deal["pickup"]}
-        if ride:
-            trip = ride
+        deal = batwing.offer(a, b, t, who=who)
+        called = batwing.waiting_for(t) == who          # he called it: it's what he's going in, if it's no slower
+        quicker = deal and (deal["arrive"] - t) / 60 < minutes * JET_BETTER[0] and minutes - (deal["arrive"] - t) / 60 >= JET_BETTER[1]
+        if deal and (quicker or (called and (deal["arrive"] - t) / 60 <= minutes)):
+            ride = batwing.book(who, a, b, t) if book else {
+                "pts": [list(a), list(b)], "start": deal["lift"], "end": deal["arrive"], "by": "on the Batwing",
+                "pickup": deal["pickup"]}
+            if ride:
+                trip = ride
     return trip

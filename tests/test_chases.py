@@ -19,7 +19,6 @@ def _at(hour, minute=0):
 
 
 def test_each_of_them_takes_the_fastest_way_they_have(monkeypatch):
-    monkeypatch.setattr(jet, "_night", lambda t: False)          # no passes in the way
     t = _at(14)
     randy = travel.fastest("batwing", (60.0, 45.0), (20.0, 110.0), t=t, jet=False)
     assert randy["by"] == "flying" and len(randy["pts"]) == 2       # straight there, water or not
@@ -31,26 +30,22 @@ def test_each_of_them_takes_the_fastest_way_they_have(monkeypatch):
     assert bruce["by"] == "in the Batmobile" and bruce["end"] < far["end"]
 
 
-def test_the_batwing_comes_for_them_two_at_a_time_and_one_job_at_a_time(monkeypatch):
-    monkeypatch.setattr(jet, "_night", lambda t: False)
-    t = _at(14)
+def test_only_he_flies_the_batwing_and_he_can_give_one_of_them_a_lift():
+    t = _at(23)
     home = jet.home()
     near = (home[0] + 20, home[1] + 10)
     far = (near[0] + 10, near[1] + 70)
-    dick = travel.fastest("nightwing", near, far, t=t, book=True)
-    assert dick["by"] == "on the Batwing" and dick["start"] > t        # it has to come for him first
-    tim = travel.fastest("robin", near, far, t=t, book=True)
-    assert tim["by"] == "on the Batwing" and tim["start"] == dick["start"]      # same flight, the second seat
-    cass = travel.fastest("orphan", near, far, t=t, book=True)
-    assert cass["by"] != "on the Batwing"                                # full, and on a job
-    assert jet.state(t + 5)["status"] == "coming down for a pickup"
-    assert jet.state(dick["start"] - 20)["status"] == "picking up"
-    jason = travel.fastest("redhood", near, far, t=t + 4 * 3600, book=True)
-    assert jason["by"] != "on the Batwing"                               # Jason doesn't ask for it
+    assert travel.fastest("nightwing", near, far, t=t, book=True)["by"] != "on the Batwing"   # not theirs to call
+    tim_at, drop = (near[0] + 6, near[1] + 4), (far[0] - 3, far[1] - 2)
+    his, theirs = jet.lift("robin", near, tim_at, drop, t)
+    assert theirs["start"] > t and theirs["pts"][0] == list(tim_at)        # Tim waits where he is till it's there
+    assert theirs["end"] == his["end"] and his["pts"][-1] == list(drop)     # dropped off together; he stays with it
+    assert jet.lift("orphan", near, tim_at, drop, t + 30) is None           # one flight at a time
+    assert jet.state(his["end"] + 60)["status"].startswith("hanging where you got out")
+    assert jet.state(his["end"] + jet.IDLE + 600)["parked"]                 # and home on its own
 
 
 def test_he_goes_as_batman_to_a_case_and_at_night_and_as_bruce_by_day(monkeypatch):
-    monkeypatch.setattr(jet, "_night", lambda t: False)
     day = _at(13)
     trip = batman.go("a pin", 30.0, 95.0, t=day)
     assert trip["by"] == "driving" and not trip["suit"]
@@ -122,16 +117,15 @@ def test_cases_keep_the_crew_and_what_the_call_was():
     assert case["crew"] == 6 and case["was"] == ["Armed robbery"]
 
 
-def test_he_can_call_the_batwing_and_it_waits_for_him_alone(monkeypatch):
-    monkeypatch.setattr(jet, "_night", lambda t: False)
+def test_he_can_call_the_batwing_and_it_waits_for_him(monkeypatch):
     t = _at(23)
     home = jet.home()
     here = (home[0] + 15, home[1] + 20)
+    assert jet.summon("nightwing", here, t) is None                          # only his to call
     state = jet.summon("bruce", here, t)
     assert state and jet.waiting_for(t + 120) == "bruce"
-    assert jet.offer(here, (60.0, 90.0), t + 120, who="nightwing") is None      # his while it waits
     ride = travel.fastest("bruce", here, (here[0] + 4, here[1] + 3), t=t + 120, book=True)
-    assert ride["by"] == "on the Batwing"                                         # he called it: he takes it
+    assert ride["by"] == "on the Batwing"                                     # he called it: he takes it
     assert jet.waiting_for(t + 130) == ""
 
 

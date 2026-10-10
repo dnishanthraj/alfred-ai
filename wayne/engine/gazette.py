@@ -134,6 +134,32 @@ def _happenings(now):
         state = codex.where(rogue, now)
         if state.get("how") and now - (state.get("since") or 0) < 36 * 3600:
             out.append(f"{rogue['name']} {state['how']}")
+    out.extend(_how_they_ended(now))
+    return out
+
+
+# How the city would hear a case ended: never who, only what — and masked figures, as rumour.
+_HEARD = {"caught": "suspects in custody — witnesses describe masked figures", "saved": "the hostages walked out alive",
+          "solved": "an arrest that police won't explain", "contained": "brought under control before it spread",
+          "recovered": "the stolen goods turned up by morning; the thief didn't",
+          "got away": "the suspects escaped despite reports of masked figures giving chase",
+          "too late": "the suspects were long gone before anyone arrived", "cold": "no arrests, no leads",
+          "lost": "a victim didn't survive", "worse": "more people were hurt before it ended",
+          "killed": "a suspect was found dead at the scene — police are tight-lipped"}
+
+
+def _how_they_ended(now):
+    """The night's cases the family worked, as the papers would have them: what happened, never who."""
+    from . import cases
+    out = []
+    done = [c for c in cases.everything() if c["status"] == "closed" and now - c.get("closed_at", 0) < 30 * 3600
+            and (c["severity"] >= 3 or c.get("suspect"))]
+    for c in sorted(done, key=lambda c: -c["severity"])[:4]:
+        how = (c.get("result") or {}).get("how", "")
+        heard = _HEARD.get(how)
+        if heard:
+            out.append(f"{c['kind'].lower()} at {c['place']} ({c['area']})"
+                       + (f", {c['suspect']} behind it" if c.get("suspect") else "") + f": {heard}")
     return out
 
 

@@ -112,6 +112,16 @@ def go(where, x=None, y=None, case="", t=None):
     return trip
 
 
+def ferry(name, drop, trip, t=None):
+    """Flying one of them somewhere in the Batwing: his trip there, and he's there with the jet when it's done."""
+    t = t or time.time()
+    with _lock:
+        data = _load()
+        data.update({"where": name, "x": drop[0], "y": drop[1], "follow": "",
+                     "trip": {**trip, "to": name, "from": "", "left": t, "suit": True}})
+        atomic_write(_path(), json.dumps(data, ensure_ascii=False))
+
+
 def _with(contact_id, t):
     """Where one of them is, for going with them — only if they let him see it."""
     from ..contacts import directory

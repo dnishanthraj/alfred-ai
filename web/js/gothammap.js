@@ -987,8 +987,9 @@
     var where = c.presence.where || c.presence.spot.name, now = Date.now() / 1000;
     if (route.patrol) return (short ? '' : 'On patrol · ') + where + (short ? ' · on patrol' : ' · over the rooftops');
     if (now < route.start) {
-      return (short ? '→ ' : 'Waiting for the ') + (short ? where + ' · ' : '') + (route.by || 'pickup') + ' · ' +
-             Math.max(1, Math.round((route.start - now) / 60)) + ' min to pickup';
+      var lifted = /Batwing/.test(route.by || '');
+      return (short ? '→ ' + where + ' · ' : '') + (lifted ? 'Waiting for the Batwing' : 'Setting off') + ' · ' +
+             Math.max(1, Math.round((route.start - now) / 60)) + ' min';
     }
     return (short ? '→ ' : 'On the way to ') + where + (route.by ? ' · ' + route.by : '') + ' · ' + minutesLeft(route) + ' min';
   }
@@ -1190,6 +1191,13 @@
     card.querySelector('[data-act="follow"]').classList.toggle('is-on', following === id);
     // Go to them himself, and stay with them: only where he can see them, and never to himself.
     var join = card.querySelector('[data-act="join"]'), me = opts.bruce && opts.bruce();
+    var lift = card.querySelector('[data-act="lift"]');
+    if (lift) {
+      // A lift in the Batwing: only his to give, after dark, to the ones who work the streets.
+      lift.hidden = !opts.lift || !p.spot || !!p.seen_live || FIELD.indexOf(id) === -1 || !(me && me.presence && me.presence.suit);
+      lift.querySelector('.gm-btn__bat').innerHTML = ARKHAM_BAT;
+      if (!lift.disabled) lift.querySelector('span').textContent = 'Give a lift';
+    }
     if (join) {
       var withThem = !!(me && me.presence && me.presence.follow === id);
       join.hidden = !opts.go || !p.spot || !!p.seen_live;
@@ -2027,6 +2035,16 @@
       following = following === selected ? null : selected;
       renderCard(selected);
       if (following) map.easeTo({ center: people[following].getLngLat(), zoom: Math.max(map.getZoom(), 15), duration: 900 });
+    });
+    $('.gm-card [data-act="lift"]').addEventListener('click', function () {
+      if (!selected || !opts.lift) return;
+      var btn = this, label = btn.querySelector('span');
+      btn.disabled = true;
+      opts.lift(selected).then(function (res) {
+        label.textContent = res && res.error ? res.error
+          : res && res.route ? 'Picking up · ' + Math.max(1, Math.round((res.route.end - Date.now() / 1000) / 60)) + ' min' : 'On the way';
+        loadIncidents();
+      }).catch(function () {}).then(function () { setTimeout(function () { btn.disabled = false; }, 2500); });
     });
     $('.gm-card [data-act="join"]').addEventListener('click', function () {
       if (!selected || !opts.go) return;

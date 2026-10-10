@@ -225,6 +225,21 @@ def close(case_id, outcome, result=None):
     return case
 
 
+def retime(case_id, contact_id, minutes):
+    """Their way there changed — a lift in the Batwing — and with it when they'll be on scene."""
+    with _lock:
+        cases = everything()
+        case = next((c for c in cases if c["id"] == case_id), None)
+        mine = (case or {}).get("members", {}).get(contact_id)
+        if not mine or mine.get("status") != "assigned":
+            return None
+        mine["joined"], mine["travel"] = time.time(), round(minutes, 1)
+        if case["assignee"] == contact_id and case["status"] == "assigned":
+            case["updated_at"], case["travel"] = time.time(), round(minutes, 1)
+        _save(cases)
+    return case
+
+
 def mark(case_id, **fields):
     """Note something on a case — that they called for help, say."""
     with _lock:
