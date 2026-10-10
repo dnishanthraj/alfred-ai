@@ -51,6 +51,7 @@
     party: [],        // who is on the call, in order of joining
     messagesWith: null, // whose text thread is open
     unread: {},       // contacts with a text reply not yet seen
+    pinged: {},       // groups where someone tagged him, not yet opened
     typing: {},       // contacts writing a reply
     thread: null,     // the open text thread: {id, messages, more, loading}
     lastSpeaker: null, // who said the line on screen, on a call with company
@@ -120,7 +121,7 @@
      'dossier', 'dossier-close', 'dossier-name',
      'dossier-role', 'dossier-text', 'dossier-save', 'dossier-saved',
      'dossier-portrait', 'messages', 'messages-avatar', 'messages-name', 'messages-role',
-     'messages-close', 'messages-thread', 'messages-compose', 'messages-input',
+     'messages-close', 'messages-thread', 'messages-compose', 'messages-input', 'messages-emoji',
      'messages-resize', 'messages-who', 'rail-toggle', 'rail-resize', 'inbox', 'inbox-count',
      'toasts', 'dossier-call', 'dossier-message', 'incoming', 'incoming-avatar',
      'incoming-name', 'incoming-accept', 'incoming-decline', 'groups', 'group-new',
@@ -511,6 +512,8 @@
   }
 
   var ICONS = {
+    smile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.2a4.2 4.2 0 0 0 7 0"/><path d="M9 9.6h.01M15 9.6h.01" stroke-width="2.6"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6v12M6 12h12"/></svg>',
     call: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>',
     add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>',
     drop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11h-6"/></svg>',
@@ -680,6 +683,8 @@
     var from = message.from === 'me' ? 'me' : 'them';
     li.className = 'bubble bubble--' + from + (message.typing ? ' bubble--typing' : '');
     if (message.id) li.dataset.id = message.id;
+    if (!message.typing && from === 'them' && pingsMe(message.text, opts.group)) li.classList.add('bubble--ping');
+    if (!message.typing && onlyEmoji(message.text)) li.classList.add('bubble--jumbo');
     if (from === 'them') {
       var av = document.createElement('span');
       av.className = 'bubble__avatar';
@@ -700,7 +705,7 @@
       t.classList.add('bubble__dots');
       t.insertAdjacentHTML('beforeend', '<i></i><i></i><i></i>');
     } else {
-      appendMentions(t, message.text, opts.mentions);
+      appendMentions(t, message.text, opts.mentions, opts.group);
       if (message.at) {
         var time = document.createElement('span');
         time.className = 'bubble__time';
@@ -717,6 +722,16 @@
       body.appendChild(t);
     }
     li.appendChild(body);
+    if (from === 'them' && message.id && !message.typing) {
+      // A way to react without knowing to double-click.
+      var add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'bubble__add';
+      add.setAttribute('aria-label', 'React');
+      add.dataset.tip = 'React';
+      add.innerHTML = ICONS.smile;
+      li.appendChild(add);
+    }
     if (who.length) {
       // Tapbacks: each emoji once, with who — in the console's own tip.
       var row = document.createElement('span');
@@ -748,39 +763,176 @@
     bar.hidden = true;
     document.body.appendChild(bar);
     var target = null;
+    function react(emoji) {
+      if (!target || !state.thread) return;
+      var m = (state.thread.messages || []).filter(function (x) { return x.id === target; })[0];
+      var mine = m && (m.reactions || {}).me;
+      var emojiOut = mine === emoji ? '' : emoji;
+      if (state.groupOpen) send({ type: 'group_react', id: state.groupOpen, message: target, emoji: emojiOut });
+      else send({ type: 'text_react', id: state.thread.id, message: target, emoji: emojiOut });
+      ConsoleTones.sent();
+      rememberEmoji(emoji);
+      bar.hidden = true;
+    }
     TAPBACKS.forEach(function (emoji) {
       var b = document.createElement('button');
       b.type = 'button';
       b.className = 'tapbar__btn';
       b.textContent = emoji;
-      b.addEventListener('click', function () {
-        if (!target || !state.thread) return;
-        var m = (state.thread.messages || []).filter(function (x) { return x.id === target; })[0];
-        var mine = m && (m.reactions || {}).me;
-        var emojiOut = mine === emoji ? '' : emoji;
-        if (state.groupOpen) send({ type: 'group_react', id: state.groupOpen, message: target, emoji: emojiOut });
-        else send({ type: 'text_react', id: state.thread.id, message: target, emoji: emojiOut });
-        ConsoleTones.sent();
-        bar.hidden = true;
-      });
+      b.addEventListener('click', function () { react(emoji); });
       bar.appendChild(b);
     });
-    el['messages-thread'].addEventListener('dblclick', function (e) {
-      var bubble = e.target.closest && e.target.closest('.bubble--them[data-id]');
+    // Any other emoji: the same picker as the composer's.
+    var more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'tapbar__btn tapbar__more';
+    more.setAttribute('aria-label', 'More reactions');
+    more.innerHTML = ICONS.plus;
+    more.addEventListener('click', function () {
+      var r = bar.getBoundingClientRect();
+      bar.hidden = true;
+      openEmojiPicker({ left: r.left, top: r.top }, react);
+    });
+    bar.appendChild(more);
+    function open(bubble) {
       if (!bubble || !state.thread) return;
-      e.preventDefault();
       window.getSelection && window.getSelection().removeAllRanges();
       target = bubble.dataset.id;
+      // What he's already put on it shows as chosen.
+      var m = (state.thread.messages || []).filter(function (x) { return x.id === target; })[0];
+      var mine = m && (m.reactions || {}).me;
+      Array.prototype.forEach.call(bar.querySelectorAll('.tapbar__btn'), function (b) {
+        b.dataset.on = b.textContent === mine ? '1' : '';
+      });
       bar.hidden = false;
       var r = bubble.querySelector('.bubble__text').getBoundingClientRect();
       var w = bar.offsetWidth;
       bar.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
       bar.style.top = Math.max(8, r.top - bar.offsetHeight - 6) + 'px';
+    }
+    el['messages-thread'].addEventListener('dblclick', function (e) {
+      var bubble = e.target.closest && e.target.closest('.bubble--them[data-id]');
+      if (!bubble) return;
+      e.preventDefault();
+      open(bubble);
+    });
+    el['messages-thread'].addEventListener('click', function (e) {
+      var button = e.target.closest && e.target.closest('.bubble__add');
+      if (button) { e.stopPropagation(); open(button.closest('.bubble')); }
     });
     document.addEventListener('pointerdown', function (e) {
-      if (!bar.hidden && !bar.contains(e.target)) bar.hidden = true;
+      if (!bar.hidden && !bar.contains(e.target) && !(e.target.closest && e.target.closest('.bubble__add'))) bar.hidden = true;
     });
     el['messages-thread'].addEventListener('scroll', function () { bar.hidden = true; });
+  }
+
+  /* --- emoji ---------------------------------------------------------------
+     His own, in the box or on a message: a picker in the console's furniture,
+     the ones he uses most up front. */
+  var EMOJI = [
+    ['Recent', '🕘', []],
+    ['Faces', '🙂', '😀 😂 🤣 😅 😊 🙂 😉 😍 🥲 😎 🤔 🤨 😐 😑 🙄 😏 😬 😮‍💨 😴 🤐 😶 🥱 😤 😠 😡 🤬 😳 😱 😨 😰 😢 😭 🫠 🫡 🤫 🤭 🥶 🥵 🤯 😵 🤕 🤒 💀 👻 🤡 😈'.split(' ')],
+    ['Hands', '👍', '👍 👎 👌 🤌 ✌️ 🤞 🤝 🙏 👏 🙌 🫶 👊 ✊ 🤛 💪 🫡 👋 🤙 ☝️ 👆 👇 👉 👈 🖕 ✍️ 🫵'.split(' ')],
+    ['Hearts', '❤️', '❤️ 🖤 🤍 💙 💜 💚 💛 🧡 💔 ❤️‍🩹 💯 ‼️ ❓ ❗ ⁉️ ✅ ❌ ⚠️ 🔥 ✨ ⭐ 💥 💢 💤 💬 👀 🎯'.split(' ')],
+    ['Gotham', '🦇', '🦇 🌃 🌆 🌧️ ⛈️ 🌙 🌕 🏙️ 🗼 🕰️ 🚨 🚓 🏍️ 🚁 🔦 🕶️ 🎭 🃏 ♠️ 🐧 🌿 🧊 🐈‍⬛ 💣 🔪 🩸 🩹 💊 🔒 🗝️ 📡 💻 📱 ☕ 🍵 🍕 🍜 🥃 🍷'.split(' ')],
+    ['Life', '🎮', '🎮 🎧 🎵 🎸 📚 🎬 🍿 🏀 🥊 🏋️ 🤸 🩰 🏃 🚗 ✈️ 🎂 🎉 🎁 🐶 🐱 🌹 🌞 🌊 🍔 🍩 🍪 🥞 🍳 🧃 🍺'.split(' ')]
+  ];
+  var emojiPick = null;
+
+  function recentEmoji() {
+    try { return JSON.parse(recall('emoji') || '[]') || []; } catch (e) { return []; }
+  }
+
+  function rememberEmoji(emoji) {
+    if (!emoji) return;
+    var list = recentEmoji().filter(function (e) { return e !== emoji; });
+    list.unshift(emoji);
+    remember('emoji', JSON.stringify(list.slice(0, 16)));
+  }
+
+  /* Emoji and nothing else, three at most: shown large, as phones do. */
+  function onlyEmoji(text) {
+    var t = (text || '').replace(/\s+/g, '');
+    if (!t || t.length > 24) return false;
+    try {
+      var parts = t.match(/\p{Extended_Pictographic}(\uFE0F|\u200D\p{Extended_Pictographic}\uFE0F?|[\u{1F3FB}-\u{1F3FF}])*/gu) || [];
+      return parts.length > 0 && parts.length <= 3 && parts.join('') === t;
+    } catch (e) { return false; }
+  }
+
+  function openEmojiPicker(at, onPick) {
+    if (!emojiPick) {
+      emojiPick = document.createElement('div');
+      emojiPick.className = 'emoji-pick';
+      emojiPick.hidden = true;
+      emojiPick.innerHTML = '<div class="emoji-pick__tabs"></div><div class="emoji-pick__grid"></div>';
+      document.body.appendChild(emojiPick);
+      document.addEventListener('pointerdown', function (e) {
+        if (!emojiPick.hidden && !emojiPick.contains(e.target) &&
+            !(e.target.closest && e.target.closest('.messages__emoji'))) emojiPick.hidden = true;
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !emojiPick.hidden) { emojiPick.hidden = true; e.stopPropagation(); }
+      }, true);
+    }
+    var tabs = emojiPick.querySelector('.emoji-pick__tabs');
+    var grid = emojiPick.querySelector('.emoji-pick__grid');
+    var recent = recentEmoji();
+    function show(index) {
+      var set = index === 0 ? recent : EMOJI[index][2];
+      grid.innerHTML = '';
+      set.forEach(function (emoji) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'emoji-pick__btn';
+        b.textContent = emoji;
+        b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+        b.addEventListener('click', function () {
+          rememberEmoji(emoji);
+          if (emojiPick.dataset.keep !== '1') emojiPick.hidden = true;
+          onPick(emoji);
+        });
+        grid.appendChild(b);
+      });
+      Array.prototype.forEach.call(tabs.children, function (t, i) { t.dataset.on = i === index ? '1' : ''; });
+    }
+    tabs.innerHTML = '';
+    EMOJI.forEach(function (cat, i) {
+      if (i === 0 && !recent.length) { tabs.appendChild(document.createElement('span')); return; }
+      var t = document.createElement('button');
+      t.type = 'button';
+      t.className = 'emoji-pick__tab';
+      t.textContent = cat[1];
+      t.dataset.tip = cat[0];
+      t.addEventListener('mousedown', function (e) { e.preventDefault(); });
+      t.addEventListener('click', function () { show(i); });
+      tabs.appendChild(t);
+    });
+    emojiPick.dataset.keep = at.keep ? '1' : '';
+    emojiPick.hidden = false;
+    show(recent.length ? 0 : 1);
+    var w = emojiPick.offsetWidth, h = emojiPick.offsetHeight;
+    var left = at.right != null ? at.right - w : at.left;
+    emojiPick.style.left = Math.max(8, Math.min(left, window.innerWidth - w - 8)) + 'px';
+    emojiPick.style.top = Math.max(8, (at.bottom != null ? at.bottom : at.top) - h - 6) + 'px';
+  }
+
+  function wireEmoji() {
+    var input = el['messages-input'];
+    var button = el['messages-emoji'];
+    button.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    button.addEventListener('click', function () {
+      if (emojiPick && !emojiPick.hidden) { emojiPick.hidden = true; return; }
+      var r = el['messages-compose'].getBoundingClientRect();
+      openEmojiPicker({ right: r.right - 16, bottom: r.top + 4, keep: true }, function (emoji) {
+        var a = input.selectionStart == null ? input.value.length : input.selectionStart;
+        var b = input.selectionEnd == null ? a : input.selectionEnd;
+        input.value = input.value.slice(0, a) + emoji + input.value.slice(b);
+        var pos = a + emoji.length;
+        input.focus();
+        input.setSelectionRange(pos, pos);
+      });
+    });
   }
 
   /* "@Tim" as a tag — only for someone who can actually be tagged here: a
@@ -788,9 +940,10 @@
      Anyone else stays plain text. Hover one for their card. */
   var MENTION = /@([A-Za-z][A-Za-z'’-]*)/g;
 
-  function mentionTarget(name, ids) {
+  function mentionTarget(name, ids, group) {
     name = name.toLowerCase();
     if (name === 'bruce' || name === 'me') return 'me';
+    if (group && name === 'everyone') return 'all';
     for (var i = 0; i < (ids || []).length; i++) {
       var c = state.contacts[ids[i]];
       if (c && (c.name.toLowerCase() === name || c.id === name)) return c.id;
@@ -798,17 +951,17 @@
     return null;
   }
 
-  function appendMentions(node, text, ids) {
+  function appendMentions(node, text, ids, group) {
     var last = 0, m;
     MENTION.lastIndex = 0;
     while ((m = MENTION.exec(text || '')) !== null) {
-      var target = mentionTarget(m[1], ids);
+      var target = mentionTarget(m[1], ids, group);
       if (!target) continue;
       if (m.index > last) node.appendChild(document.createTextNode(text.slice(last, m.index)));
       var tag = document.createElement('span');
-      tag.className = 'mention';
+      tag.className = 'mention' + (target === 'me' ? ' mention--me' : target === 'all' ? ' mention--all' : '');
       tag.textContent = '@' + m[1];
-      if (target !== 'me') {
+      if (target !== 'me' && target !== 'all') {
         tag.dataset.mention = target;
         tag.style.setProperty('--contact-accent', state.contacts[target].accent);
       }
@@ -818,9 +971,14 @@
     if (last < (text || '').length) node.appendChild(document.createTextNode(text.slice(last)));
   }
 
+  /* A tag on him — "@Bruce", or "@everyone" in a group: a ping, not a mention in passing. */
+  function pingsMe(text, group) {
+    return new RegExp('(^|[^\\w@])@(bruce' + (group ? '|everyone' : '') + ')\\b', 'i').test(text || '');
+  }
+
   /* Typing "@" in the box: who can be tagged here, to pick from. */
   function mentionables() {
-    if (state.groupOpen) return ((state.groups[state.groupOpen] || {}).members || []).slice();
+    if (state.groupOpen) return ((state.groups[state.groupOpen] || {}).members || []).concat(['everyone']);
     return state.messagesWith ? [state.messagesWith] : [];
   }
 
@@ -836,23 +994,33 @@
     function draw() {
       pick.innerHTML = '';
       options.forEach(function (cid, i) {
-        var c = state.contacts[cid];
+        var c = state.contacts[cid] || { name: 'everyone', accent: 'var(--primary)' };
         var li = document.createElement('li');
         li.className = 'mention-pick__item';
         if (i === chosen) li.dataset.on = '1';
         li.style.setProperty('--contact-accent', c.accent);
         var face = document.createElement('span');
         face.className = 'bubble__avatar';
-        portraitStyle(face, c, 'center 22%');
+        if (cid === 'everyone') {
+          face.classList.add('mention-pick__all');
+          face.textContent = '@';
+        } else {
+          portraitStyle(face, c, 'center 22%');
+        }
         li.appendChild(face);
         li.appendChild(document.createTextNode(c.name));
+        if (cid === 'everyone') {
+          var hint = document.createElement('small');
+          hint.textContent = 'pings the whole chat';
+          li.appendChild(hint);
+        }
         li.addEventListener('mousedown', function (e) { e.preventDefault(); choose(i); });
         pick.appendChild(li);
       });
       pick.hidden = !options.length;
     }
     function choose(i) {
-      var c = state.contacts[options[i]];
+      var c = state.contacts[options[i]] || (options[i] === 'everyone' ? { name: 'everyone' } : null);
       if (!c || at < 0) return close();
       var caret = input.selectionStart;
       var before = input.value.slice(0, at), after = input.value.slice(caret);
@@ -868,6 +1036,7 @@
       at = upto.length - m[2].length - 1;
       var q = m[2].toLowerCase();
       options = mentionables().filter(function (cid) {
+        if (cid === 'everyone') return 'everyone'.indexOf(q) === 0;
         var c = state.contacts[cid];
         return c && (c.name.toLowerCase().indexOf(q) === 0 || c.full_name.toLowerCase().indexOf(q) === 0);
       });
@@ -958,7 +1127,7 @@
       if (m.kind === 'system') { box.appendChild(bubbleNode(m)); return; }
       var prev = th.messages[i - 1];
       var node = bubbleNode(m, sender, { label: group && m.from !== 'me' && !sameRun(prev, m),
-                                         mentions: group ? th.members : [th.id] });
+                                         mentions: group ? th.members : [th.id], group: !!group });
       if (m.id && th.seen && !th.seen[m.id]) { node.dataset.new = '1'; th.seen[m.id] = true; }
       var next = th.messages[i + 1];
       if (sameRun(m, next) || (!next && m.from === 'them' && state.typing[th.id])) node.dataset.run = '1';
@@ -1379,7 +1548,8 @@
       if (unread) {
         var badge = document.createElement('span');
         badge.className = 'book__badge';
-        badge.textContent = unread > 9 ? '9+' : unread;
+        badge.textContent = state.pinged[groupKey(id)] ? '@' : (unread > 9 ? '9+' : unread);
+        if (state.pinged[groupKey(id)]) badge.dataset.ping = '1';
         faces.appendChild(badge);
       }
       var text = document.createElement('span');
@@ -1409,6 +1579,12 @@
     state.groupOpen = id;
     state.messagesWith = null;
     delete state.unread[groupKey(id)];
+    delete state.pinged[groupKey(id)];
+    // Its notifications have done their job.
+    Array.prototype.forEach.call(el.toasts.querySelectorAll('.toast[data-group="' + id + '"]'), function (t) {
+      t.dataset.leaving = '1';
+      setTimeout(function () { t.remove(); }, 300);
+    });
     updateInbox();
     el.messages.style.removeProperty('--contact-accent');
     stackPortraits(el['messages-avatar'], g.members);
@@ -1507,12 +1683,15 @@
         var m = event.message;
         if (state.groupTyping[id]) delete state.groupTyping[id][m.from];
         if (state.groups[id]) state.groups[id].last = m;
+        var ping = m.from !== 'me' && pingsMe(m.text, true);
         if (groupOpenFor(id)) {
           state.thread.messages.push(m);
+          if (ping && ConsoleTones.ping) ConsoleTones.ping();
         } else if (m.from !== 'me') {
           state.unread[groupKey(id)] = (state.unread[groupKey(id)] || 0) + 1;
+          if (ping) state.pinged[groupKey(id)] = true;
           updateInbox();
-          notifyGroup(id, m);
+          notifyGroup(id, m, ping);
         }
         renderGroups();
         break;
@@ -1521,7 +1700,7 @@
   }
 
   /* A group message from someone, while its thread is closed. */
-  function notifyGroup(id, message) {
+  function notifyGroup(id, message, ping) {
     var g = state.groups[id];
     var who = state.contacts[message.from];
     if (!g || !who) return;
@@ -1534,10 +1713,13 @@
     var words = document.createElement('div');
     var name = document.createElement('span');
     name.className = 'toast__name';
-    name.textContent = who.name + ' · ' + g.name;
+    name.textContent = who.name + (ping ? (/@everyone\b/i.test(message.text) ? ' pinged everyone' : ' pinged you')
+                                        : '') + ' · ' + g.name;
     var line = document.createElement('span');
     line.className = 'toast__text';
-    line.textContent = message.text;
+    appendMentions(line, message.text, g.members, true);
+    if (ping) card.dataset.ping = '1';
+    card.dataset.group = id;
     words.appendChild(name);
     words.appendChild(line);
     card.appendChild(av);
@@ -1545,8 +1727,9 @@
     var dismiss = function () { card.dataset.leaving = '1'; setTimeout(function () { card.remove(); }, 300); };
     card.addEventListener('click', function () { dismiss(); openGroup(id); });
     el.toasts.appendChild(card);
-    if (ConsoleTones.message) ConsoleTones.message();
-    setTimeout(dismiss, 6500);
+    if (ping && ConsoleTones.ping) ConsoleTones.ping();
+    else if (ConsoleTones.message) ConsoleTones.message();
+    setTimeout(dismiss, ping ? 12000 : 6500);
   }
 
   /* New group: a name, and two or more of them. */
@@ -2627,6 +2810,7 @@
   wireTips();
   wireMentions();
   wireTapbacks();
+  wireEmoji();
   try { state.unread = JSON.parse(recall('unread') || '{}') || {}; } catch (e) { state.unread = {}; }
   updateInbox();
   loadSession().then(startBoot, startBoot);

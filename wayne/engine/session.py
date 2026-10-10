@@ -1076,7 +1076,7 @@ class ContactSession:
         parts = [grapevine.block(self.contact.id), groupchat.block(self.contact.id, directory())]
         return "\n\n".join(p for p in parts if p)
 
-    def group_post(self, group, unread, must=False, opening=None, task=None, chase=None):
+    def group_post(self, group, unread, must=False, opening=None, task=None, chase=None, tapback=None):
         """
         Their next message in a group chat, or "" if they'd rather not say
         anything. `unread` is what they've just read; `opening` is something on
@@ -1124,6 +1124,10 @@ class ContactSession:
                    + f" Say something about it if you would — ping them with @{chase['name']}, cover "
                    "for them, or tell him where they probably are (only what you'd actually know). "
                    "If you wouldn't bother, reply with exactly SKIP.")
+        elif tapback:
+            ask = (f"{operator_name()} just reacted {tapback} in here. Whether that gets anything from "
+                   "you is yours — a word back, a laugh, asking what he means by it. Mostly people let a "
+                   "reaction be the end of it; if you would, reply with exactly SKIP.")
         elif opening:
             quiet = (time.time() - group.messages()[-1]["at"] > 3600) if group.messages() else True
             ask = (("Nobody's said anything for a while. " if quiet else "")
@@ -1141,8 +1145,13 @@ class ContactSession:
                     "asked you to add someone — and only then, or if someone is truly needed and he "
                     "hasn't said to keep it small — end with [add: their first name]"
                     + (f" (could be {', '.join(c.name for c in others)})" if others else "") + ".")
-        ask += (" Most messages tag nobody; tag someone with @Name only to pull in someone who isn't "
-                "already talking — never the person you're replying to. If you'd just react to "
+        tags = ", ".join("@" + n for n in groupchat.handles(group, book, self.contact.id).values())
+        ask += (" If he asks you to take it to a private message, or there's something you'd only say to "
+                "him privately, end with [dm: what you'd text him] — that goes to your thread with him, not "
+                "here.")
+        ask += (" Most messages tag nobody; tag someone only to pull in someone who isn't already "
+                f"talking — never the person you're replying to — and only as {tags}, exactly; "
+                "@everyone pings the whole chat, for the rare thing all of them need. If you'd just react to "
                 "the latest message instead of writing anything — the way you actually do, if you "
                 "do — reply with only [react: emoji], usually one of ❤️ 👍 👎 😂 ‼️ ❓; you can also put "
                 "[react: emoji] with a text.")
@@ -1159,14 +1168,15 @@ class ContactSession:
             "leave": bool(re.search(r"\[\s*leave\s*\]", text, re.I)),
             "add": [m.strip() for m in re.findall(r"\[\s*add\s*:\s*([^\]]+)\]", text, re.I)],
             "remove": [m.strip() for m in re.findall(r"\[\s*remove\s*:\s*([^\]]+)\]", text, re.I)],
-            "react": next(iter(re.findall(r"\[\s*react\s*:\s*([^\]]{1,8})\]", text, re.I)), "").strip()}
-        text = re.sub(r"\[\s*(leave|(add|remove|react)\s*:[^\]]*)\]", "", text, flags=re.I)
+            "react": next(iter(re.findall(r"\[\s*react\s*:\s*([^\]]{1,8})\]", text, re.I)), "").strip(),
+            "dm": next(iter(re.findall(r"\[\s*dm\s*:\s*([^\]]+)\]", text, re.I)), "").strip()}
+        text = re.sub(r"\[\s*(leave|(add|remove|react|dm)\s*:[^\]]*)\]", "", text, flags=re.I)
         text = re.sub(r"\s*\[[^\]]{0,14}\]", "", text)     # a marker half-written: "[]", "[react]"
         text = self._plain(text)
         if re.match(r"\W*skip\b", text, re.I) and not must:
             return ""
-        if not text.strip(" .") and self._group_actions["react"]:
-            return ""           # a tapback, and nothing to say
+        if not text.strip(" .") and (self._group_actions["react"] or self._group_actions["dm"]):
+            return ""           # a tapback, or a word to him privately, and nothing to say here
         # A line written for someone else ("Tim: lol") is theirs to write, not this one's.
         lines = []
         for line in text.splitlines():
@@ -1223,6 +1233,10 @@ class ContactSession:
             ask = (f"Since you last spoke, something's stayed with you: {about}. Check in on him — "
                    "the way you would, which might be a word, a joke, or something that never says "
                    "'worried'. If you'd honestly let it go, reply with exactly SKIP.")
+        elif why == "tapback":
+            ask = (f"He just reacted {about}. Whether that gets anything from you is yours — a word "
+                   "back, a laugh, asking what he means by it, whatever you'd actually send. Mostly "
+                   "people let a reaction be the end of it; if you would, reply with exactly SKIP.")
         elif why == "second_thought":
             ask = ("You've just texted him. A moment later one more thing occurs to you — send it "
                    "as a short follow-up text. If nothing would, reply with exactly SKIP.")
@@ -1256,7 +1270,8 @@ class ContactSession:
         # A text, not a letter: told "a line or two", a model writes a paragraph.
         lines = [guards.cap_length(line, 3) for line in text.splitlines() if line.strip()][:4]
         text = "\n".join(lines)
-        if why in ("second_thought", "chase", "worry", "case_taken", "case_closed") and re.match(r"\W*skip\b", text, re.I):
+        if why in ("second_thought", "chase", "worry", "case_taken", "case_closed", "tapback") \
+                and re.match(r"\W*skip\b", text, re.I):
             return ""
         if text:
             self.history.record_exchange(REACH_MARKER, text, via="text")
@@ -1345,6 +1360,7 @@ class ContactSession:
         awareness = self._awareness(prompt, interrupted, confidence)
         texting = via == "text"
         self._reply_choice, self._deferred, self._group_task = None, None, None
+        self._meant_group = None
         self._text_react = None
         self._take_case = None
         length, self._turn_cap = None, None
@@ -1373,9 +1389,21 @@ class ContactSession:
             habit = ("You do this a lot." if pace.get("on_read", 0) + pace.get("ghost", 0) >= 0.4 else
                      "You do it sometimes." if pace.get("on_read", 0) + pace.get("ghost", 0) >= 0.15 else
                      "You almost never do this.")
+            from ..contacts import directory
             from ..memory import groups as group_store
             mine = [g.name for g in group_store.groups_with(self.contact.id)]
-            if mine:
+            self._meant_group = groupchat.meant_group(prompt, self.contact, directory())
+            if self._meant_group:
+                meant = self._meant_group
+                who = ", ".join(directory().get(c).name for c in meant.members
+                                if c != self.contact.id and directory().get(c))
+                awareness.append(
+                    f"He's asking you to do something in the group chat “{meant.name}” (you, him, {who}). "
+                    "That goes in the group, not here — this is your private thread with him. Here, a "
+                    "word to him at most (or nothing), and end with "
+                    f"[group: {meant.name} | what you'll say or do there]; you'll then write it in the "
+                    "group yourself.")
+            elif mine:
                 awareness.append(
                     "Your group chats with him: " + ", ".join(f"“{n}”" for n in mine) + ". If he asks you "
                     "to say or do something in one, don't write it here — answer him here (asking which "

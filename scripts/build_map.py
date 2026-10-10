@@ -28,6 +28,7 @@ import random
 from pathlib import Path
 
 import shapely
+import shapely.ops
 from shapely import affinity
 from shapely.geometry import LineString, MultiPoint, Point, Polygon, box, mapping
 from shapely.ops import split, substring, unary_union
@@ -88,8 +89,8 @@ def chaikin(points, iterations=3, closed=True):
     return pts
 
 
-def landmass(points, seed):
-    return Polygon(chaikin(roughen(points, seed), 3)).buffer(0)
+def landmass(points, seed, amp=0.32, levels=2):
+    return Polygon(chaikin(roughen(points, seed, amp=amp, levels=levels), 3)).buffer(0)
 
 
 def curve(points, iterations=3):
@@ -97,9 +98,74 @@ def curve(points, iterations=3):
 
 
 def ellipse(at, rx, ry, seed=0):
-    """A lake as water really sits: an ellipse with a shoreline of its own."""
-    ring = list(affinity.scale(Point(at).buffer(1, 16), rx, ry).exterior.coords)[:-1]
-    return Polygon(chaikin(roughen(ring, seed, amp=0.18 * min(rx, ry), levels=2), 3)).buffer(0)
+    """
+    A lake as water really sits: lobes and inlets, at an angle of its own —
+    never the ellipse it was sketched as.
+    """
+    r = random.Random(seed)
+    phases = [r.uniform(0, 6.3) for _ in range(3)]
+    pts = []
+    for i in range(36):
+        a = i * 2 * math.pi / 36
+        k = (1 + 0.22 * math.sin(2 * a + phases[0]) + 0.13 * math.sin(3 * a + phases[1])
+             + 0.07 * math.sin(5 * a + phases[2]))
+        pts.append((math.cos(a) * rx * k, math.sin(a) * ry * k))
+    shape = affinity.rotate(Polygon(pts), r.uniform(-35, 35), origin=(0, 0))
+    shape = affinity.translate(shape, at[0], at[1])
+    ring = list(shape.exterior.coords)[:-1]
+    return Polygon(chaikin(roughen(ring, seed, amp=0.1 * min(rx, ry), levels=2), 2)).buffer(0)
+
+
+def span(line, land):
+    """
+    A bridge from shore to shore: extended until it reaches land at both ends,
+    then trimmed to the water it crosses with a footing on each bank. Drawn
+    from a sketch, it stopped short of a coast that had since been roughened.
+    """
+    coords = list(line.coords)
+
+    def stretch(a, b, by):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        n = math.hypot(dx, dy) or 1
+        return (b[0] + dx / n * by, b[1] + dy / n * by)
+    long = LineString([stretch(coords[1], coords[0], 12)] + coords + [stretch(coords[-2], coords[-1], 12)])
+    wet = long.difference(land)
+    crossings = [p for p in lines_of(wet) if p.length > 0.3]
+    if not crossings:
+        return None
+    # The water it was meant to cross: the stretch nearest the sketch's middle.
+    mid = line.interpolate(0.5, normalized=True)
+    water = min(crossings, key=lambda p: p.distance(mid))
+    a, b = water.coords[0], water.coords[-1]
+    return LineString([stretch(water.coords[1], a, 0.45)] + list(water.coords) + [stretch(water.coords[-2], b, 0.45)])
+
+
+def organic_cells(districts, clip, seed):
+    """
+    Districts as the land nearest each centre — but measured from a cloud of
+    points around it, so borders wind and step the way real ones do instead
+    of running ruler-straight between two centres.
+    """
+    r = random.Random(seed)
+    points, owner = [], []
+    for d in districts:
+        cx, cy = d["at"]
+        others = [math.dist(d["at"], e["at"]) for e in districts if e is not d] or [10]
+        reach = min(others) * 0.44
+        points.append((cx, cy))
+        owner.append(d["name"])
+        for _ in range(46):
+            a, u = r.uniform(0, 2 * math.pi), r.random() ** 0.6
+            points.append((cx + math.cos(a) * reach * u, cy + math.sin(a) * reach * u))
+            owner.append(d["name"])
+    cells = shapely.voronoi_polygons(MultiPoint(points), extend_to=box(-300, -300, 400, 400))
+    pieces = {d["name"]: [] for d in districts}
+    tree = shapely.STRtree([Point(p) for p in points])
+    for cell in cells.geoms:
+        hit = tree.query(cell, predicate="contains")
+        if len(hit):
+            pieces[owner[int(hit[0])]].append(cell)
+    return {name: unary_union(cs).intersection(clip) for name, cs in pieces.items()}
 
 
 def blob(cx, cy, radius, seed):
@@ -283,7 +349,22 @@ def landmark_shapes(name, x, y):
     if name == "Iceberg Lounge":
         return [(disc(x, y, 0.5), 0, 8), (disc(x, y, 0.38), 8, 16), (disc(x, y, 0.22), 16, 25)]
     if name == "Gotham Opera House":
-        return [(disc(x, y, 0.56), 0, 18), (disc(x, y, 0.4), 18, 26), (disc(x, y, 0.2), 26, 31)]
+        # A hall with its fly tower and a colonnaded front, not a cake.
+        return [(rect(x, y + 0.1, 1.1, 0.7), 0, 22), (rect(x, y - 0.05, 0.6, 0.42), 22, 38),
+                (rect(x, y + 0.55, 1.2, 0.18), 0, 14)]
+    if name == "Wayne Manor":
+        # The house: a long main range, two wings, a tower at the centre, the
+        # conservatory and the garages off to one side.
+        return [(rect(x, y, 1.5, 0.42), 0, 16), (rect(x - 0.62, y + 0.36, 0.34, 0.9), 0, 14),
+                (rect(x + 0.62, y + 0.36, 0.34, 0.9), 0, 14), (square(x, y - 0.05, 0.3), 16, 26),
+                (rect(x + 1.25, y + 0.2, 0.55, 0.3), 0, 6), (rect(x - 1.1, y - 0.55, 0.6, 0.26), 0, 5)]
+    if name == "Drake Manor":
+        return [(rect(x, y, 0.9, 0.36), 0, 12), (rect(x + 0.35, y + 0.3, 0.3, 0.5), 0, 10)]
+    if name == "Falcone Estate":
+        return [(rect(x, y, 1.0, 0.5), 0, 13), (square(x - 0.55, y, 0.28), 0, 17),
+                (box(x - 1.2, y - 0.9, x + 1.2, y + 0.9).difference(box(x - 1.12, y - 0.82, x + 1.12, y + 0.82)), 0, 3)]
+    if name == "Gotham Stock Exchange":
+        return [(rect(x, y, 0.9, 0.62), 0, 34), (rect(x, y + 0.38, 0.9, 0.14), 0, 26)]
     if name == "Union Station":
         return [(rect(x, y, 1.45, 0.56), 0, 20), (rect(x, y, 1.45, 0.3), 20, 27)]
     if name == "Gotham University":
@@ -296,6 +377,10 @@ def landmark_shapes(name, x, y):
         return [(rect(x, y, 1.1, 0.34), 0, 40), (rect(x, y, 0.34, 1.0), 0, 40)]
     if name == "Gotham Power Station":
         return [(rect(x, y, 1.0, 0.6), 0, 24)] + [(disc(x - 0.3 + 0.3 * i, y - 0.55, 0.1), 0, 72) for i in range(3)]
+    if name == "The Funhouse":
+        # Squat and wide, with a pointed turret over the clown's-mouth door.
+        return [(rect(x, y, 0.95, 0.5), 0, 13), (rect(x - 0.12, y, 0.55, 0.36), 13, 18),
+                (square(x + 0.32, y, 0.2), 0, 26), (square(x + 0.32, y, 0.09), 26, 32)]
     if name == "Monarch Theatre":
         return [(rect(x, y, 0.72, 0.46), 0, 17)]
     return []
@@ -419,18 +504,21 @@ def build():
     lakes = [ellipse(lake["at"], lake["rx"], lake["ry"], 300 + i) for i, lake in enumerate(src["lakes"])]
     water_cut = unary_union(rivers + lakes)
 
-    island = landmass(src["coast"], 1)
-    others = {i["name"]: landmass(i["coast"], 10 + n) for n, i in enumerate(src["islands"])}
-    mainland = {m["name"]: landmass(m["coast"], 20 + n) for n, m in enumerate(src["mainland"])}
+    # Coasts with coves and headlands, not smooth outlines; the mainland rougher still.
+    island = landmass(src["coast"], 1, amp=0.8, levels=3)
+    others = {i["name"]: landmass(i["coast"], 10 + n, amp=0.45, levels=3) for n, i in enumerate(src["islands"])}
+    mainland = {m["name"]: landmass(m["coast"], 20 + n, amp=1.3, levels=3) for n, m in enumerate(src["mainland"])}
     island_land = island.difference(water_cut)
     land = unary_union([island_land] + [g.difference(water_cut) for g in others.values()]
                        + [g.difference(water_cut) for g in mainland.values()])
     for name, geom in [("Gotham", island_land), *others.items(), *mainland.items()]:
         add(geom.difference(water_cut), "land", n=name, k="mainland" if name in mainland else "island")
-    for river, spec in zip(rivers, src["rivers"], strict=True):
-        add(river.intersection(box(-400, -400, 400, 400)), "water", n=spec["name"])
+    # Rivers and lakes are where the land isn't: no outline of their own to
+    # cross the mouth of a river. Their names go on as labels.
     for lake, spec in zip(lakes, src["lakes"], strict=True):
-        add(lake, "water", n=spec["name"])
+        if spec["name"]:
+            c = lake.representative_point()
+            add(Point(c.x, c.y), "water_label", n=spec["name"], r=0, s=1)
 
     parks = [Polygon(chaikin(roughen(p["coast"], 400 + i, amp=0.35), 3)).buffer(0)
              for i, p in enumerate(src["parks"])]
@@ -440,23 +528,36 @@ def build():
     ds = src["districts"]
     island_ds = [d for d in ds if "limit" not in d and "city" not in d]
     island_names = {d["name"] for d in island_ds}
-    cells = shapely.voronoi_polygons(MultiPoint([tuple(d["at"]) for d in island_ds]),
-                                     extend_to=box(-60, -60, 200, 200))
-    areas = {}
-    for d in island_ds:
-        cell = next(c for c in cells.geoms if c.contains(Point(d["at"])))
-        areas[d["name"]] = cell.intersection(island_land)
+    areas = organic_cells(island_ds, island_land, 31)
+    # Arkham Island is the piece of land its asylum stands on, all of it.
+    seat = Point(island_ds[[d["name"] for d in island_ds].index("Arkham Island")]["at"])
+    arkham = next(p for p in polys_of(island_land) if p.buffer(0.01).contains(seat))
+    for name in list(areas):
+        if name != "Arkham Island":
+            areas[name] = areas[name].difference(arkham)
+    stray = areas["Arkham Island"].difference(arkham)
+    areas["Arkham Island"] = arkham
+    if not stray.is_empty:
+        nearest = min((d for d in island_ds if d["name"] != "Arkham Island"),
+                      key=lambda d: Point(d["at"]).distance(stray.centroid))
+        areas[nearest["name"]] = areas[nearest["name"]].union(stray)
+    def to_the_shore(edge, host):
+        """A town runs down to its own waterfront: the stretch of shore beside it is its."""
+        band = host.difference(host.buffer(-3.2))
+        grown = edge.union(band.intersection(edge.buffer(3.2)))
+        return grown.buffer(0.8).buffer(-0.8).intersection(host)
+
     blued = [d for d in ds if d.get("city") == "Blüdhaven"]
-    limits = Polygon(src["bluedhaven_limits"]).intersection(mainland["Gotham County"]).difference(water_cut)
-    bcells = shapely.voronoi_polygons(MultiPoint([tuple(d["at"]) for d in blued]),
-                                      extend_to=box(60, -80, 220, 60))
-    for d in blued:
-        cell = next(c for c in bcells.geoms if c.contains(Point(d["at"])))
-        areas[d["name"]] = cell.intersection(limits)
-    for d in ds:
+    # Blüdhaven spreads along its shore and frays at the edges, like Burnside.
+    limits = to_the_shore(Polygon(chaikin(roughen(src["bluedhaven_limits"], 33, amp=1.6, levels=3), 3)).buffer(0),
+                          mainland["Gotham County"]).difference(water_cut)
+    areas.update(organic_cells(blued, limits, 37))
+    for i, d in enumerate(ds):
         if "limit" in d:
             host = mainland["Burnside"] if d["name"] == "Burnside" else mainland["Gotham County"]
-            areas[d["name"]] = Polygon(chaikin(d["limit"], 2)).buffer(0).intersection(host).difference(water_cut)
+            # A town grows along the shore and thins at its edges: never a stamped shape.
+            edge = Polygon(chaikin(roughen(d["limit"], 60 + i, amp=1.0, levels=3), 3)).buffer(0)
+            areas[d["name"]] = to_the_shore(edge, host).difference(water_cut)
     for extra in ("The Narrows", "Blackgate Isle", "Paris Island", "Justice Island"):
         areas[extra] = others[extra]
     grid_of = {d["name"]: d for d in ds}
@@ -496,19 +597,21 @@ def build():
                         parks.append(spot)
                         park_names.append("")
                     break
-    parks.append(Polygon(chaikin([[-7, 3], [7, 2], [9, 15], [-6, 17]], 3)).buffer(0).difference(water_cut))
+    parks.append(Polygon(chaikin(roughen(src["estate"], 88, amp=0.6, levels=2), 3)).buffer(0).difference(water_cut))
     park_names.append("Wayne Estate")
     park_union = unary_union(parks)
     for p, name in zip(parks, park_names, strict=True):
-        add(p, "park", n=name)
+        add(p.difference(water_cut), "park", n=name)       # a lake in a park is water, not lawn
     for p in plazas:
         add(p, "plaza")
-    # Ponds in the bigger parks.
+    # Ponds in the bigger parks — never under a landmark.
+    standing = unary_union([t[0] for pl in src["places"] for t in landmark_shapes(pl["name"], pl["x"], pl["y"])]
+                           or [Point(0, 0)]).buffer(0.5)
     for i, p in enumerate(parks[:2]):
         c = p.representative_point()
         for k in range(2):
             pond = blob(c.x + pr.uniform(-2, 2), c.y + pr.uniform(-3, 3), pr.uniform(0.3, 0.6), 900 + i * 5 + k)
-            if p.buffer(-0.3).contains(pond) and not pond.intersects(water_cut):
+            if p.buffer(-0.3).contains(pond) and not pond.intersects(water_cut) and not pond.intersects(standing):
                 add(pond, "water", n="")
     plaza_union = unary_union(plazas)
 
@@ -560,18 +663,71 @@ def build():
                 spoke = LineString([(x0, y0), (rb["at"][0] + math.cos(a) * rb["r"] * 3.4,
                                                rb["at"][1] + math.sin(a) * rb["r"] * 3.4)])
                 named.append((spoke.intersection(land), "secondary", ""))
+    # Rail runs under the parks, not across them.
+    named = [(p, c, n) for ln, c, n in named
+             for p in (lines_of(ln.difference(park_union)) if c == "rail" else [ln]) if p.length > 0.2]
+    # A grid street that would run alongside an avenue for a stretch gives way
+    # to it: two roads drawn on top of each other read as a mess, not a city.
+    avenues = unary_union([ln for ln, c, _ in named if c in ("primary", "highway")] + secondary).buffer(0.32)
+    kept = []
+    for s_, c in streets:
+        inside = s_.intersection(avenues)
+        alongside = unary_union([p.buffer(0.05) for p in lines_of(inside) if p.length > 0.55])
+        for p in lines_of(s_.difference(alongside) if not alongside.is_empty else s_):
+            if p.length > 0.25:
+                kept.append((p, c))
+    streets = kept
+    # Gotham's one beach, under Amusement Mile: sand along the open shore (built on below).
+    fun = src.get("funfair")
+    sand = Point(0, 0).buffer(0)
+    if fun:
+        frame = Polygon(fun["beach"])
+        sand = island_land.difference(island_land.buffer(-fun["depth"])).intersection(frame)
+        sand = sand.buffer(0.15).buffer(-0.15)
     # Nothing drives straight across a roundabout: everything meets the ring.
-    holes = unary_union([junction(rb, 0.97) for rb in src.get("roundabouts", [])])
+    holes = unary_union([junction(rb, 0.97) for rb in src.get("roundabouts", [])] + [sand.buffer(0.05)])
     streets = [(p, c) for s, c in streets for p in lines_of(s.difference(holes).difference(plaza_union))
                if p.length > 0.2]
     secondary = [p for s in secondary for p in lines_of(s.difference(holes)) if p.length > 0.2]
     named = [(p, c, n) for ln, c, n in named
              for p in (lines_of(ln.difference(holes)) if n not in [rb["name"] for rb in src.get("roundabouts", [])]
                        else [ln]) if p.length > 0.15]
-    bridges = [(curve(b["line"], 2), b["name"]) for b in src["bridges"]]
+    bridges = [(span(curve(b["line"], 2), land), b["name"]) for b in src["bridges"]]
+    bridges = [(line, name) for line, name in bridges if line is not None]
 
+    # The sprawl: past the towns the mainland goes on — lanes and low houses
+    # thinning out into the dark, a city that doesn't stop at its limits.
+    towns = {n: a for n, a in areas.items() if n in outer}
+    town_union = unary_union(list(towns.values()))
+    open_land = unary_union([m.difference(water_cut) for m in mainland.values()])
+    airfield = Point(0, 0).buffer(0)
+    if src.get("airport"):
+        airfield = unary_union([Polygon(src["airport"]["apron"]).buffer(1.2)]
+                               + [LineString(rw).buffer(1.4) for rw in src["airport"]["runways"]])
+    fringe = (open_land.intersection(town_union.buffer(7.5)).difference(town_union.buffer(0.15))
+              .difference(park_union).difference(airfield))
+    lanes, lr, claimed = [], random.Random(1500), Point(0, 0).buffer(0)
+    for i, (name, area) in enumerate(towns.items()):
+        patch = fringe.intersection(area.buffer(7.5)).difference(claimed)
+        claimed = claimed.union(patch)
+        g = grid_of[name]
+        for line, _c in street_grid(patch, g["angle"] + lr.uniform(-25, 25), 2.3, 0.7, 1600 + i):
+            for part in lines_of(line):
+                far = part.centroid.distance(town_union)
+                if lr.random() < 1.05 - far / 7.5:          # thinner the further out
+                    lanes.append(part.simplify(0.03))
+
+    # Each bridge's ends run on to the nearest road, so nothing dead-ends at a bank.
+    network = unary_union([ln for ln, c, _ in named if c != "rail"] + secondary + [s for s, _ in streets])
+    for line, _name in list(bridges):
+        for end in (Point(line.coords[0]), Point(line.coords[-1])):
+            near = shapely.ops.nearest_points(end, network)[1] if not network.is_empty else None
+            if near is not None and 0.15 < end.distance(near) < 3.0:
+                named.append((LineString([end, near]), "primary", ""))
     for s, c in streets:
         add(s, "road", c=c)
+    for s in lanes:
+        add(s, "road", c="lane")
     for s in secondary:
         add(s, "road", c="secondary")
     for line, cls, name in named:
@@ -621,6 +777,26 @@ def build():
                     add(pier, "pier")
                 pos += r.uniform(0.8, 1.3)
 
+    # Container yards at the docks: their own ground, boxes stacked in rows.
+    yards = []
+    for i, yard in enumerate(src.get("yards", [])):
+        ground = blob(yard["at"][0], yard["at"][1], yard["r"], 1100 + i).intersection(land).difference(water_cut)
+        if ground.is_empty:
+            continue
+        yards.append(ground)
+        add(ground, "yard")
+        yr = random.Random(1200 + i)
+        minx, miny, maxx, maxy = ground.bounds
+        y = miny + 0.2
+        while y < maxy:
+            x = minx + 0.2
+            while x < maxx:
+                box_ = box(x, y, x + 0.34, y + 0.11)
+                if ground.buffer(-0.08).contains(box_) and yr.random() < 0.8:
+                    building(box_, yr.choice((3, 3, 6, 6, 9)), "~container")
+                x += 0.4
+            y += 0.2 + (0.35 if yr.random() < 0.18 else 0)       # the odd lane between rows
+    yard_union = unary_union(yards) if yards else Point(0, 0).buffer(0)
     # Landmarks first, so the blocks around them leave them room.
     places_by = {p["name"]: p for p in src["places"]}
     reserved = []
@@ -631,6 +807,47 @@ def build():
             building(shape, top, "~landmark", base=base)
         if tiers:
             reserved.append(unary_union([t[0] for t in tiers]).buffer(0.4))
+    # Amusement Mile: Gotham's one beach along the open shore, the boardwalk
+    # behind it, and on the Mile the big wheel and the old wooden coaster —
+    # built in the air, so in 3D the wheel stands up and the coaster climbs.
+    if fun:
+        add(sand, "beach")
+        # The boardwalk: the sand's landward edge, not its ends or the waterline.
+        walk = sand.boundary.difference(island_land.boundary.buffer(0.12)).difference(frame.boundary.buffer(0.12))
+        for part in lines_of(shapely.line_merge(walk) if walk.geom_type == "MultiLineString" else walk):
+            if part.length > 0.6:
+                add(part.simplify(0.02), "boardwalk")
+        wx, wy = fun["wheel"]
+        axis = math.radians(fun.get("wheel_axis", 0))
+        hub, radius = 36, 30                 # metres: hub height, rim radius
+        across = radius / 150                # map units (one is about 150 m)
+        for k in range(40):
+            a = k * 2 * math.pi / 40
+            cx, cy = wx + math.cos(axis) * math.cos(a) * across, wy + math.sin(axis) * math.cos(a) * across
+            z = hub + math.sin(a) * radius
+            if k % 4 == 0:
+                building(square(cx, cy, 0.034), z + 3, "~ride", base=z - 3)      # a gondola
+            else:
+                building(square(cx, cy, 0.016), z + 0.9, "~wheel", base=z - 0.9)  # the rim
+        building(square(wx, wy, 0.03), hub + 2, "~wheel")                         # the tower
+        building(disc(wx, wy, 0.045), hub + 2.5, "~ride", base=hub - 2.5)         # the hub
+        ox, oy = fun["coaster"]
+        track = []
+        for k in range(120):
+            t = k * 2 * math.pi / 120
+            track.append((ox + 1.35 * math.cos(t) + 0.32 * math.cos(3 * t), oy + 0.62 * math.sin(t) + 0.16 * math.sin(2 * t)))
+        for k in range(120):
+            t = k * 2 * math.pi / 120
+            z = 7 + 16 * max(0.0, math.sin(2 * t + 0.4)) + 9 * max(0.0, math.sin(3 * t - 1.1))   # hills and drops
+            seg = LineString([track[k], track[(k + 1) % 120]]).buffer(0.014, cap_style="flat")
+            building(seg, z + 0.8, "~ride", base=z - 0.8)
+            if k % 6 == 0:
+                building(square(track[k][0], track[k][1], 0.012), z - 0.8, "~wheel")    # a trestle
+        fair = unary_union([LineString(track + [track[0]]).buffer(0.35), Point(wx, wy).buffer(0.38),
+                            Point(*fun["funhouse"]).buffer(0.6)]).buffer(0.25).buffer(-0.25)
+        add(fair.difference(sand), "fair")
+        reserved += [fair.buffer(0.15), sand.buffer(0.1)]      # nothing built on the sand
+
     for line in elevated:
         # The skyway stands on piers above the street: a deck in the air.
         for part in lines_of(line.intersection(land)):
@@ -642,9 +859,10 @@ def build():
                        + [s.buffer(0.15, quad_segs=2) for s in secondary]
                        + [ln.buffer(0.24 if c == "highway" else 0.2 if c == "primary" else 0.15, quad_segs=2)
                           for ln, c, _ in named]
-                       + [ln.buffer(0.22) for ln, _ in bridges] + reserved + [plaza_union])
+                       + [ln.buffer(0.22) for ln, _ in bridges] + reserved + [plaza_union, yard_union])
     cores = src.get("cores", []) + [[d["at"][0], d["at"][1], 0.55, 2.6] for d in ds]
     count = 0
+    lots = []           # (district, centroid, height, area) — for venues and rooftops
     for i, (name, area) in enumerate(areas.items()):
         g = grid_of[name]
         r = random.Random(500 + i)
@@ -655,7 +873,8 @@ def build():
         for blk in polys_of(ground):
             if blk.area < 0.08:
                 continue
-            for lot in subdivide(blk, 0.6 if g["tall"] >= 30 else 0.45, r):
+            most = 1.6 if g.get("industrial") else 0.6 if g["tall"] >= 30 else 0.45
+            for lot in subdivide(blk, most, r):
                 foot = lot.buffer(-0.06, join_style="mitre")
                 for piece in polys_of(foot):
                     if piece.area < 0.05:
@@ -664,15 +883,103 @@ def build():
                     pull = 1 + sum(k * math.exp(-((c.x - cx) ** 2 + (c.y - cy) ** 2) / (rad * rad))
                                    for cx, cy, k, rad in cores)
                     h = g["tall"] * r.lognormvariate(0, 0.5) * pull
-                    if r.random() < 0.05:
+                    if r.random() < 0.05 and not g.get("industrial"):
                         h *= r.uniform(2.0, 3.6)            # the odd tower, anywhere
-                    building(piece.simplify(0.04), round(max(4, min(260, h))))
+                    if g.get("industrial"):
+                        h = r.choice((7, 9, 11, 14))        # sheds and works, not towers
+                    # Some windows lit, some dark: the city at night.
+                    h = round(max(4, min(260, h)))
+                    building(piece.simplify(0.04), h, "~lit" if r.random() < 0.14 else "")
+                    lots.append((name, piece.centroid, h, piece.area))
                     count += 1
+
+    # Houses along the lanes out in the sprawl: low, scattered, fewer the further out.
+    hr = random.Random(1700)
+    keep_clear = unary_union([cuts, park_union.buffer(0.1), water_cut.buffer(0.15), airfield,
+                              unary_union(lanes).buffer(0.1) if lanes else Point(0, 0).buffer(0)])
+    houses = 0
+    for lane in lanes:
+        far = lane.centroid.distance(town_union)
+        pos = hr.uniform(0.1, 0.4)
+        while pos < lane.length - 0.2:
+            a, b = lane.interpolate(pos), lane.interpolate(min(lane.length, pos + 0.05))
+            angle = math.degrees(math.atan2(b.y - a.y, b.x - a.x))
+            for side in (1, -1):
+                if hr.random() > 0.75 - far / 12:
+                    continue
+                nx, ny = -math.sin(math.radians(angle)) * side, math.cos(math.radians(angle)) * side
+                c = Point(a.x + nx * 0.27, a.y + ny * 0.27)
+                w, d_ = hr.uniform(0.16, 0.26), hr.uniform(0.12, 0.18)
+                house = affinity.rotate(box(c.x - w / 2, c.y - d_ / 2, c.x + w / 2, c.y + d_ / 2), angle, origin=c)
+                if open_land.contains(house) and not house.intersects(keep_clear):
+                    building(house, hr.choice((4, 4, 5, 6, 7, 9)), "~lit" if hr.random() < 0.18 else "")
+                    houses += 1
+            pos += hr.uniform(0.32, 0.55)
+
+    # On the roofs: water towers on the mid-rises, helipads on the tallest.
+    rr = random.Random(1300)
+    for _d, c, h, area in lots:
+        if 14 <= h <= 70 and area > 0.08 and rr.random() < 0.07:
+            building(disc(c.x + rr.uniform(-0.05, 0.05), c.y + rr.uniform(-0.05, 0.05), 0.055), h + 7, "~tank", base=h)
+    for _d, c, h, area in sorted(lots, key=lambda lot: -lot[2])[:36]:
+        if area > 0.12:
+            building(disc(c.x, c.y, 0.17), h + 0.8, "~pad", base=h)
+    # Building sites with their cranes, where the city is still growing.
+    growing = {"New Town", "Otisburg", "Burnside", "Central Business District", "Upper East Side", "Fashion District"}
+    sites = [lot for lot in lots if lot[0] in growing and lot[3] > 0.2]
+    for _d, c, _h, _a in rr.sample(sites, min(9, len(sites))):
+        add(disc(c.x, c.y, 0.32), "site")
+        mast, jib = rr.randint(60, 95), rr.uniform(0, 180)
+        building(square(c.x, c.y, 0.06), mast, "~crane")
+        boom = affinity.rotate(box(c.x - 0.25, c.y - 0.025, c.x + 0.95, c.y + 0.025), jib, origin=(c.x, c.y))
+        building(boom, mast - 2, "~crane", base=mast - 5)
+
+    # The life of the place: clubs and bars where the night is, diners
+    # everywhere, churches in the old quarters, fire stations, schools — each
+    # with a name, on a real lot.
+    venues_by = {
+        "club": (["The Laughing Fish", "The Stacked Deck", "Club Noir", "The Gilded Cage", "Neon Saint", "Babylon",
+                  "Low Tide", "The Rookery", "Sixth Sin", "Catacombs", "The Blue Mask", "Velvet Hour", "Static",
+                  "The Gutter", "Ace of Clubs", "Smoke & Mirrors", "The Pit", "Midnight Mass", "Grin", "The Aviary"],
+                 {"Crime Alley": 3, "The Bowery": 3, "Amusement Mile": 3, "Fashion District": 2, "Diamond District": 2,
+                  "Old Gotham": 2, "Chinatown": 1, "Burnside": 2, "Central Business District": 2, "New Town": 1}),
+        "bar": (["The Crooked Mile", "O'Malley's", "The Lantern", "Last Call", "The Drowned Man", "Kane's Tap",
+                 "The Iron Stool", "Dock 9", "The Rusty Anchor", "Gin Alley", "The Nightjar", "Bleak House",
+                 "The Wet Rat", "Shamrock", "The Corner Pocket", "Saint Mike's", "Copper Kettle", "The Hollow"],
+                {"Crime Alley": 2, "The Bowery": 2, "Tricorner": 2, "Old Gotham": 2, "Burnley": 2, "The Narrows": 2,
+                 "Robinsville": 1, "Chinatown": 1, "Waterloo Docks": 2, "Port's Park": 1, "Burnside": 2, "Ironworks": 1}),
+        "diner": (["Jackie's", "Sal's All-Night", "The Midnight Diner", "Dixon's", "Ma Gunn's", "The Blue Plate",
+                   "Rosie's", "Nite Owl", "Big Belly Burger", "Lucky Seven", "Harbor Grill", "Pearl's"],
+                  {"Old Gotham": 1, "Crime Alley": 1, "Upper West Side": 1, "Coventry": 1, "Chinatown": 1,
+                   "Burnley": 1, "Tricorner": 1, "City Hall District": 1, "Burnside": 1, "Halyard Square": 1,
+                   "Kane Heights": 1, "University District": 1}),
+        "church": (["St. Aidan's", "Our Lady of the Harbor", "St. Swithin's", "Holy Trinity", "St. Jude's",
+                    "Grace Chapel"], {"Old Gotham": 2, "Tricorner": 1, "Coventry": 1, "Burnley": 1, "Bristol": 1}),
+        "fire": (["Engine 9", "Engine 23", "Ladder 4", "Engine 41", "Ladder 17"],
+                 {"Old Gotham": 1, "New Town": 1, "Upper West Side": 1, "Robinsville": 1, "Burnside": 1}),
+        "school": (["Gotham Heights High", "Robinson Academy", "PS 117", "St. Mary's School", "Brentwood Prep"],
+                   {"Upper West Side": 1, "Coventry": 1, "Cherry Hills": 1, "Kane Heights": 1, "Bristol": 1}),
+    }
+    by_district = {}
+    for lot in lots:
+        by_district.setdefault(lot[0], []).append(lot)
+    vr = random.Random(1400)
+    for kind, (names, where) in venues_by.items():
+        pool = list(names)
+        vr.shuffle(pool)
+        for district, n in where.items():
+            for _ in range(n):
+                if not pool or not by_district.get(district):
+                    break
+                name, c, h, area = vr.choice(by_district[district])
+                add(Point(round(c.x, 2), round(c.y, 2)), "venue", n=pool.pop(), k=kind, a=district)
 
     # Trees, through the parks.
     trees = []
     tr = random.Random(77)
-    paths = unary_union([ln.buffer(0.16) for ln, c, _ in named if c in ("primary", "secondary")])
+    paths = unary_union([ln.buffer(0.22) for ln, c, _ in named] + [s_.buffer(0.18) for s_ in secondary]
+                        + [s_.buffer(0.14) for s_, _ in streets] + [ln.buffer(0.25) for ln, _ in bridges]
+                        + reserved)
     for park in polys_of(park_union):
         minx, miny, maxx, maxy = park.bounds
         step = 0.34

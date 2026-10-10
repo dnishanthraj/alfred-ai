@@ -1,673 +1,362 @@
-# WayneTech Console
-
-**Status:** `v0.10.0` — early, actively developed. See [CHANGELOG.md](CHANGELOG.md).
-
-A local, voice-driven console for macOS — speech in, a locally-run LLM (via
-[Ollama](https://ollama.com)) for thinking, and natural-sounding
-[ElevenLabs](https://elevenlabs.io) speech out, wrapped in a WayneTech-styled
-web interface. It is a phone book of characters — Alfred Pennyworth, Lucius Fox
-and Selina Kyle ship with it — each with their own voice, memory and life, and
-the console has a voice of its own for logging in and placing calls. Adding a
-character is a JSON profile.
-
-Everything but speech synthesis runs on your machine, and each contact keeps
-their own memory on disk.
-
-## Features
-
-- **A console, not a chat window** — contact directory, live status readouts, and a
-  radial spectrum ring driven by the real FFT of the voice currently speaking.
-- **Hold to talk, or type** — push-to-talk with barge-in (talk over a reply and
-  it stops); an ambient always-open mode is built but withheld from the interface.
-- **Speech that starts before the reply is finished** — sentences are synthesized as
-  the model writes them, several in flight at once, so audio begins in about half a
-  second rather than after the whole answer.
-- **Transcript in time with the voice** — words appear as they are spoken, not dumped
-  on screen before the first syllable.
-- **A directory of characters** — each contact has their own model, voice, sampling
-  parameters, availability, worked examples, and memory. Adding one is a JSON file.
-- **People with lives of their own** — each contact is online, idle, busy or
-  offline according to their day and to what you've asked of them; texts are read
-  and answered at that pace, in their own texting style; and they get in touch
-  first — reporting back, chasing a question, ringing you when they said they would.
-- **Local LLM reasoning** — entirely through [Ollama](https://ollama.com); no chat
-  transcript leaves your machine except the reply text sent to ElevenLabs.
-- **Speech-to-text on device** — [Whisper](https://github.com/openai/whisper) via
-  `mlx-whisper` on Apple Silicon, `faster-whisper` on CPU elsewhere.
-- **Short- and long-term memory** — recent turns plus an explicit "remember that…"
-  vault, per contact, with relevance retrieval once the vault grows.
-- **Search that runs before he can invent an answer** — a question that plainly
-  needs a current fact is looked up on the way in and he is handed what was
-  found, rather than being trusted to ask for it — a character asked to look
-  something up will happily explain why he cannot, and then guess. Opinions,
-  feelings, and anything about either of you never go to the web. He can still disbelieve the results, or
-  tell you to do your own homework. DuckDuckGo by default (no key needed); set
-  `BRAVE_API_KEY` for a real search API.
-- **He knows he is on a link, not in the room** — no offering you tea, no telling
-  you to sit down, no remarking on how you look. He has his own location, his own
-  evening and a terminal to look things up on; what he cannot do is see you.
-- **He will not invent your life** — anything about your day, your work or your
-  plans has to have been said by you or be in the vault, or he asks instead of
-  guessing. The worked examples that teach his voice are kept out of the
-  conversation entirely and labelled as fiction, because a model cannot tell a
-  sample turn from a real one and will otherwise recall them as your history.
-  His own side is unrestricted: what *he* has been doing is his to make up, and
-  nobody can be contradicted about their own afternoon.
-- **One character, several registers** — he banters when you are light, is dry
-  and brief in passing, and goes wholly serious the moment something is actually
-  wrong. The tone is decided per turn from what you just said and attached to it,
-  rather than set once and averaged into everything.
-- **He'll play along** — talk to him as Bruce Wayne and he plays the Alfred of
-  the cave, knowing all along it's you, and drops it the moment you do.
-- **He knows what is going on around you** — a live weather reading for where
-  you are, the headlines, and today's calendar, each fetched in the background
-  and handed to him with the time it was read. Opt-in, one line of `.env` each.
-  Anything else in the world is looked up when a question needs it.
-- **He knows what time it is, for both of you** — no suggesting bed at three in
-  the afternoon, and no greeting you for the wrong half of the day.
-- **Deterministic conversation guards** — anti-repetition, sign-off suppression,
-  physical-presence stripping, and length capping run in code rather than relying
-  on the model to police itself.
-
-## Requirements
-
-- macOS (uses `afplay` for playback and macOS Accessibility permissions for the global
-  hotkey listener — this project is not cross-platform as written)
-- Python 3.11 or 3.12 (not 3.13+ — several dependencies are wheel-only)
-- [Ollama](https://ollama.com) installed and running, with `gemma4:26b-a4b-it-qat`
-  pulled (15 GB; needs a 24 GB Mac) — or `gemma4:e4b` (6.6 GB) on a smaller one
-- An [ElevenLabs](https://elevenlabs.io) account and API key
-- A working microphone
-
-## Setup
-
-1. **Clone and install dependencies**
-
-   ```bash
-   git clone https://github.com/<your-username>/wayne-console.git
-   cd wayne-console
-   python3.11 -m venv venv       # 3.11 or 3.12 — see the note below
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-   > **Use Python 3.11 or 3.12, not 3.13+.** Several dependencies
-   > (`tokenizers`, `ctranslate2`, `mlx-whisper`) ship wheels only for those
-   > versions; on a newer interpreter pip falls back to building from source
-   > and the Rust build fails. A bare `python3` may well point at something
-   > newer, so name the version explicitly.
-
-2. **Pull the model — and decide who you are**
-
-   ```bash
-   ollama pull gemma4:26b-a4b-it-qat     # or gemma4:e4b on a 16 GB Mac
-   ```
-
-   You are Bruce Wayne. The console is a roleplay of Gotham, and who you are
-   lives in an **operator profile**,
-   [`wayne/operators/bruce.json`](wayne/operators/bruce.json): who Bruce is,
-   what each contact calls him ("Master Bruce", "Mr. Wayne", "old man"), and the
-   world — with every fact tagged by who knows it, so Selina can't let slip who
-   is under the Batwing mask because she was never told.
-
-   To be someone else, copy that file somewhere private, rewrite it about
-   yourself, and point `WAYNE_OPERATOR` at it in `.env`. Every contact follows,
-   because what they call you is part of your profile, not theirs. There is no
-   `ollama create`: profiles are read at startup and sent with each character.
-
-3. **Configure secrets and identity**
-
-   ```bash
-   cp .env.example .env
-   ```
-
-   Edit `.env`:
-
-   | Variable | Required | Description |
-   |---|---|---|
-   | `ELEVENLABS_API_KEY` | Yes | Your ElevenLabs API key |
-   | `ALFRED_VOICE_ID` | Yes | Voice ID from your ElevenLabs voice library |
-   | `WAYNE_OPERATOR` | No | Who you play: an operator profile id or path (default: `bruce`, see `wayne/operators/`) |
-   | `ALFRED_OLLAMA_MODEL` | No | Ollama model tag for Alfred (default: `gemma4:26b-a4b-it-qat`, from step 2) |
-   | `WAYNE_PASSCODE` | No | Lock-screen passcode (default: `zorro`). Theatre, not security |
-   | `WAYNE_WEB_PORT` | No | Console port (default: `8420`) |
-   | `WAYNE_PTT_KEY` | No | [pynput](https://pynput.readthedocs.io) key for `--cli` push-to-talk (default: `Key.cmd_r`) |
-   | `WAYNE_WHISPER_HINTS` | No | Comma-separated proper nouns to bias speech recognition |
-   | `WAYNE_CONTEXT_WINDOW` | No | Model context in tokens (default: `8192`). See [Latency](#latency) |
-   | `WAYNE_HISTORY_WORDS` | No | Conversation words sent to the model (default: `260`). The main latency dial |
-   | `WAYNE_TTS_MODEL` | No | ElevenLabs model (default: `eleven_v4_turbo`; `eleven_v4` is more expressive and ~0.5s slower to start) |
-   | `WAYNE_LOCATION` | No | Your town or city, for a live weather feed |
-   | `WAYNE_NEWS_FEED` | No | An RSS feed URL for headlines he has glanced at |
-   | `WAYNE_CALENDAR` | No | `1` to let him see today's and tomorrow's events in macOS Calendar |
-   | `WAYNE_INITIATIVE_PER_DAY` | No | Most unprompted texts a day, across everyone (default: `12`; `0` turns them off — promises are still kept) |
-   | `WAYNE_QUIET_HOURS` | No | Hours when nobody texts out of the blue (default: `1-8`) |
-   | `WAYNE_DATA_DIR` | No | Where memory lives (default: `data/`) — point it at a sandbox to experiment |
-
-   Display name, role, voice, and sampling parameters are per-contact and live in
-   [`wayne/contacts/profiles/alfred.json`](wayne/contacts/profiles/alfred.json).
-
-4. **Grant macOS permissions**
-
-   The web console needs only a **Microphone** permission, granted in the browser.
-   The terminal frontend (`--cli`) additionally needs **Accessibility** (or Input
-   Monitoring) for your terminal app, for the global push-to-talk hotkey. Grant it
-   in System Settings → Privacy & Security.
-
-5. **Run**
-
-   ```bash
-   python run.py            # web console at http://127.0.0.1:8420
-   python run.py --cli      # terminal console instead
-   ```
-
-   Or build a proper macOS app once:
-
-   ```bash
-   ./scripts/make_app.command
-   ```
-
-   That produces **WayneTech Console.app** — its own Dock icon, a window with no
-   tabs or address bar, its own browser profile. It starts Ollama and the server
-   if they aren't running, and stops the server when you quit. Open it once,
-   then right-click the Dock icon → Options → Keep in Dock.
-
-   > **You do not rebuild it when you change the code.** The bundle is a
-   > launcher that points at this directory — it contains no copy of the
-   > project — so Python changes take effect when you quit and reopen it, and
-   > front-end changes on a reload (asset URLs are stamped with a version that
-   > follows the files, so the browser cannot serve you a stale `app.js`).
-   > Editing a profile likewise just needs a restart. Re-run the script
-   > only if you **move the project**, since the path is baked into the launcher.
-
-   [`scripts/launch.command`](scripts/launch.command) still works if you'd
-   rather have a browser tab.
-
-## The console
-
-`python run.py` serves a local console at `http://127.0.0.1:8420` — a directory
-of contacts on the left, and the link itself in the middle: a radial spectrum
-ring driven by the real FFT of whoever is speaking. Nothing is exposed beyond
-`127.0.0.1`.
-
-On load you get a power-on self test and a passcode prompt. That screen is
-theatre, but it is also load-bearing: browsers keep an `AudioContext` suspended
-until the page receives a user gesture, so the console genuinely cannot come up
-without one. **The passcode is not security** — it is checked in the page, the
-server gates nothing on it, and it sits in plain text in `.env`. Don't put
-anything behind it that needs protecting.
-
-**Nobody is on the line until you call them.** Press **Call** and it rings —
-amber, pulsing, with a tone — until they pick up, at which point the instrument
-materialises and turns blue. Press **End** and it flashes red and dissolves.
-The ring is not only dressing: it covers the seconds the model spends loading,
-so the wait reads as a call connecting rather than software thinking about it.
-
-Click a contact's **name** to open their personnel file — who they are to you,
-in your own words, editable and saved per contact. Drop an image at
-`web/portraits/<id>.png` (`.jpg` and `.webp` work too) for a portrait; otherwise a
-silhouette stands in. No cropping needed — the slot frames to head-and-shoulders
-itself, so a full square render with air around the subject lands correctly. What
-you put there is gitignored, since a portrait is usually either personal or
-someone else's copyright. There is no
-transcript — only the last thing said to you stays on screen, alongside a quiet
-echo of what the console heard you say. A conversation held out loud does not
-need a log of itself, and a scrollback is the strongest possible reminder that
-you are typing at software.
-
-### Talking
-
-Speaking:
-
-- **Push** — hold the mic button, **Space**, or **Right Command**, speak,
-  release. Reliable in a noisy room.
-Ambient (always-listening) mode is built but **disabled in the interface**: the
-detector triggers on room noise and mis-hears often enough to derail a
-conversation. Push-to-talk is unambiguous, so it is the only mode until that is
-fixed.
-
-Also: type and press Enter, or press **Esc** to silence playback. Interrupting
-works — a new message stops him mid-sentence, and the line on screen stops
-where his voice did.
-
-### Silence and attention
-
-He breaks a silence himself after half a minute or so — briefly, generated in
-character so it differs every time, and never written to memory. The second
-check comes sooner than the first, and after that he closes the call rather
-than sitting on a dead line. Asking him for a minute buys you one; if *he* asks
-for a moment he takes it and comes back on his own.
-
-He also notices things a transcript would not: that you have said something
-three times now, that you have talked over him again, that you said it was
-urgent, or that something is actually wrong. Interrupting works — a new message
-stops the reply in flight rather than queueing behind it.
-
-A stack of guards runs on every reply before it is spoken, because the failures
-that break the illusion are specific and recurring: handing your own words back
-to you, greeting you twice, repeating himself, inventing a fact rather than
-looking it up, or promising to look and then not looking.
-
-### Their lives
-
-Every contact is doing something, and one state — what, and until when — drives
-everything about how they behave on their phone (see `wayne/engine/presence.py`):
-
-- **The dot** beside their name: green with the phone in hand, amber when it's
-  been put down, red in the middle of something, grey when it's out of reach —
-  with what they're doing ("On patrol in Blüdhaven", "Asleep").
-- **Texts** are read in seconds when they're online and stay online while you're
-  actively texting; in minutes when idle; between things, with a line rather than
-  an answer, when busy; and when they wake up if they're asleep. Delivered, Read,
-  typing, then the reply — sent as one composed message or three in a row, in
-  their own style: Dick's lowercase bursts, Barbara's exact punctuation, Jason's
-  "k", Lucius's rare and solemn thumbs-up.
-- **Calls** to someone busy ring longer, and they answer from where they are —
-  or don't: busy people decline, sleeping ones ring out, and they get back to
-  you when they're free, or not. Ringing straight back reads as urgent.
-- **Status lines** they write themselves, in their own voice. Jason and Selina
-  don't share theirs (`shares_status: false`), so their status reads unknown.
-- **Looking things up** follows the situation: only contacts with `can_search`
-  (Alfred, Lucius, Barbara) can, and only at a screen; only Alfred
-  (`sees_calendar`) sees your calendar.
-
-Three things set it, in order: what the conversation established, being mid-
-conversation with you, and their routine. Send Dick to the docks and he's busy
-for an hour — a short model pass after each exchange reads what was said (see
-`wayne/engine/initiative.py`). That same pass notices promises — "call me when
-you're done", "I'll let you know" — and keeps them: when the errand ends, Dick
-reports back by text, or rings. An incoming call can be answered or declined; a
-declined or missed call goes in the thread, and they may text instead. Either of
-you can end a call: when it has done its job, they say goodbye and hang up.
-
-The rest is life: a thought about something you talked about, something from
-their own day, something they heard from someone else, a question you left
-hanging. Budgeted — a handful a day across everyone, never two within the hour,
-none in your quiet hours, none from someone already waiting on you — so it reads
-as people rather than notifications.
-
-Hover a portrait for their status line, what they're doing and — for those who
-share it — where they are and who with. The map button opens Gotham itself
-(`web/js/gothammap.js`, MapLibre GL; the city built from `wayne/engine/gotham.json`
-by `scripts/build_map.py`, which needs `pip install shapely`): districts, streets,
-rivers, parks, 3D buildings and landmarks, everyone's portrait moving live, their
-recent trail, search, layers and pins of your own. Where someone is comes from what
-they're doing (`wayne/engine/places.py`): their plan's place, a spot on their
-beat while they patrol, or home. Jason, Selina and Randy don't share.
-
-### Lives of their own
-
-Each profile has `interests` — hobbies, games, viewing, music, reading, opinions
-— and the topics they `follows`. Idle, the console searches those topics as of
-today and keeps what each would have seen (`wayne/engine/culture.py`), so they
-stay current without anything being written in. It feeds what they text about,
-the days they plan, their statuses, and conversations about films, games, music,
-books or sport. Asked something factual away from a screen, they get the answer
-quietly, as something they might know.
-
-### Group chats
-
-Make a group of any of them from the directory (**+** under Groups). Each member
-reads it in their own time, decides whether to say anything, and may answer each
-other rather than you; anyone you name answers. Messages between them use up the
-thread's energy and yours restore it, so a chat drifts quiet the way a real one
-does. The group's log is the single record — what each member knows of it is
-what they've read, and it reaches them wherever they speak next, so Dick on a
-call can tell you what's been said in the group. With someone in it who doesn't
-know about the masks, the rest are told so. Type @ to tag a member (it pings
-them); double-click a message to react; they tag and react too. A late reply
-reads as one, a question nobody's read may get chased by someone who has, and
-a group call can carry on in the group afterwards. See `wayne/memory/groups.py`
-and `wayne/engine/groupchat.py`.
-
-### Group calls
-
-Ring a group from its chat (you and up to four; a bigger group lets you pick
-who), or add people one by one. Each has a seat — their ring, colour, name and
-words. Misses can dial back in, be texted on by someone on the call, or report
-back through them; anyone can ring someone else in, hang up, or leave, and the
-others react or don't. Pauses get filled — less each time — and now and then
-two people start at once and sort it out. See `wayne/engine/party.py`.
-
-### Hearing you
-
-Speech-to-text runs on `whisper-small.en`, chosen by measurement: ~0.2s on an
-M-series Mac, where a model four times the size was three times slower and no
-more accurate. The accuracy is instead in the hints — the console tells the
-decoder who is on the line and what was just said, which took word accuracy on
-hard audio from 83% to 100%. If a name is still coming out wrong, add it to
-`WAYNE_WHISPER_HINTS`.
-
-Whisper does not fail by going quiet — it fails by producing a confident
-sentence nobody said, which then steers the conversation somewhere it was never
-going. Its own uncertainty signals are passed to the contact, who asks rather
-than assumes when the audio was poor.
-
-### Feedback
-
-A voice assistant that listens while it speaks can hear itself: the reply
-leaves the speakers, the microphone picks it up, and it comes back as though
-you had said it — after which it answers itself, forever. Three things stop it:
-the browser's echo cancellation, a much higher detection threshold (plus a
-cooldown) while a reply is playing, and, as the last line of defence, a check
-that compares every *spoken* transcript against what was just said aloud and
-silently discards a match. Typed input is never subject to that check, so
-quoting a reply back deliberately still works.
-
-### Why it feels like a conversation
-
-Two things, both of which are about timing rather than the model:
-
-- **Sentences are synthesized as they are written.** The engine emits each
-  sentence the moment it is complete and several go to ElevenLabs at once, so
-  the first line is already playing while the rest is still being generated —
-  roughly half a second to first audio instead of waiting out the whole reply.
-- **The transcript is revealed in time with the speech.** Words appear as they
-  are spoken, spread across each clip's real duration. Printing the reply the
-  instant the model finishes reads as a chat log with a voice bolted on.
-
-### Memory
-
-Each contact keeps two kinds of memory under `data/<id>/`: the recent
-conversation, and a vault of facts you explicitly asked them to remember.
-
-Both record *when*. Vault facts are dated, because "I moved to London" means
-something different learned last week than learned two years ago, and the
-conversation is timestamped so a contact knows whether it has been ten minutes
-or three weeks — the difference between "Evening again" and "It's been a while."
-Timestamps are never sent to the model as data; they are turned into plain
-English first.
-
-- **"remember that …" / "note that …"** — stores a fact in that contact's vault.
-- **"forget that …"** — removes matching facts.
-- **"clear memory" / "protocol zero"** — wipes that contact's history and vault.
-
-To wipe it by hand, delete the files under `data/<contact>/` — for Alfred:
+<div align="center">
+
+# 🦇 WayneTech Console
+
+**Gotham, running on your Mac.**
+Call Alfred. Text Dick. Get left on read by Jason. Watch the city move on a live holographic map, and work the cases off the police scanner.
+
+![version](https://img.shields.io/badge/version-0.10.0-4fa8e0?style=flat-square)
+![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-0b1520?style=flat-square&logo=apple)
+![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-0b1520?style=flat-square&logo=python&logoColor=white)
+![model](https://img.shields.io/badge/LLM-local%20via%20Ollama-0b1520?style=flat-square)
+![license](https://img.shields.io/badge/license-MIT-0b1520?style=flat-square)
+
+<img src="docs/img/skyline.jpg" alt="Gotham's Diamond District in 3D on the console's map: towers, Wayne Tower's spire, the Clocktower, Robinson Park's trees" width="100%">
+
+</div>
+
+You're Bruce Wayne. The console is your phone: nine people who each have their own voice, memory, schedule and opinions of you, and a city that carries on whether or not you're watching. Everything except the voices runs on your machine: the model thinks locally through [Ollama](https://ollama.com), and [ElevenLabs](https://elevenlabs.io) does the speaking.
+
+> [!NOTE]
+> This is a hobby project and an ongoing experiment in making characters feel like people rather than chatbots. Nothing they say is scripted: their days, texts, moods, the dispatches on the scanner and how a case ends are all generated, inside rules that keep them consistent.
+
+<details>
+<summary><b>📖 Contents</b></summary>
+
+- [Meet the cast](#-meet-the-cast)
+- [What it does](#-what-it-does)
+- [Gotham, the map](#%EF%B8%8F-gotham-the-map)
+- [Things to try](#-things-to-try)
+- [Setup](#-setup)
+- [Keys](#%EF%B8%8F-keys)
+- [How it works](#-how-it-works)
+- [Making it yours](#-making-it-yours)
+- [Evaluation](#-evaluation)
+- [Development](#%EF%B8%8F-development)
+- [Notes and limitations](#-notes-and-limitations)
+
+</details>
+
+---
+
+## 🎭 Meet the cast
+
+| | Contact | Who they are to you | On the phone |
+|---|---|---|---|
+| 🎩 | **Alfred Pennyworth** | Raised you. Runs the Manor, and the case board. | "Master Bruce." Dry, brief, warm underneath. Sees everyone's location, like you. |
+| 🤸 | **Dick Grayson**, *Nightwing* | The first Robin. Blüdhaven's now. | Lowercase bursts, emoji, the one who checks in after a bad call. |
+| 🔍 | **Tim Drake**, *Robin* | The detective. | Methodical, dry, won't let you spiral. |
+| 💻 | **Barbara Gordon**, *Batgirl / Oracle* | A peer who commands. | Exact punctuation. Watches the scanner and the map. |
+| 🩰 | **Cassandra Cain**, *Orphan* | Reads bodies, not words. | Says little. Sees everything. |
+| 🔴 | **Jason Todd**, *Red Hood* | Came back angry. | "k". Doesn't share where he is. |
+| 🦅 | **Randy Wayne**, *Batwing* | Your son, estranged, flying alone. | Leaves you on read more often than not. |
+| 🏢 | **Lucius Fox** | Runs Wayne Enterprises; builds your toys. | "Mr. Wayne." A measured sentence, a firm ethical line. |
+| 🐈‍⬛ | **Selina Kyle**, *Catwoman* | Randy's mother. | Her own woman, on her own schedule. |
+
+Each one is a JSON profile in [`wayne/contacts/profiles/`](wayne/contacts/profiles/), and adding a tenth is a file, not a code change (see [Making it yours](#-making-it-yours)).
+
+## ✨ What it does
+
+<table>
+<tr><td width="50%" valign="top">
+
+### 📞 Calls
+- **Hold to talk** (the button or <kbd>Space</kbd>), or type. Talk over them and they stop.
+- **Speech starts in about half a second.** Sentences are voiced as the model writes them, and the words appear in time with the voice.
+- **A ring that means something.** It covers the model warming up; busy people decline, sleeping ones ring out, and they call you back.
+- **Group calls**, you plus four, each with a visualiser of their own. While you're ringing someone in, the others talk among themselves (*"why are you ringing him?"*). Late joiners get asked where they've been, people now and then talk over each other and sort it out, and you can leave from the end-call button.
+
+</td><td width="50%" valign="top">
+
+### 💬 Texts and group chats
+- **Read receipts at their pace.** Seconds if their phone's in hand, hours if they're on patrol, never if they're Randy in a mood. Typing dots, then one message or three in a row, in their own style.
+- **Left on read, chased, or ghosted**, depending on who it is.
+- **Group chats** that live without you. They answer each other, go quiet when everyone's asleep, chase a question nobody's read, and take a private aside to your DMs.
+- **@tags that ping.** `@Tim`, `@everyone`, and `@Bruce` lights up *your* screen with its own tone and badge.
+- **Emoji and reactions.** A picker in the composer, reactions from a hover button, and they sometimes answer a ❓ you leave on their message.
+
+</td></tr>
+<tr><td valign="top">
+
+### 🗓️ Their lives
+- **A day of their own**, planned each morning by the model: sleep, work, patrol, errands, a film they wanted to catch.
+- **Where they are** comes from what they're doing, and agrees for everyone. If Barbara's patrolling with Cass, they're in the same place on the map, on the hover card and in what they say.
+- **They get in touch first.** They report back when they said they would, check in when a call worried them, close a case and tell you how it went, or text because something reminded them of you.
+- **Hobbies that stay current.** What they follow is searched daily, so three months from now they've seen the new season too.
+
+</td><td valign="top">
+
+### 🚨 The city
+- **A police scanner** with a steady stream of reports drawn from each district's own trouble: Crime Alley far more than the Upper East Side, and three times busier at night. GCPD dispatches are written by the model, and some of them are as grim as Gotham gets.
+- **Cases.** Put someone on a report from the map, or just tell them in conversation. Whoever is near may take it on their own. They head there, talk about it, and close it when they say it's handled.
+- **Hearsay.** What one of them hears may reach another, with who said it.
+- **Secrets that stay secret.** Every fact about you is tagged with who knows it, so Lucius never learns who's under the Batwing mask.
+
+</td></tr>
+</table>
+
+## 🗺️ Gotham, the map
+
+Press <kbd>M</kbd>. Gotham is drawn from [`wayne/engine/gotham.json`](wayne/engine/gotham.json) by [`scripts/build_map.py`](scripts/build_map.py) and rendered with [MapLibre GL](https://maplibre.org) in the console's own palette, as a hologram of the city you can tilt into 3D.
+
+<div align="center">
+<img src="docs/img/city.jpg" alt="The whole of Gotham from above: the island, its districts and bridges, Blackgate Isle, Arkham Island in its channel, Burnside and the mainland" width="100%">
+</div>
+
+<table>
+<tr>
+<td width="50%"><img src="docs/img/funfair.jpg" alt="Amusement Mile in 3D: the beach and boardwalk, a pink roller coaster on trestles, the Ferris wheel standing up, the Funhouse"></td>
+<td width="50%"><img src="docs/img/bludhaven.jpg" alt="Blüdhaven from above: its river, the Central Business District's towers, the harbour piers, houses thinning out into the mainland"></td>
+</tr>
+<tr>
+<td><sub><b>Amusement Mile.</b> Gotham's one beach, the boardwalk, the big wheel and the coaster, built in the air so they stand up in 3D, and the Funhouse, which is never quite empty.</sub></td>
+<td><sub><b>Blüdhaven</b>, across the water: its harbour, its towers, and the sprawl thinning out into the mainland.</sub></td>
+</tr>
+</table>
+
+<details>
+<summary><b>Everything that's on it</b></summary>
+
+- **The people.** Everyone who shares their location appears as their portrait, moving live, with the trail of where they've been tonight. Click one to follow them.
+- **Eighty-odd places**, each with a bio, and **a note from Bruce** about it ("Every time we clear it out, someone moves back in.").
+- **Districts and how safe they are.** Turn on the safety layer for a heat map of the city's trouble.
+- **The scanner** on the map: pulsing warnings, severity from amber to red, the dispatch on hover, and who's on it. Assign someone straight from the card.
+- **The city itself:**
+  - roads in a real network (the Skyway on its piers, roundabouts, a star junction);
+  - three subway lines, ferries, and the airport;
+  - container yards at the docks, cranes over building sites, water towers and helipads on the roofs;
+  - clubs, bars, diners, churches, fire stations and schools, each named;
+  - lit windows, and terrain you can see in 3D.
+- **At night**, the Bat-Signal over GCPD.
+- **Search** (<kbd>/</kbd>) for people, places, pins and reports. Use **Layers** to toggle what's drawn, and right-click to drop **pins** of your own.
+
+The map's data is generated, not hand-drawn. To change Gotham, edit `gotham.json` and rebuild (see [Development](#%EF%B8%8F-development)).
+
+</details>
+
+<div align="center">
+<img src="docs/img/docks.jpg" alt="Tricorner and the Gotham Docks in 3D: container stacks in amber and steel, piers reaching into the water, the Naval Yard" width="100%">
+</div>
+
+## 🎯 Things to try
+
+Tick them off as you go.
+
+- [ ] Ask Alfred where everyone is tonight.
+- [ ] Text Dick something worrying, then don't reply. See who checks in later.
+- [ ] Make a group chat with Dick and Randy, and ask Dick in your DM to say something in it.
+- [ ] `@everyone` the group at 3am.
+- [ ] Put Tim on the worst report on the scanner, then call him and ask how it's going.
+- [ ] Ring Cass and add Jason to the call while it's ringing.
+- [ ] React ❓ to one of Barbara's texts.
+- [ ] Ask Lucius what he's watching this week.
+- [ ] Open the map at night and find the Bat-Signal.
+- [ ] Take the 3D view down to Amusement Mile.
+
+## 🚀 Setup
+
+**You'll need:**
+- a Mac with Apple Silicon (24 GB for the default model, 16 GB for the small one);
+- Python 3.11 or 3.12;
+- [Ollama](https://ollama.com);
+- an [ElevenLabs](https://elevenlabs.io) API key;
+- a microphone.
 
 ```bash
-rm data/alfred/history.json    # the conversation; safe to delete any time
-rm data/alfred/vault.txt       # long-term facts he was told to remember
-rm data/alfred/bio.txt         # your edits to his dossier card
-rm -rf data/                   # everything, for every contact
+git clone https://github.com/<your-username>/wayne-console.git
+cd wayne-console
+python3.11 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+
+ollama pull gemma4:26b-a4b-it-qat     # or gemma4:e4b on a 16 GB Mac
+cp .env.example .env                  # add your ElevenLabs key and voice IDs
+python run.py                         # → http://127.0.0.1:8420   (passcode: zorro)
 ```
 
-Only `history.json` is the running conversation — deleting it starts him fresh
-without losing what he has been told to remember. The whole directory is
-gitignored and is recreated on the next launch, so there is nothing to restore.
-Do it with the server stopped, or it will write the in-memory copy back out.
+> [!IMPORTANT]
+> **Use Python 3.11 or 3.12, not 3.13+.** `tokenizers`, `ctranslate2` and `mlx-whisper` ship wheels only for those versions, and on a newer interpreter pip tries to build them from source and fails.
 
-Memory is encrypted at rest when `WAYNE_MEMORY_KEY` is set:
+> [!TIP]
+> **Make it an app:** `./scripts/make_app.command` builds **WayneTech Console.app**, with its own Dock icon and a window with no browser chrome. It starts Ollama and the server for you. It's a launcher that points at this folder, so code changes take effect when you reopen it; you only rebuild it if you move the project.
 
-```bash
-python run.py --new-key      # prints a key to paste into .env
-```
+<details>
+<summary><b>⚙️ All the settings (<code>.env</code>)</b></summary>
 
-Existing plaintext memory keeps working and is re-encrypted as it is next
-written. This is real encryption, unlike the lock screen — but the key lives in
-`.env` beside the data, so it protects against casual reading, backups and sync
-clients, not against someone who already has your `.env`. **Lose the key and
-the memory is unreadable.**
-
-### When the voice fails
-
-If ElevenLabs is unreachable, out of quota, or unconfigured, the console does
-not show a stack trace. The voice link degrades and the contact carries on in
-text. The reply still reaches the screen — the page renders any sentence that
-never got audio.
-
-### Terminal
-
-`python run.py --cli` keeps the original push-to-talk behaviour, which works
-with the window unfocused (it needs macOS Accessibility permission for the
-global hotkey; the web console needs only a microphone permission).
-
-## Contacts
-
-The console is a phone book, not a single assistant. Nine contacts ship:
-
-| Contact | Who | Voice variable |
+| Variable | | What it does |
 |---|---|---|
-| **Alfred Pennyworth** | The butler who raised him — dry, British, warm underneath | `ALFRED_VOICE_ID` |
-| **Dick Grayson** | Nightwing — the first Robin; warm, quick, the one everyone calls | `NIGHTWING_VOICE_ID` |
-| **Tim Drake** | Robin — the detective; methodical, dry, won't let him spiral | `ROBIN_VOICE_ID` |
-| **Barbara Gordon** | Batgirl and Oracle — a peer who commands; won't be pushed | `BATGIRL_VOICE_ID` |
-| **Cassandra Cain** | Orphan — raised to read bodies, not words; says little, sees everything | `ORPHAN_VOICE_ID` |
-| **Jason Todd** | Red Hood — came back angry, reads everything, protects kids | `REDHOOD_VOICE_ID` |
-| **Randy Wayne** | Batwing — Bruce and Selina's son, Robin after Jason, now flying alone and estranged | `BATWING_VOICE_ID` |
-| **Lucius Fox** | Wayne Enterprises' engineer-CEO — calm, wry, a firm ethical line | `LUCIUS_VOICE_ID` |
-| **Selina Kyle** | Catwoman — a self-made thief from the East End; Randy's mother | `CATWOMAN_VOICE_ID` |
+| `ELEVENLABS_API_KEY` | **required** | Your ElevenLabs key. Without it, everyone still works, in text. |
+| `ALFRED_VOICE_ID`, `NIGHTWING_VOICE_ID`, … | per contact | A voice from your ElevenLabs library. A contact without one works in text. |
+| `WAYNE_OPERATOR` | `bruce` | Who you play: an operator profile id or path (see [Making it yours](#-making-it-yours)). |
+| `ALFRED_OLLAMA_MODEL` | `gemma4:26b-a4b-it-qat` | The model everyone shares. |
+| `WAYNE_PASSCODE` | `zorro` | The lock screen's passcode. Theatre, not security. |
+| `WAYNE_WEB_PORT` | `8420` | The console's port. It only listens on `127.0.0.1`. |
+| `WAYNE_DATA_DIR` | `data/` | Where memory lives. Point it at a scratch folder to experiment. |
+| `WAYNE_MEMORY_KEY` | — | Encrypts memory at rest. `python run.py --new-key` prints one. Lose it and the memory is unreadable. |
+| `WAYNE_INITIATIVE_PER_DAY` | `12` | Most unprompted texts a day, across everyone. `0` turns them off (promises are still kept). |
+| `WAYNE_QUIET_HOURS` | `1-8` | Hours when nobody texts out of the blue. |
+| `WAYNE_HISTORY_WORDS` | `260` | Conversation words sent to the model: the main latency dial. |
+| `WAYNE_CONTEXT_WINDOW` | `8192` | Model context in tokens. |
+| `WAYNE_TTS_MODEL` | `eleven_v4_turbo` | `eleven_v4` is more expressive and about 0.5s slower to start. |
+| `WAYNE_WHISPER_HINTS` | — | Comma-separated names to help speech recognition. |
+| `WAYNE_LOCATION`, `WAYNE_NEWS_FEED`, `WAYNE_CALENDAR` | — | Opt-in feeds: weather, headlines, and (for Alfred) your macOS calendar. |
+| `BRAVE_API_KEY` | — | A real search API. DuckDuckGo is used without one. |
+| `WAYNE_PTT_KEY` | `Key.cmd_r` | Push-to-talk key for the terminal frontend (`--cli`). |
 
-Each is a JSON profile in [`wayne/contacts/profiles/`](wayne/contacts/profiles/)
-with its own memory under `data/<id>/`. A contact without a voice ID still
-works, in text. All of them share one model, so switching does not load a
-second. Call them, put up to four on one call, or text them — texts land in the
-same memory as calls. What one hears may reach another, as hearsay, with who
-said it (see `wayne/engine/grapevine.py`).
+</details>
 
-Adding one is a file, not a code change. The fields that matter:
+<details>
+<summary><b>🧠 Running the model well on 24 GB</b></summary>
 
-- **`system`** — the character, as a list of paragraphs: who they are, their
-  temperament, what the operator is to them, their own life, their lines. Written
-  as a person, not a list of prohibitions.
-- **`system_file`** — optional extra files read at startup and appended to the
-  character, for anything you'd rather keep out of the committed profile. Who the
-  user is — and what each contact calls him — lives in the operator profile.
-- **`primer`** — worked examples, sent as a labelled script inside the system
-  prompt, never as turns (a model cannot tell a sample turn from a real one).
-  Varied in length and register; never the same as an evaluation scenario.
-- **`own_life`** — corners of their own life a silence can be broken from.
-- **`deflections`** — last-resort lines when two attempts in a row echo him.
-- **`judge`** — one sentence telling the evaluation judge who this should be.
-- **`forbidden_address`** — enforced in code, because one "lad" undoes a great
-  deal of careful prompting.
-- **`availability`** — `always`, or `hours` (which may run past midnight).
-- **`order`** and **`group`** — position and heading in the console's directory.
-- **`speech_length`** — how long they speak on a call, as a spread each turn is
-  drawn from (Jason mostly a few words; Lucius a measured sentence or two), moved
-  by what was said and held to it in code.
-- **`texting`** — how they write a text message, described for the model.
-- **`texting_style`** — the habits enforced in code: chance of all lowercase,
-  dropping the last full stop, sending several messages, keeping an emoji.
-- **`texting_primer`** — worked examples of their texts, used in place of the
-  call primer when the reply is a text.
-- **`texting_pace`** — how soon they read when online, idle or busy, how fast
-  they type, how much of their free time the phone is in their hand.
-- **`routine`** — their day: asleep, at work, on patrol — each block with the
-  status it gives them and the chance it happens on a given day.
-- **`initiative`** — how often they text unprompted, whether they chase an
-  unanswered question, how likely they are to answer a call by status, whether
-  they text after declining and call or text back later.
-- **`sees_calendar`**, **`search_aloud`**, **`shares_status`** — who sees your
-  calendar, who says so when looking something up, who shows what they're doing.
-
-The relationship in the operator's own words — the bio in the console's personnel
-file — rides in the prompt too, so editing it there changes how they treat him.
-Each contact also gets `eval/scenarios/<id>.json`, marked alongside the common
-scenarios (see [Evaluation](#evaluation)).
-
-## Latency
-
-Measured on an M4 Pro (24 GB) with `scripts/bench_model.py`, which runs the real
-engine — persona, primer, guards, search — over a scripted conversation without
-touching memory. The number is time to the first sentence, which is when speech
-synthesis starts:
-
-| Model | First sentence (median) | Verdict |
-|---|---|---|
-| `gemma4:26b-a4b-it-qat` | **0.84s** | Default. Best character by a distance; 4B active parameters, so fast |
-| `gemma4:e4b` | 0.66s | Fallback for smaller Macs; flatter, a little harsh |
-| `gemma4:12b` (MLX) | 1.61s | Good voice, uneven latency |
-| `qwen3.5:9b` | 2.02s | Re-reads the whole prompt every turn (below); invents the most |
-| `gemma4:12b` | 2.62s | 13 tok/s on the llama.cpp path |
-| `gpt-oss:20b` | 0.95s | Fast, but leaks fragments ("Done.Got it.") and isn't a character |
-
-Run it yourself after changing anything: `venv/bin/python scripts/bench_model.py <model>`.
-
-**The architecture of the model matters more than its size.** `qwen3.5` is a
-hybrid with recurrent layers, which cannot resume from a cached prompt — so its
-~2,400-token prefix was read from scratch on every turn, 1.6s before a word. A
-conventional transformer reuses the cached prefix and reads the same prompt in a
-fifth of a second, which is why a 26B mixture-of-experts answers faster than a 9B
-hybrid. The prompt is laid out for that cache: everything stable comes first,
-and only the per-turn reference block (time, feeds, search results) changes.
-
-The rest of the pipeline:
-
-- **Speech** — ElevenLabs over its streaming endpoint, one sentence at a time,
-  several in flight. Per sentence: `eleven_v4_turbo` ~0.55s, `eleven_v4` ~1.0–1.4s,
-  `eleven_turbo_v2_5` ~0.35s. The connection is pooled, so the TLS handshake is
-  paid once rather than per sentence. The page prefetches and decodes each clip
-  as it is queued, so sentences play back to back.
-- **The ring** — a call's greeting is generated and voiced while the line rings,
-  so he speaks the moment he picks up.
-- **Interruptions stop the model.** Talking over him closes the stream, which
-  stops Ollama; the next turn no longer waits behind a reply nobody will hear.
-  Replies that reach the sentence cap stop being read the same way.
-- **The history window moves in steps.** It is trimmed with headroom, so its
-  opening — the start of what the cache can reuse — holds still for several
-  turns rather than shifting every turn.
-- **Ambient feeds never block.** Weather, headlines and calendar refresh on
-  background threads; a turn reads whatever is cached.
-- **`WAYNE_HISTORY_WORDS`** (default `260`), **`WAYNE_CONTEXT_WINDOW`**
-  (default `8192`) and **`WAYNE_MODEL_KEEP_ALIVE`** (default `1h`) are the dials.
-  The server warms the model with the real prompt prefix at startup, so the
-  first reply is not the one that pays for loading.
-
-If you use a **reasoning model** (the qwen3 family, deepseek-r1, gpt-oss), set
-`"think": false` in that contact's profile. Left on, they spend their whole
-budget on reasoning tokens, emit no speakable content, and appear to hang.
-
-### Memory
-
-A 15 GB model on a 24 GB Mac leaves little room. Gemma's sliding-window
-attention makes Ollama keep context checkpoints (200 MB each, up to 32) for
-every parallel request slot, and with the defaults the model server grew to
-25 GB and everything slowed to a crawl in swap. Run Ollama with:
-
-    launchctl setenv OLLAMA_NUM_PARALLEL 1
-    launchctl setenv OLLAMA_FLASH_ATTENTION 1
-    launchctl setenv OLLAMA_KV_CACHE_TYPE q8_0
-
-then restart Ollama. The app built by `scripts/make_app.command` sets these
-before it starts Ollama. Don't run the evaluation while you're using the
-console: two processes on one model on this much memory is what made replies
-take twenty seconds.
-
-## Evaluation
-
-Changes to a character, the prompt or the engine are measured, not eyeballed.
-[`eval/rubric.md`](eval/rubric.md) is the marking scheme;
-[`eval/scenarios/`](eval/scenarios) holds the situations — `common.json` and
-`texts.json` for everyone, plus one file per contact.
+Gemma's sliding-window attention makes Ollama keep large context checkpoints for every parallel slot. With the defaults, the model server grew to 25 GB and everything crawled in swap. Run Ollama with:
 
 ```bash
-venv/bin/python scripts/evaluate.py --cast --save before       # the whole cast, quick tier
-venv/bin/python scripts/evaluate.py --cast --compare before    # after a change: head to head
-venv/bin/python scripts/evaluate.py --contact orphan --tier full
-venv/bin/python scripts/evaluate.py --cast --voice             # also check each voice
+launchctl setenv OLLAMA_NUM_PARALLEL 1
+launchctl setenv OLLAMA_FLASH_ATTENTION 1
+launchctl setenv OLLAMA_KV_CACHE_TYPE q8_0
 ```
 
-Every scenario runs through the real engine from an empty history, nothing
-written to memory, on a call or by text. It's marked by automatic checks, by a
-judge model that knows how each character talks (and that a fitting short reply
-is right), and — with `--compare` — head to head against the last run, both
-orders, with a sign test saying better, worse or no clear change. `--cast` adds
-a shared call to everyone: how long each talks against their profile, and how
-alike any two sound, with the lines they both said. Results go to
-`eval/results/` (gitignored) as JSON and a Markdown report.
+The app built by `make_app.command` sets these for you. Measured on an M4 Pro, the first sentence arrives in about 0.84s with `gemma4:26b-a4b-it-qat` (the default, and the best character by a distance) and 0.66s with `gemma4:e4b`. Run `venv/bin/python scripts/bench_model.py <model>` to measure your own.
 
-Run it when nobody is using the console: on a 24 GB Mac, two processes on one
-model slow both to a crawl.
+If you try a reasoning model (qwen3, deepseek-r1, gpt-oss), set `"think": false` in the profile, or it spends its whole budget thinking and never speaks.
 
-## Project structure
+</details>
+
+## ⌨️ Keys
+
+| | |
+|---|---|
+| <kbd>Space</kbd> (hold) | Talk |
+| <kbd>Enter</kbd> | Send what you typed |
+| <kbd>Esc</kbd> | Stop playback · close the map · close a picker |
+| <kbd>M</kbd> | Open the map |
+| <kbd>/</kbd> | Search the map |
+| <kbd>@</kbd> | Tag someone (in a group, `@everyone` too) |
+| Double-click a message | React |
+| Right-click the map | Drop a pin |
+
+## 🔧 How it works
+
+```mermaid
+flowchart LR
+    you([🎙️ you]) -->|push to talk| stt[Whisper<br/>on device]
+    stt --> session
+    typed([⌨️ typed]) --> session
+    subgraph engine [the engine]
+      session[session<br/>who, where, what they know] --> llm[(Ollama<br/>local model)]
+      llm --> guards[guards<br/>repetition · address · length]
+    end
+    guards -->|sentence by sentence| tts[ElevenLabs]
+    tts --> ring([🔊 their voice])
+    guards --> text([💬 their text])
+```
+
+A conversation is one engine for calls, texts and the terminal alike. It never prints or plays anything: it yields events, and each frontend decides how to show them. Around it:
+
+| | |
+|---|---|
+| [`presence.py`](wayne/engine/presence.py) | What each of them is doing, where, and with whom. One state drives the status dot, how fast they read, whether they answer, and what they're in the middle of when you call. |
+| [`initiative.py`](wayne/engine/initiative.py) | The pass after every conversation: what they're off to do, promises to keep, whether they're worried about you, whether a case is closed. Also their morning plans and status lines. |
+| [`places.py`](wayne/engine/places.py) · [`gotham.json`](wayne/engine/gotham.json) | The gazetteer: where "the docks" or "home" actually is, beats to patrol, the shape of the city. |
+| [`incidents.py`](wayne/engine/incidents.py) · [`cases.py`](wayne/engine/cases.py) | The scanner (the same moment always gives the same reports, so the map, the patrols and the people on comms agree) and the cases taken from it. |
+| [`groupchat.py`](wayne/engine/groupchat.py) · [`party.py`](wayne/engine/party.py) | Who answers in a group and when it goes quiet; who speaks next on a group call. |
+| [`culture.py`](wayne/engine/culture.py) · [`grapevine.py`](wayne/engine/grapevine.py) | What they've been watching and following; what one heard from another. |
+| [`guards.py`](wayne/engine/guards.py) | The failures that break the illusion, caught in code: echoing you, repeating themselves, a forbidden form of address, a monologue. |
+
+<details>
+<summary><b>A few of the details that make it feel real</b></summary>
+
+- **The ring covers the load.** A call's greeting is generated and voiced while it rings, so they speak the moment they pick up.
+- **They know they're on a link.** No offering you tea, no telling you to sit down. They can't see you.
+- **They won't invent your life.** Anything about your day has to have been said by you or remembered; their own afternoon is theirs to make up.
+- **Whisper's confident mistakes are caught.** Low-confidence audio is flagged to the contact, who asks rather than assumes.
+- **The voice can't hear itself.** Echo cancellation, a higher threshold while a reply plays, and a final check that discards a transcript matching what was just said aloud.
+- **Memory knows when.** Facts are dated and the conversation timestamped, so "it's been a while" means something.
+- **If the voice fails**, the link degrades and they carry on in text. No stack traces.
+
+</details>
+
+<details>
+<summary><b>🗂️ Project layout</b></summary>
 
 ```
 wayne-console/
-├── run.py                        # entry point — web console, --cli, --list
-├── pyproject.toml
+├── run.py                       # web console (default), --cli, --list, --new-key
 ├── wayne/
-│   ├── config.py                 # console-wide settings from .env
-│   ├── paths.py                  # project-root-anchored locations
-│   ├── events.py                 # event vocabulary shared by every frontend
-│   ├── contacts/
-│   │   ├── profile.py            # Contact, Availability, the directory
-│   │   └── profiles/*.json       # one file per character
-│   ├── operator.py               # who the user plays, and who knows what
-│   ├── operators/bruce.json      # the default operator profile
-│   ├── engine/
-│   │   ├── session.py            # one conversation: streaming, sentences, turns
-│   │   ├── party.py              # calls with more than one contact
-│   │   ├── presence.py           # what each contact is doing; their intentions
-│   │   ├── initiative.py         # afterthoughts, impulses, texting style
-│   │   ├── groupchat.py          # who knows what in a group, who answers, going quiet
-│   │   ├── grapevine.py          # what one hears, another may hear of
-│   │   ├── world.py              # weather, headlines, calendar
-│   │   ├── guards.py             # deterministic post-processing (pure functions)
-│   │   ├── prompting.py          # context assembly, primer, speech constraints
-│   │   └── search.py             # search routing + lookup
-│   ├── memory/
-│   │   ├── history.py            # short-term conversation, per contact
-│   │   ├── texts.py              # the long-term text thread, per contact
-│   │   ├── groups.py             # group chat logs and who has read what
-│   │   ├── vault.py              # long-term facts + relevance retrieval
-│   │   └── store.py              # atomic, encrypted writes
-│   ├── audio/
-│   │   ├── stt.py                # capture + Whisper transcription
-│   │   └── tts.py                # ElevenLabs synthesis + local playback
-│   └── frontends/
-│       ├── cli.py                # terminal (ANSI + afplay)
-│       ├── web.py                # FastAPI + WebSocket
-│       └── groupchats.py         # group chats run in time, mixed into the console
-├── web/                          # the console: no build step, no node toolchain
-│   ├── index.html
-│   ├── css/console.css
-│   └── js/{app,audio,mic,boot,system,tones,visualizer}.js
-├── tests/
-├── data/<contact>/               # per-contact memory (gitignored)
-└── scripts/launch.command
+│   ├── contacts/profiles/*.json # the cast
+│   ├── operators/bruce.json     # who you play, and who knows what about you
+│   ├── engine/                  # session, presence, initiative, party, groupchat,
+│   │                            # places, incidents, cases, culture, grapevine,
+│   │                            # guards, prompting, search, world
+│   ├── memory/                  # history, texts, groups, vault, encrypted store
+│   ├── audio/                   # Whisper in, ElevenLabs out
+│   └── frontends/               # web (FastAPI + WebSocket), groupchats, cli
+├── web/                         # the console: no build step, no node
+│   ├── js/                      # app, gothammap, audio, mic, tones, visualizer…
+│   ├── map/                     # built city, buildings, trees, terrain tiles, fonts
+│   └── vendor/maplibre/         # MapLibre GL (BSD-3)
+├── scripts/                     # build_map, evaluate, bench_model, make_app
+├── eval/                        # rubric and scenarios
+└── tests/
 ```
 
-The engine never prints and never plays audio — it yields the events in
-`events.py`, and a frontend decides how to render them. That is what lets the
-terminal and the browser share one conversation implementation, and it is the
-seam a phone client would plug into: it would consume the same `/ws` stream and
-`/api/audio` endpoints the web console already uses.
+</details>
 
-## Development
+## 🧬 Making it yours
+
+**Be someone else.** Who you are lives in an operator profile, [`wayne/operators/bruce.json`](wayne/operators/bruce.json): your story, what each contact calls you ("Master Bruce", "Mr. Wayne", "old man"), and the world, with every fact tagged by who knows it. Copy it somewhere private, rewrite it, and point `WAYNE_OPERATOR` at it. Every contact follows.
+
+**Add someone.** Drop a JSON file in `wayne/contacts/profiles/`, and add a portrait at `web/portraits/<id>.png` if you like. Portraits are gitignored, since they're usually personal or someone else's copyright.
+
+<details>
+<summary><b>The profile fields that matter</b></summary>
+
+| Field | |
+|---|---|
+| `system` | The character, as paragraphs: who they are, their temperament, what you are to them. Written as a person, not a list of rules. |
+| `primer`, `texting_primer` | Worked examples, sent as a labelled script, never as turns (a model can't tell a sample turn from a real one). |
+| `speech_length` | How long they talk on a call, as a spread each turn is drawn from. |
+| `texting`, `texting_style`, `texting_pace` | How they write, the habits enforced in code (lowercase, dropped full stops, bursts, emoji), and how fast they read and type. |
+| `routine`, `initiative` | Their fallback day, and how often they reach out, chase, answer, call back. |
+| `home`, `beat`, `shares_location`, `shares_status` | Where they live, where they patrol, and what you get to see. |
+| `sees_whereabouts`, `can_search`, `sees_calendar` | Alfred and Barbara see the tracker and the scanner; some can look things up at a screen. |
+| `interests` | Pastimes, games, what they watch and read, their takes, and what they `follows` (searched daily to keep them current). |
+| `forbidden_address` | Enforced in code, because one "lad" undoes a lot of careful prompting. |
+
+</details>
+
+## 📏 Evaluation
+
+Changes to a character, the prompt or the engine are measured rather than eyeballed. [`eval/rubric.md`](eval/rubric.md) is the marking scheme and [`eval/scenarios/`](eval/scenarios) holds the situations: lives, culture, relationships, repetition, forms of address, and one file per contact.
 
 ```bash
-pip install -r requirements.txt
-pytest              # the guards, memory, retrieval, and contact loading
+venv/bin/python scripts/evaluate.py --cast --save before      # the whole cast
+venv/bin/python scripts/evaluate.py --cast --compare before   # after a change: head to head, with a sign test
+venv/bin/python scripts/evaluate.py --contact orphan --tier full
 ```
 
-## Roadmap
+Every scenario runs through the real engine from an empty history, with nothing written to memory. It's marked by automatic checks and by a judge model that knows how each character talks. Results go to `eval/results/` (gitignored). Run it when nobody's using the console, because two processes on one model on 24 GB slow both to a crawl.
 
-- **Tool use / function calling** — calendar, reminders, home control, and the
-  ability for a contact to *show* you something rather than describe it. Needs
-  a real tool-call loop rather than the current single-shot generation.
-- **Wake-word activation** — ambient mode listens to everything; a wake word
-  would keep the pipeline closed until addressed.
-- **Embedded results** in the transcript, once tool use lands.
-- **Companion mobile app** — a thin SwiftUI client against the existing local
-  API. A separate client, not a port of the Python app.
+## 🛠️ Development
 
-## Notes & limitations
+```bash
+venv/bin/python -m pytest -q          # the suite
+venv/bin/python -m ruff check .       # lint
 
-- **The lock screen is not access control.** It is checked in the page, the server
-  gates nothing on it, and the passcode is plain text in `.env`. It exists because a
-  console should feel like one.
-- **macOS only** as written — `afplay` and `pynput`'s Accessibility hook aren't
-  portable. The web console is closer to portable than the terminal one, since it
-  plays audio in the browser.
-- **Local-first, not local-only** — the LLM and speech-to-text run on-device; the
-  reply text is sent to ElevenLabs for synthesis.
-- **Memory encryption is opt-in and key-adjacent.** Without `WAYNE_MEMORY_KEY`,
-  memory under `data/<contact>/` is plain text. With it, the key still lives in
-  `.env` on the same disk — good against casual reading and backups, not
-  against someone who has that file.
-- **Ambient mode depends on your room.** It leans on the browser's echo cancellation
-  to avoid hearing the reply through your speakers; on open speakers in a live room
-  it can still retrigger. Headphones make it reliable.
+# Rebuild Gotham after editing wayne/engine/gotham.json:
+venv/bin/pip install shapely          # build-time only; the console never imports it
+venv/bin/python scripts/build_map.py  # → web/map/: city, buildings, trees, terrain
+```
+
+Test with a scratch `WAYNE_DATA_DIR` so your real memory stays out of it. Front-end changes show on a reload (asset URLs are stamped with a version that follows the files), and Python changes on a restart.
+
+## 📝 Notes and limitations
+
+- **The lock screen is not access control.** It's checked in the page, and the passcode sits in plain text in `.env`. It exists because a console should feel like one.
+- **Local-first, not local-only.** The model and speech recognition run on your Mac; the reply text goes to ElevenLabs to be voiced.
+- **Memory encryption is opt-in and key-adjacent.** The key lives in `.env` beside the data: good against casual reading and backups, not against someone who has that file.
+- **macOS only** as written (`afplay`, and `pynput` for the terminal's hotkey).
+- **Wiping memory:** stop the server and delete `data/` (or one contact's folder under it). Saying "protocol zero" to a contact wipes theirs.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). MapLibre GL is BSD-3 ([`web/vendor/maplibre/LICENSE.txt`](web/vendor/maplibre/LICENSE.txt)); Noto Sans is under the SIL Open Font License ([`web/map/fonts/OFL.txt`](web/map/fonts/OFL.txt)). Batman and everyone in Gotham belong to DC; this is a fan project, not affiliated with or endorsed by them.

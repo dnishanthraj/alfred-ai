@@ -74,6 +74,8 @@ def afterthought(session, exchanges, by="text"):
         "Reply with JSON only, in this shape:\n"
         '{"doing": "a few words, e.g. checking the docks" or null, '
         '"where": "the place it puts them, as it would show on a map (e.g. Gotham Docks)" or null, '
+        '"with": [first names of anyone they said is physically there with them — not on comms, '
+        'not on the phone] or [], '
         '"status": "busy" or "offline" or null, "minutes": how long it will take or null, '
         '"free": true if they said they are now free/back/done, '
         '"contact": {"by": "text" or "call", "in_minutes": number or null if it is "when done", '
@@ -105,7 +107,8 @@ def apply(session, found):
         minutes = _number(found.get("minutes"), 60)
         where = found.get("where") if isinstance(found.get("where"), str) else ""
         state.set_activity(doing, status, minutes,
-                           where="" if where.strip().lower() in ("null", "none") else where)
+                           where="" if where.strip().lower() in ("null", "none") else where,
+                           company=_people(found.get("with"), session.contact))
     reach = found.get("contact")
     if isinstance(reach, dict) and isinstance(reach.get("about"), str) and reach["about"].strip():
         minutes = _number(reach.get("in_minutes"), None)
@@ -134,6 +137,27 @@ def apply(session, found):
         if random.random() < odds and not any(i.get("origin") in ("promise", "worry") for i in state.intents()):
             due = time.time() + random.uniform(25, 180) * 60
             state.intend("text", worry.strip()[:120], due, origin="worry")
+
+
+def tapback_odds(contact, emoji):
+    """
+    Whether a reaction from him gets anything back. Mostly not — a reaction
+    is where a thread ends, not a turn in it — but a ❓ or a 👎 asks for
+    something, and the chatty answer more than the terse. Someone who leaves
+    texts on read leaves reactions there too.
+    """
+    chatty = min(1.0, 0.25 + (contact.initiative or {}).get("per_day", 0.5) * 0.4)
+    asks = 2.2 if emoji in ("❓", "👎", "‼️", "⁉️", "🤨", "😐", "🙄", "💀") else 1.0
+    odds = (0.08 + 0.22 * chatty) * asks * (1 - (contact.texting_pace or {}).get("on_read", 0))
+    return max(0.0, min(0.7, odds))
+
+
+def _people(names, contact):
+    """["Cass", "barbara"] → their ids: whoever of his circle that names."""
+    from ..contacts import directory
+    names = {str(n).strip().lower() for n in names} if isinstance(names, list) else set()
+    return [p.id for p in directory() if p.id != contact.id
+            and (p.name.lower() in names or p.id in names or p.full_name.lower() in names)]
 
 
 def _number(value, default):

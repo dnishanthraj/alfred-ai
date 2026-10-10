@@ -271,8 +271,58 @@ def test_where_they_are_comes_from_their_plan_or_home(private_data, monkeypatch)
     whereabouts = presence.of(tim)
     assert whereabouts.whereabouts() == ("Wayne Manor", [])
     whereabouts.set_plan(plan)
+    _free("nightwing")
     shown = whereabouts.public()
     assert shown["where"] == "Crime Alley rooftops" and shown["with"] == ["nightwing"]
+
+
+def _free(contact_id):
+    """Someone with a plan for today that has nothing on right now."""
+    from wayne.contacts import directory
+    other = presence.of(directory().get(contact_id))
+    later = (time.localtime().tm_hour + 12) % 24
+    other.set_plan([{"from": later, "to": later + 0.5, "doing": "errands", "status": "busy",
+                     "where": "Bristol", "with": []}])
+    return other
+
+
+def _all_day(doing, where, status="busy", company=()):
+    return [{"from": 0.0, "to": 23.99, "doing": doing, "status": status, "where": where,
+             "with": list(company), "drift": 0}]
+
+
+def test_together_only_when_it_holds_for_both(private_data):
+    """
+    Barbara's plan saying "with Cass" put nobody with anybody: Cass was on the
+    other side of the city, and the map, the card and what Barbara said all
+    disagreed. Together now holds for both, or for neither.
+    """
+    from wayne.contacts import directory
+    tim = SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake", routine=(), shares_status=True,
+                          shares_location=True, home="Wayne Manor", texting_pace={})
+    mine = presence.of(tim)
+    mine.set_plan(_all_day("dinner", "The Bowery", company=["nightwing"]))
+    dick = presence.of(directory().get("nightwing"))
+
+    dick.set_plan(_all_day("asleep", "Home, Blüdhaven", status="offline"))
+    assert mine.whereabouts() == ("The Bowery", []) and dick.whereabouts()[1] == []
+    assert "with" not in mine.note()
+
+    dick.set_plan(_all_day("errands", "Blüdhaven"))         # the other side of the river
+    assert mine.whereabouts()[1] == [] and dick.whereabouts()[1] == []
+
+    dick.set_plan(_all_day("a drink", "Crime Alley"))       # round the corner: the same evening
+    assert mine.whereabouts() == ("The Bowery", ["nightwing"])
+    assert dick.whereabouts() == ("The Bowery", ["robin"])
+    assert "You're with Tim" in dick.note() and "You're with Dick" in mine.note()
+
+    # What Dick said on a call outranks Tim's plan: he's at the docks, alone...
+    dick.set_activity("checking the docks", "busy", 60, where="Gotham Docks")
+    assert mine.whereabouts() == ("The Bowery", []) and dick.whereabouts() == ("Gotham Docks", [])
+    # ...or with Tim, who's there with him, whatever Tim's plan said.
+    dick.set_activity("checking the docks", "busy", 60, where="Gotham Docks", company=["robin"])
+    assert mine.whereabouts() == ("Gotham Docks", ["nightwing"])
+    assert mine.public()["spot"]["name"] == dick.public()["spot"]["name"]
 
 
 def test_nobody_sees_where_someone_who_doesnt_share_is(private_data):
@@ -433,3 +483,53 @@ def test_sir_mid_sentence_is_lower_case():
     from wayne.engine import guards
     assert guards.tidy_address("Goodnight, Sir.") == "Goodnight, sir."
     assert guards.tidy_address("Sir, the car is ready.") == "Sir, the car is ready."
+
+
+def test_tags_are_people_in_the_chat_written_as_they_show():
+    """Dick wrote "@b" — nobody. A tag is one of them, him, or everyone; anything else isn't a tag."""
+    book = {c.id: c for c in [SimpleNamespace(id="nightwing", name="Dick", full_name="Dick Grayson"),
+                              SimpleNamespace(id="batgirl", name="Barbara", full_name="Barbara Gordon"),
+                              SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake"),
+                              SimpleNamespace(id="orphan", name="Cass", full_name="Cassandra Cain")]}
+    group = SimpleNamespace(members=["nightwing", "batgirl", "robin"])
+    fix = lambda text: groupchat.fix_tags(text, group, book, "nightwing")    # noqa: E731
+    assert fix("@b please tell me you didn't spend an hour on the name") == \
+        "please tell me you didn't spend an hour on the name"               # could be Bruce or Barbara
+    assert fix("@bruce, look") == "@Bruce, look"
+    assert fix("@Barb pull the feed") == "@Barbara pull the feed"
+    assert fix("@timmy's fault") == "@Tim's fault"
+    assert fix("@Cass is out") == "Cass is out"                             # not in this chat
+    assert fix("@all heads up") == "@everyone heads up"
+    assert fix("mail me at a@b.com") == "mail me at a@b.com"
+
+
+def test_everyone_pings_the_whole_chat():
+    tim = SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake")
+    assert groupchat.tagged("@everyone briefing at ten", tim)
+    assert groupchat.addressed("@everyone briefing at ten", tim)
+    assert not groupchat.tagged("everyone's tired", tim)
+
+
+def test_a_reaction_mostly_ends_it_but_a_question_mark_asks():
+    from wayne.engine import initiative
+    dick = SimpleNamespace(initiative={"per_day": 1.2}, texting_pace={})
+    randy = SimpleNamespace(initiative={"per_day": 0.2}, texting_pace={"on_read": 0.6})
+    assert initiative.tapback_odds(dick, "❤️") < 0.5
+    assert initiative.tapback_odds(dick, "❓") > initiative.tapback_odds(dick, "❤️")
+    assert initiative.tapback_odds(randy, "❓") < initiative.tapback_odds(dick, "❓")
+
+
+def test_asked_in_a_dm_to_post_in_the_group_it_goes_in_the_group(monkeypatch):
+    """Dick wrote the group's message — "you guys…", "and randy, quit ghosting us" — in his DM with Bruce."""
+    book = {c.id: c for c in [SimpleNamespace(id="nightwing", name="Dick", full_name="Dick Grayson"),
+                              SimpleNamespace(id="batwing", name="Randy", full_name="Randy")]}
+    chat = SimpleNamespace(name="Bat Chat", members=["nightwing", "batwing"])
+    monkeypatch.setattr(store, "groups_with", lambda cid: [chat])
+    dick = book["nightwing"]
+    assert groupchat.meant_group("THe chat with you and Randy. Say something in it.", dick, book) is chat
+    assert groupchat.meant_group("tell the group I'm running late", dick, book) is chat
+    assert groupchat.meant_group("how was patrol?", dick, book) is None
+    assert groupchat.meant_group("Randy said something funny earlier", dick, book) is None
+    wrong_thread = "you guys are literally just sitting there\nand randy, quit ghosting us!"
+    assert groupchat.speaks_to_group(wrong_thread, chat, book, "nightwing")
+    assert not groupchat.speaks_to_group("on it", chat, book, "nightwing")

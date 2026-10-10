@@ -260,6 +260,12 @@ class History:
             self.messages[-1]["via"] = self.messages[-2]["via"] = via
         self.save()
 
+    def amend_last_reply(self, text):
+        """What they said turned out to belong somewhere else: the record says so."""
+        if self.messages and self.messages[-1]["role"] == "assistant":
+            self.messages[-1]["content"] = text
+            self.save()
+
     def texts(self, limit=60):
         """The text thread: messages sent by text, oldest first."""
         return [m for m in self.messages if m.get("via") == "text"][-limit:]

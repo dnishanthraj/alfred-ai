@@ -42,7 +42,7 @@
   /* --- palette ------------------------------------------------------------ */
 
   var C = {
-    void: '#02050a', land: '#0a131e', mainland: '#08101a', edge: '#4fa8e0', lit: '#8fd3ff',
+    void: '#02050a', land: '#0c1724', mainland: '#0b1520', edge: '#4fa8e0', lit: '#8fd3ff',
     street: '#17344d', secondary: '#24506f', primary: '#3d79a3', highway: '#7cc3ee',
     park: '#0b2a24', parkEdge: '#2f8f6a', water: '#02050a', label: '#9cb4c9', faint: '#56718a',
     alert: '#e0574f', good: '#58c08a'
@@ -57,12 +57,14 @@
     asylum: C.alert, prison: C.alert, industry: C.alert, nightlife: C.alert,
     manor: C.lit, clock: C.lit, tower: C.lit,
     police: '#9fd8ff', hospital: '#9fd8ff', civic: '#9fd8ff',
-    garden: C.good, water: C.edge, cemetery: C.faint, statue: C.lit, lighthouse: C.lit, airport: '#9fd8ff'
+    garden: C.good, water: C.edge, beach: '#e0c48a', cemetery: C.faint, statue: C.lit, lighthouse: C.lit, airport: '#9fd8ff',
+    // The night's own colours: neon for the clubs, amber for the bars.
+    club: '#c77dff', bar: '#e0a43a', diner: '#5fd0c4', fire: C.alert, school: '#9fd8ff'
   };
   var ICON_KINDS = ['tower', 'manor', 'police', 'hospital', 'asylum', 'prison', 'church', 'theatre', 'university',
                     'museum', 'industry', 'station', 'stadium', 'lab', 'nightlife', 'civic', 'news', 'zoo', 'marina',
                     'naval', 'dock', 'clock', 'garden', 'water', 'cemetery', 'circus', 'statue', 'lighthouse',
-                    'airport', 'observatory', 'hotel'];
+                    'airport', 'observatory', 'hotel', 'club', 'bar', 'diner', 'fire', 'school', 'beach'];
 
   function glyph(kind) {
     var p = new Path2D();
@@ -91,12 +93,18 @@
       case 'garden': p.moveTo(0, -10); p.quadraticCurveTo(10, 0, 0, 10); p.quadraticCurveTo(-10, 0, 0, -10); p.moveTo(0, -6); p.lineTo(0, 8); break;
       case 'water': [-4, 2].forEach(function (y) { p.moveTo(-9, y); p.bezierCurveTo(-5, y - 4, -2, y + 4, 2, y); p.bezierCurveTo(5, y - 4, 7, y + 2, 9, y); }); break;
       case 'cemetery': p.moveTo(-6, 9); p.lineTo(-6, -3); p.arc(0, -3, 6, Math.PI, 0); p.lineTo(6, 9); p.closePath(); p.moveTo(0, -5); p.lineTo(0, 3); p.moveTo(-3, -2); p.lineTo(3, -2); break;
+      case 'beach': p.moveTo(-9, -2); p.quadraticCurveTo(0, -12, 9, -2); p.closePath(); p.moveTo(0, -7); p.lineTo(0, 8); p.moveTo(-9, 9); p.quadraticCurveTo(-4.5, 6, 0, 9); p.quadraticCurveTo(4.5, 12, 9, 9); break;
       case 'circus': p.moveTo(-9, 8); p.lineTo(0, -6); p.lineTo(9, 8); p.closePath(); p.moveTo(0, -6); p.lineTo(0, -11); p.lineTo(4, -9.5); p.lineTo(0, -8); break;
       case 'statue': p.moveTo(2, -8); p.arc(0, -8, 2, 0, Math.PI * 2); p.moveTo(0, -6); p.lineTo(0, 4); p.moveTo(0, -4); p.lineTo(6, -11); p.moveTo(0, -3); p.lineTo(-4, 1); p.moveTo(-5, 9); p.lineTo(5, 9); p.lineTo(4, 4); p.lineTo(-4, 4); p.closePath(); break;
       case 'lighthouse': p.moveTo(-3, 9); p.lineTo(-2, -5); p.lineTo(2, -5); p.lineTo(3, 9); p.closePath(); p.rect(-3, -9, 6, 4); p.moveTo(-5, -7); p.lineTo(-9, -9); p.moveTo(5, -7); p.lineTo(9, -9); break;
       case 'airport': p.moveTo(0, -10); p.lineTo(0, 9); p.moveTo(-9, 1); p.lineTo(0, -3); p.lineTo(9, 1); p.moveTo(-4, 8); p.lineTo(0, 6); p.lineTo(4, 8); break;
       case 'observatory': p.moveTo(-8, 3); p.arc(0, 3, 8, Math.PI, 0); p.moveTo(-9, 3); p.lineTo(9, 3); p.lineTo(9, 8); p.lineTo(-9, 8); p.closePath(); p.moveTo(1, -5); p.lineTo(5, -9); break;
       case 'hotel': p.rect(-9, 0, 18, 5); p.moveTo(-9, 5); p.lineTo(-9, 9); p.moveTo(9, 5); p.lineTo(9, 9); p.moveTo(-9, 0); p.lineTo(-9, -6); p.rect(-6, -3, 5, 3); break;
+      case 'club': p.moveTo(-2, 6); p.arc(-4, 6, 2.5, 0, Math.PI * 2); p.moveTo(7, 3); p.arc(5, 3, 2.5, 0, Math.PI * 2); p.moveTo(-1.5, 6); p.lineTo(-1.5, -7); p.lineTo(7.5, -9); p.lineTo(7.5, 3); break;
+      case 'bar': p.moveTo(-6, -8); p.lineTo(6, -8); p.lineTo(4, 9); p.lineTo(-4, 9); p.closePath(); p.moveTo(-5.4, -3); p.lineTo(5.4, -3); break;
+      case 'diner': p.moveTo(-7, -2); p.lineTo(5, -2); p.lineTo(4, 6); p.lineTo(-6, 6); p.closePath(); p.moveTo(5, 0); p.quadraticCurveTo(9, 0, 8, 3); p.lineTo(4.6, 3.4); p.moveTo(-3, -5); p.quadraticCurveTo(-1, -8, -3, -10); p.moveTo(1, -5); p.quadraticCurveTo(3, -8, 1, -10); break;
+      case 'fire': p.moveTo(0, -10); p.bezierCurveTo(6, -4, 8, 2, 4, 8); p.quadraticCurveTo(0, 11, -4, 8); p.bezierCurveTo(-8, 2, -4, -2, -2, -5); p.quadraticCurveTo(-1, 0, 1, 1); p.quadraticCurveTo(2, -4, 0, -10); break;
+      case 'school': p.moveTo(-9, -3); p.lineTo(0, -8); p.lineTo(9, -3); p.lineTo(0, 2); p.closePath(); p.rect(-6, 0, 12, 8); break;
       default: p.arc(0, 0, 4, 0, Math.PI * 2);
     }
     return p;
@@ -201,7 +209,7 @@
           paint: { 'fill-color': ['interpolate', ['linear'], ['get', 'cr'], 0, C.good, 0.5, '#c9a23a', 1, C.alert],
                    'fill-opacity': 0.24 } },
         { id: 'relief', type: 'hillshade', source: 'terrain',
-          paint: { 'hillshade-exaggeration': 0.5, 'hillshade-shadow-color': '#000000',
+          paint: { 'hillshade-exaggeration': 0.4, 'hillshade-shadow-color': '#03080f',
                    'hillshade-highlight-color': '#1d4d6e', 'hillshade-accent-color': '#06121c',
                    'hillshade-illumination-direction': 315 } },
         { id: 'park', type: 'fill', source: 'city', filter: is('park'), paint: { 'fill-color': C.park, 'fill-opacity': 0.9 } },
@@ -214,9 +222,24 @@
           paint: { 'line-color': '#8fb9d8', 'line-width': z([11, 0.4, 15, 1.6]), 'line-dasharray': [4, 4], 'line-opacity': 0.7 } },
         { id: 'park-edge', type: 'line', source: 'city', filter: is('park'),
           paint: { 'line-color': C.parkEdge, 'line-width': 0.8, 'line-opacity': 0.4 } },
+        // Ponds in the parks (rivers and lakes are simply where the land isn't).
         { id: 'water', type: 'fill', source: 'city', filter: is('water'), paint: { 'fill-color': C.water } },
         { id: 'water-edge', type: 'line', source: 'city', filter: is('water'),
-          paint: { 'line-color': C.edge, 'line-width': 1, 'line-opacity': 0.45 } },
+          paint: { 'line-color': C.edge, 'line-width': z([10, 0.6, 14, 1.2, 17, 2.4]), 'line-opacity': 0.7 } },
+        // Amusement Mile: Gotham's one beach, the boardwalk behind it, the fairground's lights.
+        { id: 'beach', type: 'fill', source: 'city', filter: is('beach'), paint: { 'fill-color': '#2e2a1e', 'fill-opacity': 0.95 } },
+        { id: 'beach-edge', type: 'line', source: 'city', filter: is('beach'),
+          paint: { 'line-color': '#e0c48a', 'line-width': z([12, 0.4, 16, 1.2]), 'line-opacity': 0.35, 'line-blur': 1 } },
+        { id: 'fair', type: 'fill', source: 'city', filter: is('fair'), paint: { 'fill-color': '#1e1426', 'fill-opacity': 0.92 } },
+        { id: 'fair-edge', type: 'line', source: 'city', filter: is('fair'),
+          paint: { 'line-color': '#ff5fa2', 'line-width': z([12, 0.5, 16, 1.4]), 'line-opacity': 0.45, 'line-dasharray': [1, 2] } },
+        { id: 'boardwalk', type: 'line', source: 'city', filter: is('boardwalk'), minzoom: 12,
+          layout: { 'line-cap': 'butt' },
+          paint: { 'line-color': '#8a6a3a', 'line-width': z([12, 1, 15, 3, 18, 9]), 'line-dasharray': [0.35, 0.12], 'line-opacity': 0.9 } },
+        { id: 'yard', type: 'fill', source: 'city', filter: is('yard'), paint: { 'fill-color': '#101c27', 'fill-opacity': 0.95 } },
+        { id: 'site', type: 'fill', source: 'city', filter: is('site'), paint: { 'fill-color': '#2a2414', 'fill-opacity': 0.9 } },
+        { id: 'site-edge', type: 'line', source: 'city', filter: is('site'),
+          paint: { 'line-color': '#c9a23a', 'line-width': 0.8, 'line-dasharray': [2, 2], 'line-opacity': 0.6 } },
         // Light on the water, twinkling (animated in the loop below).
         { id: 'sparkle', type: 'circle', source: 'city', filter: is('sparkle'), minzoom: 11,
           paint: { 'circle-radius': z([11, 0.6, 15, 1.6, 18, 2.6]), 'circle-color': C.lit, 'circle-opacity': 0, 'circle-blur': 0.4 } },
@@ -231,6 +254,14 @@
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: { 'line-color': C.street, 'line-width': z([10.6, 0.25, 13, 0.6, 14, 0.9, 16, 3, 18, 10]),
                    'line-opacity': z([10.6, 0.35, 12.5, 0.75, 13.5, 0.95]) } },
+        // Out in the sprawl: lanes, fainter the further they are from anywhere.
+        { id: 'lane', type: 'line', source: 'city', filter: road('lane'), minzoom: 11,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': '#143047', 'line-width': z([11, 0.3, 14, 0.8, 16, 2, 18, 6]),
+                   'line-opacity': z([11, 0.3, 13, 0.7]) } },
+        { id: 'drive', type: 'line', source: 'city', filter: road('drive'), minzoom: 12.4,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': '#2a5677', 'line-width': z([12.4, 0.4, 16, 2.4]), 'line-dasharray': [2, 1] } },
         { id: 'secondary', type: 'line', source: 'city', filter: road('secondary'),
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: { 'line-color': C.secondary, 'line-width': z([10, 0.35, 14, 1.6, 16, 4.5, 18, 14]),
@@ -275,22 +306,49 @@
         { id: 'buildings', type: 'fill-extrusion', source: 'buildings', minzoom: 12.6,
           paint: {
             'fill-extrusion-color': ['match', ['get', 'k'], '~landmark', '#7ccaf5', '~deck', '#2a6a94',
+              '~container', ['match', ['%', ['get', 'h'], 2], 0, '#6b5326', '#2f5068'], '~lit', '#3a86bd',
+              '~tank', '#3d5568', '~pad', '#8fd3ff', '~crane', '#c9a23a', '~ride', '#ff5fa2', '~wheel', '#e8d7b0',
               ['interpolate', ['linear'], ['get', 'h'], 0, '#081521', 25, '#0b2133', 60, '#10334d', 120, '#184d73', 240, '#2f78ad']],
             'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 12.6, 0, 13.8, ['get', 'h']],
             'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 12.6, 0, 13.8, ['get', 'b']],
             'fill-extrusion-opacity': 0.86,
             'fill-extrusion-vertical-gradient': true
           } },
+        // Trees: a trunk, and a crown in two tiers that rounds off at the top.
         { id: 'trees', type: 'fill-extrusion', source: 'trees', minzoom: 13,
-          paint: { 'fill-extrusion-color': ['interpolate', ['linear'], ['get', 'h'], 8, '#0f3d2d', 17, '#1d6b4c'],
-                   'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 13, 0, 14, ['get', 'h']],
-                   'fill-extrusion-opacity': 0.92 } },
+          paint: { 'fill-extrusion-color': ['case', ['==', ['get', 'p'], 0], '#13261f',
+                                            ['interpolate', ['linear'], ['get', 'h'], 8, ['case', ['==', ['get', 'p'], 2], '#17573f', '#0f3d2d'],
+                                             17, ['case', ['==', ['get', 'p'], 2], '#2a8a62', '#1d6b4c']]],
+                   'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 13, 0, 14, ['get', 'top']],
+                   'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 13, 0, 14, ['get', 'b']],
+                   'fill-extrusion-opacity': 0.94 } },
         // Where someone has been.
         { id: 'trail', type: 'line', source: 'trail', filter: ['==', ['geometry-type'], 'LineString'],
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: { 'line-color': ['get', 'color'], 'line-width': 2.4, 'line-dasharray': [1.5, 1.8], 'line-opacity': 0.9 } },
         { id: 'trail-stop', type: 'circle', source: 'trail', filter: ['==', ['geometry-type'], 'Point'],
           paint: { 'circle-radius': 4, 'circle-color': C.void, 'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 1.8 } },
+        // The city's life: neon pooled under the clubs and bars, then the places themselves.
+        { id: 'venue-glow', type: 'circle', source: 'city', minzoom: 12.6,
+          filter: ['all', is('venue'), ['in', ['get', 'k'], ['literal', ['club', 'bar']]]],
+          paint: { 'circle-radius': z([12.6, 6, 16, 22]), 'circle-blur': 1,
+                   'circle-color': ['match', ['get', 'k'], 'club', '#c77dff', '#e0a43a'], 'circle-opacity': 0.35,
+                   'circle-pitch-alignment': 'map' } },
+        { id: 'venue', type: 'symbol', source: 'city', filter: is('venue'), minzoom: 13.4,
+          layout: { 'icon-image': ['concat', 'gm-', ['get', 'k']], 'icon-size': z([13.4, 0.5, 16, 0.75]),
+                    'icon-allow-overlap': false, 'icon-padding': 1,
+                    'text-field': ['step', ['zoom'], '', 15.2, ['get', 'n']], 'text-font': ['Noto Sans Italic'],
+                    'text-size': 10, 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-optional': true },
+          paint: { 'text-color': ['match', ['get', 'k'], 'club', '#d7a8ff', 'bar', '#f0c880', '#9cc4d8'],
+                   'text-halo-color': C.void, 'text-halo-width': 1.4 } },
+        // Smoke over a fire, gas over a gas attack (animated below).
+        { id: 'smoke', type: 'circle', source: 'incidents',
+          filter: ['in', ['get', 'kind'], ['literal', ['Arson', 'Explosion reported', 'Chemical spill', 'Toxin exposure',
+                                                        'Laughing-gas attack', 'Freezing incident']]],
+          paint: { 'circle-radius': 26, 'circle-blur': 1, 'circle-pitch-alignment': 'map',
+                   'circle-color': ['match', ['get', 'kind'], 'Laughing-gas attack', '#7dff6a', 'Toxin exposure', '#a7ff3a',
+                                    'Chemical spill', '#d4ff4a', 'Freezing incident', '#bfe9ff', '#9a8f86'],
+                   'circle-opacity': 0.3 } },
         // Trouble, as the scanner has it: a pulse under each report.
         { id: 'incident-pulse', type: 'circle', source: 'incidents',
           paint: { 'circle-radius': 10, 'circle-color': ['match', ['get', 'severity'], 1, SEVERITY[1], 2, SEVERITY[2], 3, SEVERITY[3], SEVERITY[4]],
@@ -310,8 +368,15 @@
                     'text-anchor': 'top', 'text-optional': true },
           paint: { 'text-color': ['get', 'col'], 'text-halo-color': C.void, 'text-halo-width': 1.4 } },
         // Words on top, laid out so they never collide.
+        // Moving lights along the highways and avenues (animated below): the city never stops.
+        { id: 'traffic', type: 'line', source: 'city', filter: ['any', road('highway'), road('bridge'), road('primary')],
+          minzoom: 11.4, layout: { 'line-cap': 'round' },
+          paint: { 'line-color': '#e8f6ff', 'line-width': z([11.4, 0.6, 15, 1.6, 18, 3]), 'line-opacity': 0.55,
+                   'line-dasharray': [0.1, 6] } },
         { id: 'water-label', type: 'symbol', source: 'city', filter: is('water_label'),
-          layout: { 'text-field': ['get', 'n'], 'text-font': ['Noto Sans Italic'], 'text-size': z([10, 11, 14, 16]),
+          layout: { 'text-field': ['get', 'n'], 'text-font': ['Noto Sans Italic'],
+                    'text-size': ['interpolate', ['linear'], ['zoom'], 10, ['case', ['has', 's'], 9, 11], 12, ['case', ['has', 's'], 9, 13.5],
+                                   14, ['case', ['has', 's'], 11, 16], 15, ['case', ['has', 's'], 12, 16]],
                     'text-letter-spacing': 0.35, 'text-rotate': ['get', 'r'], 'text-max-width': 30 },
           paint: { 'text-color': '#3a7aa8', 'text-opacity': 0.85 } },
         { id: 'road-label', type: 'symbol', source: 'city', minzoom: 13.6,
@@ -366,15 +431,22 @@
       map.getSource('buildings').setData({ type: 'FeatureCollection', features: features });
       return fetch('/static/map/gotham-trees.json');
     }).then(function (r) { return r.json(); }).then(function (trees) {
-      // Each tree a small hexagon, so it can stand up in 3D.
-      // Each tree a round crown of its own size, so it stands up in 3D.
-      var features = trees.map(function (t) {
-        var x = t[0] / 100, y = t[1] / 100, r = (t[3] || 9) / 100, ring = [];
-        for (var i = 0; i <= 12; i++) {
-          var a = i * Math.PI / 6;
+      // Each tree stands up in 3D: a thin trunk, a wide crown, a smaller one on
+      // top — round from above, rounded from the side.
+      function disc(x, y, r, sides) {
+        var ring = [];
+        for (var i = 0; i <= sides; i++) {
+          var a = i * 2 * Math.PI / sides;
           ring.push(ll(x + Math.cos(a) * r, y + Math.sin(a) * r));
         }
-        return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: { h: t[2] } };
+        return { type: 'Polygon', coordinates: [ring] };
+      }
+      var features = [];
+      trees.forEach(function (t) {
+        var x = t[0] / 100, y = t[1] / 100, r = (t[3] || 9) / 100, h = t[2];
+        features.push({ type: 'Feature', geometry: disc(x, y, r * 0.16, 6), properties: { p: 0, h: h, b: 0, top: h * 0.4 } });
+        features.push({ type: 'Feature', geometry: disc(x, y, r, 14), properties: { p: 1, h: h, b: h * 0.3, top: h * 0.78 } });
+        features.push({ type: 'Feature', geometry: disc(x, y, r * 0.64, 12), properties: { p: 2, h: h, b: h * 0.78, top: h } });
       });
       map.getSource('trees').setData({ type: 'FeatureCollection', features: features });
     }).catch(function () { /* the city still draws without its buildings */ });
@@ -382,7 +454,7 @@
 
   /* --- hovering: the console's own tooltip, never the map's ----------------- */
 
-  var HOVERABLE = ['incident', 'landmark', 'station', 'district-label', 'quarter-label', 'road-label', 'primary',
+  var HOVERABLE = ['incident', 'landmark', 'venue', 'station', 'district-label', 'quarter-label', 'road-label', 'primary',
                    'highway', 'avenue', 'secondary', 'subway', 'ferry', 'park', 'water', 'trail-stop', 'district'];
 
   function describe(f) {
@@ -392,6 +464,8 @@
     if (p.kind) return p.kind + ' · ' + p.place + ' · ' + p.status;
     if (p.l === 'station') return p.n + ' · ' + p.line;
     if (p.l === 'subway' || p.l === 'ferry') return p.n;
+    if (p.l === 'venue') return p.n + ' · ' + ({ club: 'club', bar: 'bar', diner: 'diner', church: 'church',
+                                                fire: 'fire station', school: 'school' }[p.k] || '') + ' · ' + p.a;
     if ((p.l === 'road' || p.l === 'park' || p.l === 'water' || p.l === 'district') && p.n) return p.n;
     return '';
   }
@@ -510,7 +584,9 @@
       text.className = 'gm-roster__text';
       text.innerHTML = '<b></b><small></small>';
       text.querySelector('b').textContent = c.name;
-      text.querySelector('small').textContent = p.spot ? (p.where || p.spot.name) : 'Location hidden';
+      var company = (p['with'] || []).map(function (cid) { return (contacts[cid] || {}).name; }).filter(Boolean);
+      text.querySelector('small').textContent = p.spot
+        ? (p.where || p.spot.name) + (company.length ? ' · with ' + company.join(', ') : '') : 'Location hidden';
       li.appendChild(face);
       li.appendChild(text);
       li.dataset.status = p.status || '';
@@ -729,7 +805,16 @@
 
   /* --- the living map: water that twinkles, reports that pulse ------------------ */
 
-  var frame = null, last = 0;
+  var frame = null, last = 0, lastStep = -1;
+  // A dash travelling along the line: the same pattern, shifted a little each step.
+  var TRAFFIC = (function () {
+    var steps = [], gap = 6, n = 14;
+    for (var i = 0; i < n; i++) {
+      var t = (i / n) * gap;
+      steps.push(t < 0.05 ? [0.1, gap] : [0, t, 0.1, gap - t]);
+    }
+    return steps;
+  })();
   function animate(now) {
     frame = requestAnimationFrame(animate);
     if (root.hidden || !ready || now - last < 90) return;
@@ -738,9 +823,32 @@
     // Each point of light catches it briefly, then not, in its own rhythm.
     map.setPaintProperty('sparkle', 'circle-opacity',
       ['*', 0.75, ['^', ['max', 0, ['sin', ['+', ['get', 'p'], t]]], 14]]);
+    var step = Math.floor(now / 110) % TRAFFIC.length;
+    if (step !== lastStep) { lastStep = step; map.setPaintProperty('traffic', 'line-dasharray', TRAFFIC[step]); }
     var pulse = (now % 1800) / 1800;
     map.setPaintProperty('incident-pulse', 'circle-radius', 8 + pulse * 22);
+    var drift = (now % 5200) / 5200;
+    map.setPaintProperty('smoke', 'circle-radius', 18 + drift * 34);
+    map.setPaintProperty('smoke', 'circle-opacity', 0.38 * (1 - drift * 0.7));
+    map.setPaintProperty('venue-glow', 'circle-opacity', 0.26 + 0.1 * Math.sin(now / 900));
     map.setPaintProperty('incident-pulse', 'circle-opacity', 0.35 * (1 - pulse));
+  }
+
+  var signal = null;
+  function batSignal() {
+    var hour = new Date().getHours(), night = hour >= 19 || hour < 6;
+    var gcpd = (gazetteer.places || []).filter(function (p) { return p.name === 'GCPD Central'; })[0];
+    if (!gcpd) return;
+    if (night && !signal) {
+      var el = document.createElement('div');
+      el.className = 'gm-signal';
+      el.innerHTML = '<span class="gm-signal__beam"></span><span class="gm-signal__bat"></span>';
+      el.setAttribute('data-tip', 'The Signal — GCPD Central');
+      signal = new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat(ll(gcpd.x, gcpd.y)).addTo(map);
+    } else if (!night && signal) {
+      signal.remove();
+      signal = null;
+    }
   }
 
   function fogFor() {
@@ -914,7 +1022,8 @@
     streets: ['street', 'avenue', 'road-label'],
     buildings: ['buildings', 'footprint', 'trees'],
     transit: ['subway', 'station', 'station-label', 'ferry'],
-    crime: ['incident', 'incident-pulse'],
+    crime: ['incident', 'incident-pulse', 'smoke'],
+    life: ['venue', 'venue-glow'],
     safety: ['safety'],
     trails: ['trail', 'trail-stop']
   };
@@ -1033,13 +1142,15 @@
         [1, 2, 3, 4].forEach(function (s) { map.addImage('gm-warn-' + s, warning(s), { pixelRatio: 2 }); });
         ready = true;
         loadCity();
-        ['places', 'streets', 'buildings', 'transit', 'crime', 'trails', 'people', 'pins'].forEach(function (name) {
+        ['places', 'streets', 'buildings', 'transit', 'crime', 'life', 'trails', 'people', 'pins'].forEach(function (name) {
           setLayer(name, layerShown(name));
         });
         // Safety is a view you ask for, not the default.
         setLayer('safety', recall(SHOWN_KEY, {}).safety === true);
         loadIncidents();
         setInterval(loadIncidents, 60000);
+        batSignal();
+        setInterval(batSignal, 300000);
         frame = requestAnimationFrame(animate);
         loadPins();
         if (!root.hidden) { map.resize(); if (!fitted) { fit(); fitted = true; } placePeople(); }

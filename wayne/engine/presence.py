@@ -33,6 +33,7 @@ pulse carries them out (see `Console.pulse`).
 """
 import hashlib
 import json
+import math
 import random
 import re
 import threading
@@ -68,6 +69,71 @@ def _draw(*parts):
     """A random number fixed by its inputs: the same day gives the same answer."""
     digest = hashlib.sha1("|".join(str(p) for p in parts).encode()).digest()
     return int.from_bytes(digest[:8], "big") / 2 ** 64
+
+
+# Two plans a short walk apart put people in the same place (in map units).
+TOGETHER_WITHIN = 6.0
+
+
+def together(presence, t=None):
+    """
+    (leader, group) — who this person is actually with at t, as Presences,
+    and whose place the group is in.
+
+    A plan or a conversation can say "with Cass"; it only holds if it holds
+    for Cass too: she said the same, or she's free then, or her own plan
+    already has her there. What someone said in a conversation outranks any
+    plan, and someone asleep or out of reach is in nobody's plans but their
+    own. Everyone in a group is in one place — so the map, the card under
+    their name and what each of them is told all agree.
+    """
+    from ..contacts import directory
+    t = t or time.time()
+    book = directory()
+    everyone = {presence.contact.id: presence}
+    for contact in book:
+        if contact.id not in everyone:
+            everyone[contact.id] = _registry.get(contact.id) or of(contact)
+    order = {cid: i for i, cid in enumerate(everyone)}
+    seen = {}
+
+    def situation(cid):
+        if cid not in seen:
+            seen[cid] = everyone[cid]._situation(t)
+        return seen[cid]
+
+    def near(a, b):
+        here = places.resolve(everyone[a]._home_is_home(situation(a)[0].get("where") or ""))
+        there = places.resolve(everyone[b]._home_is_home(situation(b)[0].get("where") or ""))
+        return bool(here and there) and math.dist((here["x"], here["y"]), (there["x"], there["y"])) <= TOGETHER_WITHIN
+
+    def holds(a, b):
+        """a says they're with b: is b with a?"""
+        if b not in everyone or b == a:
+            return False
+        block, company, firm = situation(b)
+        if a in company:
+            return True             # they both say so
+        if firm or block.get("status") == OFFLINE:
+            return False            # b said where they are, or is asleep or out of reach
+        return not block or situation(a)[2] or near(a, b)
+
+    links = {cid: set() for cid in everyone}
+    for a in everyone:
+        for b in situation(a)[1]:
+            if holds(a, b):
+                links[a].add(b)
+                links[b].add(a)
+    group, todo = {presence.contact.id}, [presence.contact.id]
+    while todo:
+        for other in links[todo.pop()] - group:
+            group.add(other)
+            todo.append(other)
+    # The place is the one whoever arranged it had in mind: what someone said
+    # before any plan, someone who named the others before someone named.
+    leader = min(group, key=lambda cid: (not situation(cid)[2],
+                                         not (set(situation(cid)[1]) & group), order[cid]))
+    return everyone[leader], [everyone[cid] for cid in sorted(group, key=order.get)]
 
 
 def describe_until(until, now=None):
@@ -263,27 +329,46 @@ class Presence:
         (place, [contact ids with them]) for right now — always from what
         they're actually doing: somewhere a conversation sent them, the place in
         their plan, a spot on their beat while they patrol (moving every
-        quarter hour or so), or home when nothing puts them elsewhere.
+        quarter hour or so), or home when nothing puts them elsewhere. Anyone
+        they're really with (see `together`) is in the same place, and has
+        them in their company too.
         """
         t = t or time.time()
+        leader, group = together(self, t)
+        place = (self if leader is self else leader)._own_place(t)
+        return place, [p.contact.id for p in group if p is not self]
+
+    def _situation(self, t):
+        """
+        What decides where they are at t, on their own: (block, company, firm).
+        Firm is what a conversation established — they said where they are —
+        and it outranks any plan, theirs or anyone else's.
+        """
         activity = self._state.get("activity")
         if activity and activity.get("since", 0) <= t < activity.get("until", 0):
-            if places.is_patrol(activity.get("doing")) and places.on_beat(self.contact, t):
-                return places.on_beat(self.contact, t), []
-            if activity.get("where"):
-                return activity["where"], []
+            if activity.get("where") or (places.is_patrol(activity.get("doing"))
+                                         and places.on_beat(self.contact, t)):
+                return activity, list(activity.get("with") or []), True
         block = self._routine(t) or self._whim(t) or {}
-        company = list(block.get("with") or [])
+        return block, list(block.get("with") or []), False
+
+    def _own_place(self, t):
+        """Where they'd be at t by themselves, before anyone they're with comes into it."""
+        block, _, firm = self._situation(t)
+        if firm:
+            if places.is_patrol(block.get("doing")) and places.on_beat(self.contact, t):
+                return places.on_beat(self.contact, t)
+            return block["where"]
         if places.is_patrol(block.get("doing")):
             # A patrol moves: along their beat, inside wherever the plan put
             # them — "the rooftops" or "Blüdhaven" is a beat to walk, and Tim
             # checking Blüdhaven's borders stays in Blüdhaven, off his own.
             spot = places.patrol_spot(self.contact, block.get("where") or "", t)
             if spot:
-                return spot, company
+                return spot
         if block.get("where"):
-            return self._home_is_home(block["where"]), company
-        return getattr(self.contact, "home", "") or "", company
+            return self._home_is_home(block["where"])
+        return getattr(self.contact, "home", "") or ""
 
     def _home_is_home(self, where):
         """'Home, Bristol' in Alfred's plan is the Manor: home is where they live."""
@@ -333,19 +418,21 @@ class Presence:
         to someone on patrol is answered from a rooftop, and one at 4am by
         someone he woke. Free time and being mid-conversation need no note.
         """
+        from ..contacts import directory
         state = self.now(t)
+        where, company = self.whereabouts(t)
+        book = directory()
+        names = [book.get(c).name for c in company if book.get(c)]
         if state["source"] not in ("conversation", "routine") or not state["doing"]:
-            return ""
+            # Nothing of their own on, but someone's plans have them along.
+            return (f"Right now you're with {' and '.join(names)}" + (f" ({where})" if where else "")
+                    + ".") if names else ""
         how_long = describe_until(state["until"], t)
-        where, company = self.whereabouts(t) if state["source"] == "routine" else ("", [])
-        line = (f"Right now you're {state['doing']}" + (f" ({where})" if where else "")
+        shown = where if state["source"] == "routine" else ""
+        line = (f"Right now you're {state['doing']}" + (f" ({shown})" if shown else "")
                 + (f", {how_long}" if how_long else "") + ".")
-        if company:
-            from ..contacts import directory
-            book = directory()
-            names = [book.get(c).name for c in company if book.get(c)]
-            if names:
-                line += f" You're with {' and '.join(names)}."
+        if names:
+            line += f" You're with {' and '.join(names)}."
         if state["status"] == OFFLINE:
             line += " Your phone wasn't in your hand; he's reached you anyway."
         elif state["status"] == BUSY:
@@ -360,14 +447,15 @@ class Presence:
             self._state["last_active"] = t or time.time()
             self.save()
 
-    def set_activity(self, doing, status, minutes, t=None, where=""):
+    def set_activity(self, doing, status, minutes, t=None, where="", company=()):
         with self._lock:
             t = t or time.time()
             status = status if status in STATUSES else BUSY
             minutes = max(5, min(int(minutes or 60), 14 * 60))
             self._state["activity"] = {"doing": doing.strip()[:80], "status": status,
                                        "since": t, "until": t + minutes * 60,
-                                       "where": (where or "").strip()[:60]}
+                                       "where": (where or "").strip()[:60],
+                                       "with": [c for c in company if c != self.contact.id]}
             self.save()
 
     def clear_activity(self):

@@ -139,7 +139,9 @@ def block(contact_id, directory, now=None):
 
 
 def addressed(text, contact):
-    """Named in it — 'Dick?', '@tim', 'Barbara, ...' — so they answer."""
+    """Named in it — 'Dick?', '@tim', 'Barbara, ...', '@everyone' — so they answer."""
+    if pings_everyone(text):
+        return True
     for name in {contact.name, contact.full_name, contact.id}:
         if re.search(rf"(?<!\w)@?{re.escape(name)}\b", text or "", re.I):
             return True
@@ -148,8 +150,105 @@ def addressed(text, contact):
 
 def tagged(text, contact):
     """'@Tim' — a tag, which pings, rather than just his name in passing."""
-    return any(re.search(rf"(?<!\w)@{re.escape(n)}\b", text or "", re.I)
+    return pings_everyone(text) or any(re.search(rf"(?<!\w)@{re.escape(n)}\b", text or "", re.I)
                for n in {contact.name, contact.full_name.split()[0], contact.id})
+
+
+def handles(group, directory, sender=None):
+    """Who can be tagged in this chat, and as what: {id: "Tim"}, him as "me"."""
+    found = {"me": operator.name()}
+    for cid in group.members:
+        contact = directory.get(cid)
+        if contact is not None and cid != sender:
+            found[cid] = contact.name
+    return found
+
+
+# "@everyone" pings the whole chat; these are what people type for it.
+EVERYONE = {"everyone", "all", "everybody", "here", "channel", "team", "guys"}
+
+
+def fix_tags(text, group, directory, sender):
+    """
+    A tag is someone in the chat, written the way it shows — "@Barbara",
+    "@Bruce", "@everyone". The model half-writes them ("@b", "@Barb",
+    "@timmy") or tags someone who isn't here: a half-tag that can only mean one
+    of them becomes theirs, a stray letter or two that could mean anyone goes,
+    and anyone not in the chat is just a name.
+    """
+    names = handles(group, directory, sender)
+    known = {}
+    for cid, name in names.items():
+        contact = directory.get(cid)
+        known[cid] = {name.lower(), cid} | ({contact.full_name.split()[0].lower()} if contact else set())
+    known["me"] |= {operator.full_name().split()[0].lower()}
+
+    def who(word):
+        word = word.lower()
+        exact = [cid for cid, said in known.items() if word in said]
+        if exact:
+            return exact[0]
+        if len(word) < 3:
+            return None
+        close = {cid for cid, said in known.items()
+                 if any(s.startswith(word) or (len(s) >= 3 and word.startswith(s)) for s in said)}
+        return close.pop() if len(close) == 1 else None
+
+    def fix(match):
+        word, tail = match.group(1), match.group(2)
+        if word.lower() in EVERYONE:
+            return "@everyone" + tail
+        cid = who(word)
+        if cid:
+            return "@" + names[cid] + tail
+        return "" if len(word) < 3 else word + tail
+    text = re.sub(r"(?<![\w@])@([A-Za-z][A-Za-z-]*)([,:]?)", fix, text)
+    return re.sub(r"(?m)^[ \t]+|[ \t]+$", "", re.sub(r"[ \t]{2,}", " ", text)).strip()
+
+
+def pings_everyone(text):
+    return bool(re.search(r"(?<![\w@])@everyone\b", text or "", re.I))
+
+
+# Asking them to do something somewhere: "say something in it", "tell them", "post".
+_ASKS = re.compile(r"(?i)\b(say|tell|post|ask|text|write|put|send|message|drop|reply|answer|chime|"
+                   r"respond|announce|share|let (them|everyone|the others|the group) know)\b")
+# A chat, said as a chat: "the group", "the GC", "the chat with you and Randy", "in it".
+_A_CHAT = re.compile(r"(?i)\b(group ?chat|the group|gc|the chat|chat with|group with|in (it|there)|that chat)\b")
+# Talking to a room, not to one person.
+_TO_A_ROOM = re.compile(r"(?i)\b(you guys|guys|y'?all|you all|you two|you lot|everyone|everybody|folks|team)\b")
+
+
+def meant_group(text, contact, directory):
+    """
+    The group chat a DM from him is about, when he's asking them to do
+    something in one: by its name, by who's in it ("the chat with you and
+    Randy"), or — if they're in just one with him — by "the group". None
+    when he isn't asking for anything in a chat.
+    """
+    groups = store.groups_with(contact.id)
+    if not groups or not _ASKS.search(text or ""):
+        return None
+    lowered = text.lower()
+    named = [g for g in groups if g.name and g.name.lower().strip(" .!") in lowered]
+    if len(named) == 1:
+        return named[0]
+    if not _A_CHAT.search(text):
+        return None
+    others = {cid for g in groups for cid in g.members if cid != contact.id and directory.get(cid)
+              and re.search(rf"(?<!\w){re.escape(directory.get(cid).name)}\b", text, re.I)}
+    fits = [g for g in groups if others and others <= set(g.members)]
+    if fits:
+        return min(fits, key=lambda g: len(g.members))      # the smallest chat that has them all
+    return groups[0] if len(groups) == 1 else None
+
+
+def speaks_to_group(text, group, directory, sender):
+    """Written to the room — "you guys", or someone else in it by name — not to him alone."""
+    if _TO_A_ROOM.search(text or ""):
+        return True
+    return any(re.search(rf"(?<!\w)@?{re.escape(directory.get(cid).name)}\b", text or "", re.I)
+               for cid in group.members if cid != sender and directory.get(cid))
 
 
 def needless_tags(text, group, directory, sender):
@@ -157,12 +256,16 @@ def needless_tags(text, group, directory, sender):
     An @ on someone already in the back-and-forth is just their name: people
     tag to pull someone in, not on every reply to them.
     """
-    recent = {m["from"] for m in group.messages()[-4:] if m.get("kind") != "system"} - {sender, "me"}
+    recent = {m["from"] for m in group.messages()[-4:] if m.get("kind") != "system"} - {sender}
     for cid in recent:
         contact = directory.get(cid)
-        if contact is None:
+        if cid == "me":
+            said = {operator.name()}
+        elif contact is None:
             continue
-        for n in {contact.name, contact.full_name.split()[0], contact.id}:
+        else:
+            said = {contact.name, contact.full_name.split()[0], contact.id}
+        for n in said:
             text = re.sub(rf"(?im)^@{re.escape(n)}\b[,:]?\s*", "", text)
             text = re.sub(rf"(?i)(?<!\w)@({re.escape(n)})\b", r"\1", text)
     return text

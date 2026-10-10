@@ -34,7 +34,17 @@ from .. import operator as wayne_operator
 from ..audio import stt, system_voice
 from ..audio.tts import get_voice_engine
 from ..contacts import directory
-from ..engine import ContactSession, culture, grapevine, guards, initiative, places, presence, world
+from ..engine import (
+    ContactSession,
+    culture,
+    grapevine,
+    groupchat,
+    guards,
+    initiative,
+    places,
+    presence,
+    world,
+)
 from ..engine.party import MAX_CONTACTS, Call
 from ..memory import groups as group_store
 from ..memory import migrate_legacy
@@ -1057,6 +1067,21 @@ class Console(GroupChats):
                 session._deferred = None
                 logging.getLogger("wayne").info("%s answered later", contact.id)
             group_task = getattr(session, "_group_task", None)
+            meant = getattr(session, "_meant_group", None)
+            if meant is not None and not group_task and reply:
+                if groupchat.speaks_to_group(reply, meant, self.directory, contact.id):
+                    # Written to the group, in the wrong thread: it goes where it
+                    # was meant, and their DM with him keeps only what was his.
+                    logging.getLogger("wayne").info("%s wrote the group's message in the DM; moved", contact.id)
+                    self._spawn(self._post_as(meant, contact, given=reply))
+                    session.history.amend_last_reply(f"(Posted in “{meant.name}”: {reply})")
+                    reply = ""
+                else:
+                    group_task = (meant.name, "\n".join(m["text"] for m in batch))
+            if group_task and reply.strip(" .").lower() in ("", "mm"):
+                # Nothing to say to him: they've gone to say it in the group.
+                session.history.amend_last_reply(f"(Went to say it in “{group_task[0]}”.)")
+                reply = ""
             taking = getattr(session, "_take_case", None)
             if taking:
                 session._take_case = None
@@ -1189,7 +1214,7 @@ class Console(GroupChats):
         """A reaction on a message in a DM — theirs on his, or his on theirs."""
         if who == "them":
             await asyncio.sleep(random.uniform(0.6, 2.5))
-        message = TextLog(contact.id).react(message_id, who, (emoji or "")[:8] or None)
+        message = TextLog(contact.id).react(message_id, who, (emoji or "")[:16] or None)
         if message is None:
             return
         await self.broadcast({"type": "text_reaction", "speaker": contact.id, "message": message})
@@ -1198,6 +1223,28 @@ class Console(GroupChats):
             session = self.session_for(contact.id)
             session.tapbacks_seen = (getattr(session, "tapbacks_seen", []) +
                                      [f"he reacted {emoji} to your text “{message['text'][:60]}”"])[-3:]
+            if random.random() < initiative.tapback_odds(contact, emoji):
+                self._spawn(self._answer_tapback(contact, message, emoji))
+
+    async def _answer_tapback(self, contact, message, emoji):
+        """
+        His reaction on their text: seen when they next look — and now and
+        then it gets something back, a word or "what's the ❓ for", in their
+        own way. Not if he's said something since: that's what they answer.
+        """
+        delay = presence.read_delay(contact, presence.of(contact).now())
+        if delay is None:
+            return
+        await asyncio.sleep(delay + random.uniform(3, 25))
+        log = TextLog(contact.id)
+        last = log.last()
+        mine = next((m for m in log.page(limit=12) if m["id"] == message["id"]), None)
+        if (mine is None or (mine.get("reactions") or {}).get("me") != emoji or last is None
+                or last["id"] != message["id"] or self._pending_texts.get(contact.id)):
+            return
+        session = self.session_for(contact.id)
+        session.tapbacks_seen = [t for t in getattr(session, "tapbacks_seen", []) if emoji not in t]
+        await self._send_unprompted(contact, f"{emoji} to your text “{message['text'][:80]}”", "tapback")
 
     async def text_react(self, contact_id, message_id, emoji):
         contact = self.directory.get(contact_id)

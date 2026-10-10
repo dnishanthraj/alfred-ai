@@ -1195,7 +1195,8 @@ html:has(.messages:not([hidden])) .toasts { right: calc(var(--msg-w, 400px) + 16
 
 /* Several faces in one circle, laid out for how many: a pair side by side,
    three in a triangle, four in a square. */
-.stack { position: relative; background: var(--surface-2) !important; overflow: hidden; }
+/* Faces sit inside the circle; only the unread badge hangs off its edge. */
+.stack { position: relative; background: var(--surface-2) !important; overflow: visible; }
 .stack__face {
   position: absolute; border-radius: 50%; border: 1.5px solid var(--surface-2);
   background-color: var(--surface); background-repeat: no-repeat; box-sizing: border-box;
@@ -1372,14 +1373,69 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 
 /* --- tapbacks ------------------------------------------------------------- */
 /* Tapbacks hang off the bubble's lower edge, as on a phone; the row makes room. */
+/* They tuck under the bubble's lower edge, in the flow — so a row of them
+   never lies over the next message or the time. */
 .bubble__body { position: relative; display: flex; flex-direction: column; min-width: 0; }
-.bubble[data-reacted="1"] { margin-bottom: 14px; }
-.bubble__reacts { position: absolute; left: 10px; bottom: -17px; display: flex; gap: 4px; }
-.bubble--me .bubble__reacts { left: auto; right: 10px; }
-.bubble__react { font-size: 12px; line-height: 1; padding: 3px 6px; border-radius: 10px;
+.bubble__reacts { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 4px;
+  margin: -7px 0 0 10px; align-self: flex-start; }
+.bubble--me .bubble__reacts { margin: -7px 10px 0 0; align-self: flex-end; }
+.bubble__react { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; line-height: 1;
+  padding: 3px 7px 3px 6px; border-radius: 11px; white-space: nowrap;
   background: var(--raised); border: 1px solid var(--hairline-2); color: var(--text-dim);
-  font-family: var(--mono); letter-spacing: 0.04em; }
-.bubble__react[data-mine="1"] { border-color: var(--contact-accent, var(--primary-dim)); }
+  font-family: var(--mono); letter-spacing: 0.04em; box-shadow: 0 0 0 2px var(--surface); }
+.bubble__react[data-mine="1"] { border-color: var(--contact-accent, var(--primary-dim));
+  background: color-mix(in srgb, var(--contact-accent, var(--primary)) 12%, var(--raised)); }
+/* React without knowing to double-click: a face beside their message, on hover. */
+.bubble__add { flex: none; align-self: center; width: 24px; height: 24px; padding: 4px; margin-left: -2px;
+  border-radius: 50%; border: 1px solid var(--hairline-2); background: var(--surface); color: var(--text-faint);
+  cursor: pointer; opacity: 0; transition: opacity 0.15s var(--ease), color 0.15s, border-color 0.15s; }
+.bubble__add svg { width: 100%; height: 100%; display: block; }
+.bubble:hover .bubble__add, .bubble__add:focus-visible { opacity: 1; }
+.bubble__add:hover { color: var(--primary); border-color: var(--primary-dim); }
+@media (hover: none) { .bubble__add { opacity: 0.6; } }
+/* Emoji and nothing else: big, with no bubble round it. */
+.bubble--jumbo .bubble__text { background: none !important; padding: 0 2px; font-size: 34px; line-height: 1.15; }
+.bubble--jumbo .bubble__time { float: none; display: block; margin: 1px 0 0 2px; }
+.bubble--me.bubble--jumbo .bubble__time { margin: 1px 2px 0 0; }
+.bubble--jumbo .bubble__reacts { margin-top: 3px; }
+.bubble--me.bubble--jumbo .bubble__text { text-align: right; }
+/* Tagged — "@Bruce", "@everyone": the message is lit, the tag bright. */
+.bubble--ping .bubble__text { box-shadow: inset 2px 0 0 var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface-2)); }
+.mention--me, .mention--all { color: var(--primary); background: color-mix(in srgb, var(--primary) 24%, transparent);
+  font-weight: 600; }
+.book__badge[data-ping="1"] { background: var(--primary); box-shadow: 0 0 10px color-mix(in srgb, var(--primary) 70%, transparent);
+  font-size: 10px; line-height: 11px; }
+.toast[data-ping="1"] { border-left-color: var(--primary);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent);
+  animation: toast-in 0.35s var(--ease) both, ping-glow 1.6s var(--ease) 0.35s 2; }
+@keyframes ping-glow { 50% { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 18px color-mix(in srgb, var(--primary) 45%, transparent); } }
+.mention-pick__all { display: grid; place-items: center; border-radius: 50%; font-family: var(--mono); font-size: 12px;
+  color: var(--primary); border: 1px solid var(--primary-dim); background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.mention-pick__item small { margin-left: auto; font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--text-faint); }
+
+/* --- emoji ------------------------------------------------------------------ */
+.messages__emoji { flex: none; width: 36px; height: 36px; align-self: center; padding: 8px; cursor: pointer;
+  border-radius: 50%; border: 1px solid var(--hairline-2); background: transparent; color: var(--text-dim);
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease); }
+.messages__emoji svg { width: 100%; height: 100%; display: block; }
+.messages__emoji:hover { color: var(--contact-accent, var(--primary)); border-color: var(--contact-accent, var(--primary-dim)); }
+.emoji-pick { position: fixed; z-index: 80; width: 296px; padding: 6px; background: var(--raised);
+  border: 1px solid var(--hairline-2); box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.5);
+  animation: toast-in 0.12s var(--ease) both; }
+.emoji-pick[hidden] { display: none; }
+.emoji-pick__tabs { display: flex; gap: 2px; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--hairline); }
+.emoji-pick__tabs > span { display: none; }
+.emoji-pick__tab { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; padding: 4px 0 5px;
+  font-size: 16px; line-height: 1; cursor: pointer; filter: grayscale(0.7); opacity: 0.7;
+  transition: opacity 0.12s, filter 0.12s; }
+.emoji-pick__tab:hover, .emoji-pick__tab[data-on="1"] { opacity: 1; filter: none; }
+.emoji-pick__tab[data-on="1"] { border-bottom-color: var(--primary); }
+.emoji-pick__grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; max-height: 196px; overflow-y: auto; }
+.emoji-pick__btn { background: none; border: 0; font-size: 20px; line-height: 1; padding: 5px 0; border-radius: 6px;
+  cursor: pointer; transition: transform 0.1s var(--ease), background 0.1s; }
+.emoji-pick__btn:hover { background: var(--hairline); transform: scale(1.15); }
 .tapbar { position: fixed; z-index: 75; display: flex; gap: 2px; padding: 4px;
   background: var(--raised); border: 1px solid var(--hairline-2); border-radius: 18px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); animation: toast-in 0.12s var(--ease) both; }
@@ -1387,6 +1443,10 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .tapbar__btn { background: none; border: 0; font-size: 17px; line-height: 1; padding: 5px 6px;
   border-radius: 50%; cursor: pointer; transition: transform 0.12s var(--ease), background 0.12s; }
 .tapbar__btn:hover { transform: scale(1.18); background: var(--hairline); }
+.tapbar__btn[data-on="1"] { background: color-mix(in srgb, var(--primary) 22%, transparent); }
+.tapbar__more { width: 29px; height: 29px; padding: 6px; color: var(--text-dim); border-left: 1px solid var(--hairline);
+  border-radius: 0 50% 50% 0; }
+.tapbar__more svg { width: 100%; height: 100%; display: block; }
 
 /* Where they are, under their status: a pin, the place, and who's with them. */
 .hovercard__where { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-dim); }
@@ -1638,3 +1698,14 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 /* End call: the directory's handset, a size up. */
 .end-call { background: transparent; border-color: rgba(224, 87, 79, 0.45); padding: 11px; display: grid; place-items: center; }
 .end-call:hover { background: rgba(224, 87, 79, 0.12); color: var(--alert); }
+
+/* The Signal: a beam over GCPD Central at night, the bat on the clouds above it. */
+.gm-signal { position: relative; width: 60px; height: 150px; pointer-events: none; }
+.gm-signal__beam { position: absolute; left: 50%; bottom: 0; width: 46px; height: 140px; transform: translateX(-50%);
+  background: linear-gradient(to top, rgba(255, 236, 170, 0.55), rgba(255, 236, 170, 0.05));
+  clip-path: polygon(46% 100%, 54% 100%, 100% 0, 0 0); filter: blur(1.5px); animation: gm-beam 6s ease-in-out infinite; }
+.gm-signal__bat { position: absolute; left: 50%; top: -6px; width: 56px; height: 26px; transform: translateX(-50%);
+  border-radius: 50%; background: radial-gradient(ellipse at center, rgba(255, 236, 170, 0.75), rgba(255, 236, 170, 0) 70%); }
+.gm-signal__bat::after { content: ""; position: absolute; inset: 7px 13px; background: #050608;
+  clip-path: polygon(0 40%, 18% 20%, 30% 45%, 42% 10%, 46% 30%, 50% 22%, 54% 30%, 58% 10%, 70% 45%, 82% 20%, 100% 40%, 80% 75%, 62% 60%, 50% 95%, 38% 60%, 20% 75%); }
+@keyframes gm-beam { 0%, 100% { opacity: 0.85; } 50% { opacity: 0.6; } }

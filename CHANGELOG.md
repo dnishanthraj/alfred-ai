@@ -7,6 +7,27 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Fixed
 
+- **"With" means the same place, for both of them.** Barbara's plan said she was
+  patrolling with Cass while Cass was across the city on a case: the map, the
+  card under her name and what Barbara said all disagreed. Two people are now
+  together only when it holds for both — they both say so, the other is free
+  then, or already a short walk away. What either said in a conversation
+  outranks any plan, nobody asleep is dragged into someone else's, and everyone
+  in a group shares one place on the map and one "with" on every card, theirs
+  included. The pass after a conversation now hears who they said they're with.
+- **A group's message written in your DM.** Asked in a DM to say something in
+  the chat he shares with Randy, Dick wrote it to you instead ("and randy, quit
+  ghosting us!"). A DM that asks for something in a chat — by name, by who's in
+  it, or "the group" — now tells them which chat and that it goes there; and if
+  they write it in the DM anyway, a reply that talks to the room is moved into
+  the chat. In a group, asked to take it private, they can text you instead.
+- **Tags that tag nobody.** "@b" (Bruce? Barbara?) is dropped, "@Barb" becomes
+  @Barbara, someone not in the chat is just a name, and the group prompt lists
+  the exact handles.
+- **The map drew nothing**: one label size used two zoom curves, and MapLibre
+  rejects the whole style for it.
+- A group's unread badge was clipped by its stacked portraits.
+
 - **Replies slowing to 25 seconds** whenever anything else used the model: Gemma's
   sliding-window attention makes Ollama keep 200 MB context checkpoints per
   parallel slot, and the model server reached 25 GB on a 24 GB Mac. One slot and
@@ -61,6 +82,34 @@ A full review of the code turned up, among others:
   a dry "sir".
 
 ### Added
+
+- **@Bruce pings you, and @everyone pings the chat.** A tag on you gets its own
+  tone, a toast that says so, an "@" badge on the group and a lit message;
+  `@everyone` (groups only) pings every member, and they can use it too.
+- **Emoji.** A picker in the composer (with the ones you use most first), a
+  react button on hover beside their messages, any emoji from the quick-react
+  bar's +, and messages of emoji alone shown large. Reactions sit under the
+  bubble instead of over the next message — and now and then your reaction gets
+  something back ("what's the ❓ for"), as their temperament has it.
+- **Gotham, fourth pass.** Arkham is an island at last, in a channel of its own
+  with a bridge to it; every bridge is fitted to land on both shores; Wayne
+  Manor is a building on its estate at the end of Manor Drive; Kane Heights and
+  the Ironworks join the mainland, Little Italy and Museum Mile the city, the
+  Falcone Estate and the Stock Exchange its landmarks. Roads no longer run
+  through buildings or trees or double up alongside an avenue; rivers have no
+  outline across their mouths; lakes are lobed, not round. And the city has
+  more life in it: clubs, bars, diners, churches, fire stations and schools,
+  each named and iconed; container yards at the docks, cranes over building
+  sites, water towers and helipads on the roofs, lit windows; traffic moving on
+  the highways; smoke over the worst reports; the Bat-Signal over GCPD at night.
+  Land and water finally read apart, so every bridge is seen to land; Burnside and Blüdhaven run down to their own shores in
+  organic outlines rather than boxes, with lanes and low houses thinning out
+  into the mainland around them; lakes are water inside their parks; ponds stay
+  clear of the landmarks; trees have trunks and two-tier crowns. And
+  **Amusement Mile** has Gotham's one beach: sand, a boardwalk, a Ferris wheel
+  and a wooden coaster built in the air so they stand up in 3D, and the
+  Funhouse, with the Boardwalk and the Funhouse as places with bios of their own.
+- A rewritten README, with pictures of the city.
 
 - **Group calls, livelier and fixed.** After the people you spoke to answer,
   someone else may jump in unasked — agree, argue, rib someone — and whoever

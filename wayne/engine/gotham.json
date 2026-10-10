@@ -2298,6 +2298,44 @@
      6
     ]
    ]
+  },
+  {
+   "name": "Arkham Channel",
+   "width": 1.25,
+   "line": [
+    [
+     44.4,
+     53.4
+    ],
+    [
+     44.9,
+     50.6
+    ],
+    [
+     44.6,
+     47.6
+    ],
+    [
+     43.0,
+     44.6
+    ],
+    [
+     40.6,
+     42.2
+    ],
+    [
+     37.6,
+     40.4
+    ],
+    [
+     34.8,
+     39.4
+    ],
+    [
+     31.0,
+     38.8
+    ]
+   ]
   }
  ],
  "lakes": [
@@ -2746,20 +2784,48 @@
    "warp": 0.8,
    "limit": [
     [
-     -10,
-     12
+     -12.0,
+     22.6
     ],
     [
-     12.6,
-     12.6
+     -4.0,
+     23.2
     ],
     [
-     11.4,
-     28
+     3.0,
+     24.0
     ],
     [
-     -8,
-     30
+     9.0,
+     23.4
+    ],
+    [
+     12.0,
+     27.0
+    ],
+    [
+     10.6,
+     31.0
+    ],
+    [
+     6.0,
+     30.0
+    ],
+    [
+     1.0,
+     33.6
+    ],
+    [
+     -5.0,
+     31.0
+    ],
+    [
+     -11.0,
+     29.0
+    ],
+    [
+     -14.0,
+     25.6
     ]
    ],
    "crime": 0.05
@@ -2775,20 +2841,68 @@
    "tall": 20,
    "limit": [
     [
+     97.4,
+     46.0
+    ],
+    [
+     104.0,
+     44.0
+    ],
+    [
+     111.0,
+     46.6
+    ],
+    [
+     116.0,
+     44.4
+    ],
+    [
+     121.0,
+     49.0
+    ],
+    [
+     119.0,
+     55.0
+    ],
+    [
+     124.0,
+     60.0
+    ],
+    [
+     121.0,
+     67.0
+    ],
+    [
+     125.0,
+     74.0
+    ],
+    [
+     118.0,
+     80.0
+    ],
+    [
+     112.0,
+     78.0
+    ],
+    [
+     106.0,
+     84.0
+    ],
+    [
+     99.0,
+     86.0
+    ],
+    [
      96.8,
-     50
+     78.0
     ],
     [
-     122,
-     48
+     97.2,
+     64.0
     ],
     [
-     124,
-     84
-    ],
-    [
-     96.8,
-     86
+     96.4,
+     54.0
     ]
    ],
    "crime": 0.35
@@ -2864,36 +2978,208 @@
    "tall": 12,
    "city": "Blüdhaven",
    "crime": 0.6
+  },
+  {
+   "name": "Kane Heights",
+   "at": [
+    3.0,
+    50.0
+   ],
+   "angle": 8,
+   "block": 1.3,
+   "tall": 12,
+   "warp": 0.5,
+   "crime": 0.35,
+   "limit": [
+    [
+     -6.0,
+     39.0
+    ],
+    [
+     3.0,
+     38.0
+    ],
+    [
+     10.4,
+     41.0
+    ],
+    [
+     10.0,
+     49.0
+    ],
+    [
+     11.6,
+     57.0
+    ],
+    [
+     9.0,
+     64.0
+    ],
+    [
+     3.0,
+     66.0
+    ],
+    [
+     -4.0,
+     63.0
+    ],
+    [
+     -8.0,
+     56.0
+    ],
+    [
+     -5.0,
+     48.0
+    ],
+    [
+     -9.0,
+     43.0
+    ]
+   ]
+  },
+  {
+   "name": "Ironworks",
+   "at": [
+    1.0,
+    90.0
+   ],
+   "angle": -4,
+   "block": 1.7,
+   "tall": 9,
+   "industrial": true,
+   "crime": 0.7,
+   "limit": [
+    [
+     -8.0,
+     80.0
+    ],
+    [
+     2.0,
+     79.0
+    ],
+    [
+     8.6,
+     82.0
+    ],
+    [
+     7.8,
+     90.0
+    ],
+    [
+     6.4,
+     98.0
+    ],
+    [
+     1.0,
+     102.0
+    ],
+    [
+     -6.0,
+     100.0
+    ],
+    [
+     -10.0,
+     92.0
+    ],
+    [
+     -7.0,
+     86.0
+    ]
+   ]
   }
  ],
  "bluedhaven_limits": [
   [
-   100.0,
-   -28.0
+   101,
+   9
   ],
   [
-   140.0,
-   -28.0
+   99.5,
+   2
   ],
   [
-   140.0,
-   0.4
+   102,
+   -4
   ],
   [
-   126.0,
-   2.0
+   100.5,
+   -10
   ],
   [
-   118.0,
-   3.0
+   103.5,
+   -15
   ],
   [
-   110.0,
-   6.0
+   102.5,
+   -20
   ],
   [
-   101.0,
-   8.2
+   106.5,
+   -23.5
+  ],
+  [
+   110,
+   -21
+  ],
+  [
+   113.5,
+   -26
+  ],
+  [
+   118.5,
+   -24.5
+  ],
+  [
+   122,
+   -28.5
+  ],
+  [
+   126.5,
+   -25
+  ],
+  [
+   131,
+   -27
+  ],
+  [
+   134,
+   -22.5
+  ],
+  [
+   139.5,
+   -24
+  ],
+  [
+   141,
+   -18
+  ],
+  [
+   138,
+   -13
+  ],
+  [
+   142,
+   -8
+  ],
+  [
+   140.5,
+   -2
+  ],
+  [
+   143,
+   1.5
+  ],
+  [
+   126,
+   4
+  ],
+  [
+   118,
+   5
+  ],
+  [
+   110,
+   8
   ]
  ],
  "roads": [
@@ -3294,28 +3580,36 @@
      20.4
     ],
     [
-     10.0,
-     18.6
+     10.4,
+     21.6
     ],
     [
      5.0,
-     15.0
+     22.4
     ],
     [
-     0.0,
-     10.0
+     -1.0,
+     22.0
     ],
     [
      -8.0,
-     4.0
+     19.6
     ],
     [
-     -20.0,
-     -2.0
+     -16.0,
+     15.0
     ],
     [
-     -60.0,
-     -10.0
+     -26.0,
+     8.0
+    ],
+    [
+     -40.0,
+     2.0
+    ],
+    [
+     -70.0,
+     -8.0
     ]
    ]
   },
@@ -3691,6 +3985,32 @@
      114.6
     ]
    ]
+  },
+  {
+   "name": "Manor Drive",
+   "class": "drive",
+   "line": [
+    [
+     1.2,
+     22.2
+    ],
+    [
+     1.8,
+     19.0
+    ],
+    [
+     0.6,
+     16.0
+    ],
+    [
+     1.4,
+     13.2
+    ],
+    [
+     1.0,
+     11.2
+    ]
+   ]
   }
  ],
  "bridges": [
@@ -3913,6 +4233,23 @@
     [
      49.4,
      54.6
+    ]
+   ]
+  },
+  {
+   "name": "Arkham Bridge",
+   "line": [
+    [
+     43.2,
+     47.4
+    ],
+    [
+     45.2,
+     47.6
+    ],
+    [
+     47.0,
+     47.4
     ]
    ]
   }
@@ -5038,6 +5375,111 @@
    ],
    "bio": "The grand hotel of the Diamond District, where the Wayne Foundation holds its galas.",
    "note": "Bruce Wayne's natural habitat. I leave early."
+  },
+  {
+   "name": "Kane Heights",
+   "x": 3.0,
+   "y": 50.0,
+   "area": "Kane Heights",
+   "kind": "district",
+   "match": [
+    "kane heights"
+   ]
+  },
+  {
+   "name": "Ironworks",
+   "x": 1.0,
+   "y": 88.0,
+   "area": "Ironworks",
+   "kind": "district",
+   "match": [
+    "ironworks",
+    "industrial"
+   ]
+  },
+  {
+   "name": "Falcone Estate",
+   "x": -9.0,
+   "y": 47.0,
+   "area": "Kane Heights",
+   "kind": "landmark",
+   "icon": "manor",
+   "match": [
+    "falcone"
+   ],
+   "bio": "Carmine Falcone's estate on the hill above Kane Heights — walls, dogs, and a family that has owned judges for three generations.",
+   "note": "The Roman's house. Fewer guards every year, and every one of them armed."
+  },
+  {
+   "name": "Gotham Stock Exchange",
+   "x": 57.4,
+   "y": 101.4,
+   "area": "Diamond District",
+   "kind": "landmark",
+   "icon": "civic",
+   "match": [
+    "stock exchange",
+    "exchange"
+   ],
+   "bio": "The Gotham Stock Exchange, columns and bronze doors in the Financial District.",
+   "note": "Where Wayne Enterprises is worth what everyone thinks it is."
+  },
+  {
+   "name": "Little Italy",
+   "x": 40.0,
+   "y": 113.4,
+   "area": "Old Gotham",
+   "kind": "quarter",
+   "match": [
+    "little italy"
+   ]
+  },
+  {
+   "name": "Museum Mile",
+   "x": 59.2,
+   "y": 61.4,
+   "area": "Upper East Side",
+   "kind": "quarter",
+   "match": [
+    "museum mile"
+   ]
+  },
+  {
+   "name": "The Boardwalk",
+   "x": 61.5,
+   "y": 22.4,
+   "area": "Amusement Mile",
+   "kind": "landmark",
+   "icon": "beach",
+   "match": [
+    "the boardwalk",
+    "the beach",
+    "beach",
+    "boardwalk",
+    "the sand",
+    "seafront"
+   ],
+   "bio": "Gotham's only beach: a strip of grey sand under the Mile, the boardwalk behind it, the Atlantic in front. Packed on the three hot weekends a year; the rest of the time it's dog walkers, fishermen and whatever the tide brings in.",
+   "note": "The tide brought in two bodies last spring. Both had been in the water since before the season."
+  },
+  {
+   "name": "The Funhouse",
+   "x": 63.4,
+   "y": 24.2,
+   "area": "Amusement Mile",
+   "kind": "landmark",
+   "icon": "circus",
+   "match": [
+    "funhouse",
+    "fun house",
+    "the big wheel",
+    "ferris wheel",
+    "the coaster",
+    "rollercoaster",
+    "roller coaster"
+   ],
+   "bio": "The Mile's funhouse — mirror maze, tilting rooms, a clown's mouth for a door — next to the big wheel and the old wooden coaster. Open some summers; boarded up the rest, and never quite empty.",
+   "note": "Every time we clear it out, someone moves back in. The paint on the clown keeps turning green."
   }
  ],
  "regions": [
@@ -5056,7 +5498,8 @@
   "The Narrows": 0.95,
   "Blackgate Isle": 0.9,
   "Paris Island": 0.6,
-  "Justice Island": 0.1
+  "Justice Island": 0.1,
+  "Arkham Island": 0.8
  },
  "subway": [
   {
@@ -5398,5 +5841,135 @@
    1.8,
    5.5
   ]
- ]
+ ],
+ "estate": [
+  [
+   -6.4,
+   4.2
+  ],
+  [
+   -2.0,
+   2.6
+  ],
+  [
+   3.2,
+   3.4
+  ],
+  [
+   7.6,
+   5.0
+  ],
+  [
+   9.0,
+   8.6
+  ],
+  [
+   8.2,
+   12.8
+  ],
+  [
+   9.6,
+   16.4
+  ],
+  [
+   6.4,
+   19.4
+  ],
+  [
+   1.0,
+   20.2
+  ],
+  [
+   -3.4,
+   18.6
+  ],
+  [
+   -6.8,
+   15.0
+  ],
+  [
+   -5.6,
+   11.0
+  ],
+  [
+   -7.6,
+   7.6
+  ]
+ ],
+ "yards": [
+  {
+   "name": "Dixon Docks yard",
+   "at": [
+    27.6,
+    126.6
+   ],
+   "r": 2.2
+  },
+  {
+   "name": "Naval yard",
+   "at": [
+    35.4,
+    123.6
+   ],
+   "r": 1.3
+  },
+  {
+   "name": "East End freight",
+   "at": [
+    79.6,
+    106.0
+   ],
+   "r": 1.3
+  },
+  {
+   "name": "Waterloo yard",
+   "at": [
+    118.0,
+    0.8
+   ],
+   "r": 1.8
+  },
+  {
+   "name": "Ironworks yard",
+   "at": [
+    -1.0,
+    94.0
+   ],
+   "r": 2.0
+  }
+ ],
+ "funfair": {
+  "beach": [
+   [
+    54.5,
+    18.5
+   ],
+   [
+    71.5,
+    18.5
+   ],
+   [
+    71.5,
+    23.6
+   ],
+   [
+    54.5,
+    23.6
+   ]
+  ],
+  "depth": 0.85,
+  "wheel": [
+   66.9,
+   24.3
+  ],
+  "wheel_axis": 12,
+  "coaster": [
+   58.6,
+   24.5
+  ],
+  "funhouse": [
+   63.4,
+   24.2
+  ]
+ }
 }

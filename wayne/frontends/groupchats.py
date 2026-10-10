@@ -99,9 +99,27 @@ class GroupChats:
         group = store.of(group_id)
         if group is None:
             return
-        message = group.react(message_id, "me", (emoji or "")[:8] or None)
+        message = group.react(message_id, "me", (emoji or "")[:16] or None)
         if message:
             await self.broadcast({"type": "group_reaction", "group": group_id, "message": message})
+            author = self.directory.get(message.get("from"))
+            if emoji and author is not None and random.random() < initiative.tapback_odds(author, emoji) * 0.7:
+                self._spawn(self._answer_group_tapback(group_id, author, message, emoji))
+
+    async def _answer_group_tapback(self, group_id, contact, message, emoji):
+        """Now and then, whoever wrote it says something about his reaction — once they've seen it."""
+        delay = presence.read_delay(contact, presence.of(contact).now())
+        if delay is None:
+            return
+        await asyncio.sleep(delay + random.uniform(3, 20))
+        group = store.of(group_id)
+        if group is None or contact.id not in group.members:
+            return
+        latest = [m for m in group.messages() if m.get("kind") != "system"][-3:]
+        mine = next((m for m in group.messages() if m.get("id") == message.get("id")), None)
+        if mine is None or (mine.get("reactions") or {}).get("me") != emoji or mine not in latest:
+            return      # he took it back, or the chat's moved on
+        await self._post_as(group, contact, tapback=f"{emoji} to your message “{message['text'][:80]}”")
 
     # --- each member, in their own time -------------------------------------
 
@@ -191,26 +209,34 @@ class GroupChats:
         log.info("%s doing what he asked in group %s", contact.id, group.id)
         await self._post_as(group, contact, task=task)
 
-    async def _post_as(self, group, contact, unread=(), must=False, opening=None, task=None, chase=None):
-        """They write, type and send — then everyone else reads it in turn."""
+    async def _post_as(self, group, contact, unread=(), must=False, opening=None, task=None, chase=None,
+                       tapback=None, given=None):
+        """
+        They write, type and send — then everyone else reads it in turn.
+        `given` is something they've already written for the group (in the
+        wrong thread): it's sent as it is.
+        """
         session = self.session_for(contact.id)
         loop = asyncio.get_running_loop()
         session._group_actions = {"leave": False, "add": []}
-        async with self.turn_lock:
-            # Anything said while they waited their turn to write, they've seen
-            # too — two people answering the same question without either
-            # noticing the other was the rule, not the exception.
-            unread = list(unread)
-            seen = {m.get("id") for m in unread}
-            fresh = [m for m in group.messages() if m["at"] > group.read_upto(contact.id)
-                     and m["from"] != contact.id and m.get("id") not in seen]
-            if fresh:
-                unread += fresh
-                read_at = group.mark_read(contact.id)
-                await self.broadcast({"type": "group_read", "group": group.id, "member": contact.id,
-                                      "at": read_at})
-            text = await loop.run_in_executor(None, session.group_post, group, unread, must,
-                                              opening, task, chase)
+        if given is not None:
+            text, unread = given, list(unread)
+        else:
+            async with self.turn_lock:
+                # Anything said while they waited their turn to write, they've seen
+                # too — two people answering the same question without either
+                # noticing the other was the rule, not the exception.
+                unread = list(unread)
+                seen = {m.get("id") for m in unread}
+                fresh = [m for m in group.messages() if m["at"] > group.read_upto(contact.id)
+                         and m["from"] != contact.id and m.get("id") not in seen]
+                if fresh:
+                    unread += fresh
+                    read_at = group.mark_read(contact.id)
+                    await self.broadcast({"type": "group_read", "group": group.id, "member": contact.id,
+                                          "at": read_at})
+                text = await loop.run_in_executor(None, session.group_post, group, unread, must,
+                                                  opening, task, chase, tapback)
         actions = getattr(session, "_group_actions", {}) or {}
         if task:
             actions["asked"] = True     # he asked for this, in a DM: it stands
@@ -228,7 +254,11 @@ class GroupChats:
         started = loop.time()
         per_second = max(1.0, (contact.texting_pace or {}).get("wpm", 50) * 5 / 60)
         mine = [m["text"] for m in group.messages()[-20:] if m["from"] == contact.id][-3:]
+        text = groupchat.fix_tags(text, group, self.directory, contact.id)
         text = groupchat.needless_tags(text, group, self.directory, contact.id)
+        if not text:
+            await self._group_actions(group, contact, actions)
+            return
         parts = initiative.bubbles(contact, initiative.untic(contact, text, mine))
         for i, part in enumerate(parts):
             current = store.of(group.id)
@@ -253,6 +283,12 @@ class GroupChats:
             if member != contact.id:
                 self._read_later(group, member)
 
+    async def _dm_from_group(self, contact, text):
+        from ..engine.session import REACH_MARKER
+        await asyncio.sleep(random.uniform(4, 20))
+        self.session_for(contact.id).history.record_exchange(REACH_MARKER, text, via="text")
+        await self._deliver(contact, text, asyncio.get_running_loop().time(), origin="aside")
+
     async def _tapback(self, group, contact, unread, emoji):
         """Their reaction lands on the latest thing someone else said."""
         target = next((m for m in reversed(list(unread) or group.messages()[-6:])
@@ -267,6 +303,9 @@ class GroupChats:
 
     async def _group_actions(self, group, contact, actions):
         """They add someone to the group, or walk out of it — their call, in context."""
+        if actions.get("dm"):
+            # Taken private: a text to him, in their thread, as they'd send it.
+            self._spawn(self._dm_from_group(contact, actions["dm"]))
         for name in actions.get("add", [])[:1]:
             newcomer = next((c for c in self.directory
                              if name.lower() in (c.name.lower(), c.full_name.lower(), c.id)), None)

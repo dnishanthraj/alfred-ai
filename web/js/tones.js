@@ -120,6 +120,15 @@
     note(1175, t + 0.07, 0.14, 0.025);
   }
 
+  /** Tagged — "@Bruce", "@everyone": the message blip with a third note on
+      top, brighter, so a ping reads apart from the chat going by. */
+  function ping() {
+    var t = ctx().currentTime;
+    note(988, t, 0.07, 0.035);
+    note(1319, t + 0.07, 0.07, 0.035);
+    note(1760, t + 0.14, 0.2, 0.03);
+  }
+
   /* --- the interface ------------------------------------------------------
      The rest of the console's furniture, in the same instrument: tiny, high
      and dry, so a pointer moving across the directory sounds like a machine
@@ -206,6 +215,7 @@
     missed: missed,
     startIncoming: startIncoming,
     message: message,
+    ping: ping,
     startRinging: startRinging,
     stopRinging: stopRinging,
     connected: connected,
