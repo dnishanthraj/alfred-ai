@@ -1653,19 +1653,25 @@ class Console(GroupChats):
         current = cases.active(contact_id)
         if current and current["id"] != report_id:
             cases.leave(current["id"], contact_id)      # off the last one, on to this
-        # From wherever they are, by the roads, as long as the roads take — and the
-        # map shows them on their way there, arriving when the case does.
+        # From exactly where they are, the fastest way they have in the suit — the roofs,
+        # the bike, Randy flying, the Batwing if it's near — and the map shows them on
+        # their way. A getaway is cut off where they can get ahead of it, not chased.
         whereabouts = presence.of(contact)
-        here = places.resolve(whereabouts.whereabouts()[0])
-        minutes = (travel.route((here["x"], here["y"]), (report["x"], report["y"]), here["name"], report["place"],
-                                patrol=bool(getattr(contact, "beat", None)))[1] if here else 12.0)
-        case = cases.assign(report, contact_id, by=by, travel=minutes)
+        here = whereabouts.position() or (0.0, 0.0)
+        goal, cut = self._heading_for(report, here, contact_id)
+        trip = await asyncio.to_thread(travel.fastest, contact_id, here, goal, None if cut else report["place"],
+                                       None, True)
+        minutes = max(0.5, (trip["end"] - time.time()) / 60)
+        case = cases.assign({**report, "x": goal[0], "y": goal[1]}, contact_id, by=by, travel=minutes)
+        case = self._chase_after(case, report, cut, contact_id, trip["end"]) or case
         await self._case_comms(case)
         if report.get("suspect"):
             from ..engine import codex
             codex.encounter(report["suspect"], f"{report['kind'].lower()} at {report['place']}")
         whereabouts.set_activity(f"on the way to the {report['kind'].lower()} at {report['place']}",
-                                 presence.BUSY, max(90, int(minutes) + 60), where=report["place"])
+                                 presence.BUSY, max(90, int(minutes) + 60), where=report["place"],
+                                 xy=goal if report.get("route") else None)
+        whereabouts.set_trip(report["place"], {**trip, "left": time.time()})
         if not contact.shares_status:
             whereabouts.seen_at(report["place"], "on a case")
         log.info("%s on case %s (%s at %s, %s)", contact_id, report_id, report["kind"], report["place"], by)
@@ -1682,16 +1688,115 @@ class Console(GroupChats):
         return case
 
     async def _bruce_takes(self, report):
-        """He goes himself: the Batmobile by night, the car by day — and he's on the case with whoever's there."""
+        """
+        He goes himself — as Batman, whatever the hour: the roofs, the Batmobile or the
+        Batwing, whichever's fastest — and he's on the case with whoever's there. A
+        getaway he cuts off where he can get ahead of it.
+        """
         from ..engine import batman, cases
-        trip = await asyncio.to_thread(batman.go, report["place"], report["x"], report["y"], report["id"])
-        minutes = (trip["end"] - trip["start"]) / 60 if trip else 10.0
-        case = cases.assign(report, "bruce", by="him", travel=minutes)
+        here = batman.position() or (0.0, 30.0)
+        goal, cut = self._heading_for(report, here, "bruce")
+        trip = await asyncio.to_thread(batman.go, report["place"], goal[0], goal[1], report["id"])
+        minutes = (trip["end"] - time.time()) / 60 if trip else 10.0
+        case = cases.assign({**report, "x": goal[0], "y": goal[1]}, "bruce", by="him", travel=minutes)
+        case = self._chase_after(case, report, cut, "bruce", trip["end"] if trip else time.time() + 600) or case
         await self._case_comms(case)
         await self.broadcast({"type": "cases"})
         await self.broadcast({"type": "bruce", "bruce": batman.state()})
         log.info("bruce on case %s (%s at %s), %.0f min out", report["id"], report["kind"], report["place"], minutes)
         return case
+
+    @staticmethod
+    def _heading_for(report, here, who):
+        """
+        Where to go for a report: the scene — or, for one on the move, the first
+        point along its way they can get to ahead of it (and True), or where it'll
+        end up, for all the good that'll do, when nowhere's soon enough (and False).
+        """
+        from ..engine import incidents
+        if not (report.get("route") and report.get("moving")):
+            return (report["x"], report["y"]), False
+        found = incidents.intercept(report, here, who)
+        if found:
+            return found[0], True
+        return tuple(report["route"]["pts"][-1]), False
+
+    def _chase_after(self, case, report, cut, who, arrive):
+        """
+        Someone gets ahead of a getaway: whether they stop it there is decided when
+        they do — the first of them to cut it off decides it — and the case ends soon
+        after. Nobody can get ahead of it: it ends when it's clean away.
+        """
+        from ..engine import cases, outcomes
+        route = report.get("route") if report.get("moving") else None
+        if not route:
+            return None
+        start = round(route["start"])
+        held = case.get("chase") or {}
+        if cut and (held.get("start") != start or held.get("at", 1e18) > arrive):
+            caught = outcomes.catches(case, who)
+            x, y = case["x"], case["y"]
+            return cases.mark(case["id"], chase={"start": start, "x": x, "y": y, "at": arrive, "caught": caught, "by": who},
+                              due=arrive + (6 if caught else 2) * 60)
+        if not cut and held.get("start") != start:
+            return cases.mark(case["id"], due=max(case.get("due", 0), route["end"] + 120))
+        return None
+
+    def _turned(self, case, report, now):
+        """
+        A call they're on has turned into something else — the robbery's a getaway
+        now. The case follows it; whoever's on scene goes after it, and whether they
+        catch it is decided as they go; whoever's still on the way heads it off.
+        """
+        from ..engine import cases, outcomes
+        changes = {"kind": report["kind"], "severity": report["severity"], "was": report.get("was", [])}
+        route = report.get("route") if report.get("moving") else None
+        held = case.get("chase") or {}
+        if route and held.get("start") != round(route["start"]):
+            landed = [m for m, v in (case.get("members") or {}).items() if v.get("status") == "on scene"]
+            if landed:
+                trial = {**case, **changes}
+                caught = outcomes.catches(trial)
+                f = 0.35 + 0.5 * outcomes._roll(trial, "caught-at") if caught else 1.0
+                at = route["start"] + (route["end"] - route["start"]) * f
+                x, y = travel.position(route, at)
+                changes.update(chase={"start": round(route["start"]), "x": round(x, 2), "y": round(y, 2), "at": at,
+                                      "caught": caught, "by": landed[0]},
+                               x=round(x, 2), y=round(y, 2), due=at + (6 if caught else 2) * 60)
+                # Off after it, right behind: along its way to wherever they stop it, or lose it.
+                legs = [math.dist(route["pts"][i], route["pts"][i + 1]) for i in range(len(route["pts"]) - 1)]
+                upto, walked, pts = sum(legs) * f, 0.0, [route["pts"][0]]
+                for i, leg in enumerate(legs):
+                    if walked + leg >= upto:
+                        pts.append([round(x, 2), round(y, 2)])
+                        break
+                    pts.append(route["pts"][i + 1])
+                    walked += leg
+                for member in landed:
+                    contact = self.directory.get(member)
+                    if contact is None:
+                        continue
+                    whereabouts = presence.of(contact)
+                    whereabouts.set_activity(f"after the {report['kind'].lower()} from {case['place']}", presence.BUSY,
+                                             90, where=case["place"], xy=(x, y))
+                    whereabouts.set_trip(case["place"], {"pts": pts, "start": route["start"], "end": at,
+                                                         "by": "in pursuit", "left": route["start"]})
+        case = cases.mark(case["id"], **changes) or case
+        if route and not (case.get("chase") or {}).get("by"):
+            # Nobody there when it took off: whoever's on the way heads it off instead.
+            for member, mine in (case.get("members") or {}).items():
+                contact = self.directory.get(member)
+                if contact is None or mine.get("status") != "assigned":
+                    continue
+                whereabouts = presence.of(contact)
+                here = whereabouts.position(now) or (case["x"], case["y"])
+                goal, cut = self._heading_for(report, here, member)
+                trip = travel.fastest(member, here, goal, None, now, book=False, jet=False)
+                whereabouts.set_activity(f"after the {report['kind'].lower()} from {case['place']}", presence.BUSY, 90,
+                                         where=case["place"], xy=goal)
+                whereabouts.set_trip(case["place"], {**trip, "left": now})
+                case = self._chase_after(case, report, cut, member, trip["end"]) or case
+        log.info("case %s turned: %s -> %s", case["id"], case.get("was", ["?"])[-1:], report["kind"])
 
     async def _case_comms(self, case):
         """
@@ -1892,6 +1997,16 @@ class Console(GroupChats):
                 await self._ring(contact, f"backup — the {about} has gone bad")
             else:
                 self._spawn(self._send_unprompted(contact, about, "case_trouble"))
+        # Calls they're on that have turned — a getaway now, a hostage-taking — and ones gone clean away.
+        live = {r["id"]: r for r in incidents.at(now)}
+        for case in openly:
+            report = live.get(case["id"])
+            if report is not None and report["kind"] != case["kind"]:
+                self._turned(case, report, now)
+            elif report is None and case["kind"] in incidents.MOVING and now < case.get("due", now):
+                held = case.get("chase") or {}
+                if not held.get("caught") and now > held.get("at", 0):
+                    cases.mark(case["id"], due=now)          # it's gone: nothing left to do but say so
         for case in cases.advance(now, arrived=self._on_scene):
             if self.current_id:
                 break           # he's on a call: the write-up waits, rather than taking the model from it
@@ -1944,6 +2059,9 @@ class Console(GroupChats):
             closed = cases.close(case["id"], outcome or result["line"], result)
             if not closed:
                 return
+            if "bruce" in cases.team(closed):
+                from ..engine import batman
+                batman.off_case(closed["id"])
             now = time.time()
             for member in cases.team(closed):
                 contact = self.directory.get(member)
@@ -2677,18 +2795,27 @@ async def delete_pin(pin_id: str):
 
 @app.get("/api/map/incidents")
 async def map_incidents():
-    """What the scanner says is happening in the city right now — and who's on what."""
-    from ..engine import cases, incidents
+    """What the scanner says is happening in the city right now — who's on what, and where the jet is."""
+    from ..engine import cases, incidents, jet
     by_id = {c["id"]: c for c in cases.board()}
-    reports = []
-    for r in incidents.at():
+    reports, now = [], time.time()
+
+    def with_case(r):
         case = by_id.get(r["id"])
-        if case:
-            r = {**r, "assignee": case["assignee"], "team": cases.team(case), "case": case["status"],
-                 "outcome": case.get("outcome", ""), "result": (case.get("result") or {}).get("how", ""),
-                 "ok": (case.get("result") or {}).get("ok")}
-        reports.append(r)
-    return JSONResponse({"incidents": reports})
+        if not case:
+            return r
+        return {**r, "assignee": case["assignee"], "team": cases.team(case), "case": case["status"],
+                "outcome": case.get("outcome", ""), "result": (case.get("result") or {}).get("how", ""),
+                "ok": (case.get("result") or {}).get("ok"),
+                **({"done": True, "done_at": case.get("closed_at", now)} if case["status"] == "closed" else {})}
+    for r in incidents.at(now):
+        reports.append(with_case(r))
+    # Tonight's that are over stay on the map a while, faded: cleared by GCPD, or the family's, closed.
+    shown = {r["id"] for r in reports}
+    for r in incidents.ended(now, hours=3):
+        if r["id"] not in shown:
+            reports.append({**with_case(r), "done": True})
+    return JSONResponse({"incidents": reports, "jet": jet.state()})
 
 
 @app.get("/api/cases")
@@ -2726,6 +2853,14 @@ async def bruce_go(request: Request):
             return JSONResponse({"error": "no such report"}, status_code=404)
         await console._bruce_takes(report)
         return JSONResponse(batman.state())
+    person = str(body.get("person") or "")
+    if person:
+        # To one of them, and with them from then on.
+        trip = await asyncio.to_thread(batman.join, person)
+        if trip is None:
+            return JSONResponse({"error": "can't see where they are"}, status_code=400)
+        await console.broadcast({"type": "bruce", "bruce": batman.state()})
+        return JSONResponse(batman.state())
     where = str(body.get("place") or "").strip()
     x, y = body.get("x"), body.get("y")
     if not where and x is None:
@@ -2736,6 +2871,22 @@ async def bruce_go(request: Request):
         return JSONResponse({"error": "can't get there"}, status_code=400)
     await console.broadcast({"type": "bruce", "bruce": batman.state()})
     return JSONResponse(batman.state())
+
+
+@app.post("/api/jet/summon")
+async def jet_summon():
+    """He calls the Batwing to him: it comes, and waits overhead for wherever he goes next. Batman's, not Bruce Wayne's."""
+    from ..engine import batman, jet
+    if not batman.state()["suit"]:
+        return JSONResponse({"error": "Not in daylight"}, status_code=200)
+    here = batman.position()
+    if here is None:
+        return JSONResponse({"error": "Can't find you"}, status_code=200)
+    found = await asyncio.to_thread(jet.summon, "bruce", here)
+    if found is None:
+        return JSONResponse({"error": "On someone else's job"}, status_code=200)
+    await console.broadcast({"type": "cases"})
+    return JSONResponse(found)
 
 
 @app.get("/api/map/trail/{contact_id}")

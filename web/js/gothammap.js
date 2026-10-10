@@ -649,14 +649,22 @@
                                     'Chemical spill', '#d4ff4a', 'Freezing incident', '#bfe9ff', '#9a8f86'],
                    'circle-opacity': 0.3 } },
         // Trouble, as the scanner has it: a pulse under each report.
-        { id: 'incident-pulse', type: 'circle', source: 'incidents',
+        // Over and done, tonight: a faded mark — green where it went well, red where it didn't,
+        // grey where GCPD cleared it — fading out over a few hours, then gone.
+        { id: 'incident-done', type: 'circle', source: 'incidents', filter: ['==', ['get', 'done'], true],
+          paint: { 'circle-radius': z([10.6, 3, 14, 5.5, 17, 7]),
+                   'circle-color': ['case', ['==', ['get', 'ok'], true], '#5fd38d', ['==', ['get', 'ok'], false], '#ff6b6b', '#8aa0b4'],
+                   'circle-opacity': ['*', 0.55, ['coalesce', ['get', 'fade'], 1]],
+                   'circle-stroke-color': C.void, 'circle-stroke-width': 1.2,
+                   'circle-stroke-opacity': ['*', 0.8, ['coalesce', ['get', 'fade'], 1]], 'circle-pitch-alignment': 'map' } },
+        { id: 'incident-pulse', type: 'circle', source: 'incidents', filter: ['!=', ['get', 'done'], true],
           paint: { 'circle-radius': 10, 'circle-color': ['match', ['get', 'severity'], 1, SEVERITY[1], 2, SEVERITY[2], 3, SEVERITY[3], SEVERITY[4]],
                    'circle-opacity': 0.25, 'circle-blur': 0.6, 'circle-pitch-alignment': 'map' } },
         // Someone's on it: a ring in their colour.
-        { id: 'case-ring', type: 'circle', source: 'incidents', filter: ['has', 'assignee'],
+        { id: 'case-ring', type: 'circle', source: 'incidents', filter: ['all', ['has', 'assignee'], ['!=', ['get', 'done'], true]],
           paint: { 'circle-radius': 15, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': ['get', 'acc'],
                    'circle-stroke-width': 2, 'circle-pitch-alignment': 'map' } },
-        { id: 'incident', type: 'symbol', source: 'incidents',
+        { id: 'incident', type: 'symbol', source: 'incidents', filter: ['!=', ['get', 'done'], true],
           layout: { 'icon-image': ['concat', 'gm-warn-', ['to-string', ['get', 'severity']]], 'icon-size': z([10.6, 0.6, 14, 0.85, 17, 1]),
                     'icon-allow-overlap': true, 'icon-anchor': 'bottom' } },
         // A police helicopter over the worst report, its searchlight on the street.
@@ -828,7 +836,7 @@
 
   /* --- hovering: the console's own tooltip, never the map's ----------------- */
 
-  var HOVERABLE = ['incident', 'airship', 'batwing', 'plane', 'chopper', 'heli', 'train-car', 'ship', 'boat', 'tug', 'sail', 'patrol', 'metro',
+  var HOVERABLE = ['incident', 'incident-done', 'airship', 'batwing', 'plane', 'chopper', 'heli', 'train-car', 'ship', 'boat', 'tug', 'sail', 'patrol', 'metro',
                    'landmark', 'spot', 'venue', 'station', 'railstation', 'parked', 'district-label', 'quarter-label', 'road-label',
                    'primary', 'highway', 'avenue', 'secondary', 'subway', 'ferry', 'shipping', 'pitch', 'golf', 'lot', 'park', 'water',
                    'marsh', 'trail-stop', 'district'];
@@ -837,7 +845,8 @@
     var p = f.properties || {};
     if (p.l === 'place') return p.n + (p.a && p.a !== p.n ? ' · ' + p.a : '');
     if (p.l === 'stop') return p.n;
-    if (p.kind) return p.kind + ' · ' + p.place + ' · ' + p.status;
+    if (p.kind && p.done) return p.kind + ' · ' + p.place + ' · ' + (p.result || 'cleared') + ' · over';
+    if (p.kind) return p.kind + ' · ' + p.place + ' · ' + (p.moving ? 'on the move' : p.status);
     if (p.m && p.n) return p.n;                                    // something moving: a train, a ferry, a flight
     if (p.l === 'station') return p.n + ' · ' + p.line;
     if (p.l === 'railstation') return p.n + ' · ' + p.line + ' station';
@@ -901,7 +910,14 @@
         placeCard(f.properties.n);
       });
     });
-    map.on('click', 'incident', function (e) { if (!dropping) incidentCard(e.features[0].properties); });
+    // The report itself, not the map's flattened copy of it (lists come back as strings).
+    function reportFor(f) {
+      var id = f.properties.id;
+      return reports.filter(function (x) { return x.id === id; })[0] || f.properties;
+    }
+    map.on('click', 'incident', function (e) { if (!dropping) incidentCard(reportFor(e.features[0])); });
+    map.on('click', 'incident-done', function (e) { if (!dropping) incidentCard(reportFor(e.features[0])); });
+    map.on('click', 'batwing', function () { if (!dropping) jetCard(); });
   }
 
   /* --- people ----------------------------------------------------------------- */
@@ -937,14 +953,25 @@
   function journey(route) {
     var pts = route.pts.map(function (p) { return ll(p[0], p[1]); }), dist = [0];
     for (var i = 1; i < pts.length; i++) dist.push(dist[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
-    return { pts: pts, dist: dist, len: dist[dist.length - 1], start: route.start, end: route.end, from: route.from };
+    // Over the roofs the pace isn't even: fast on the lines across the streets, a sprint on the tops.
+    var times = route.times && route.times.length === pts.length ? route.times : null;
+    return { pts: pts, dist: dist, len: dist[dist.length - 1], start: route.start, end: route.end, from: route.from,
+             times: times };
   }
 
   // Where along it they are now — and the road behind and ahead of them.
   function onJourney(j, now) {
-    var f = Math.max(0, Math.min(1, (now - j.start) / Math.max(1, j.end - j.start))), d = f * j.len, i = 1;
+    var f = Math.max(0, Math.min(1, (now - j.start) / Math.max(1, j.end - j.start))), i = 1, a, b, k;
+    if (j.times) {
+      while (i < j.times.length - 1 && j.times[i] < f) i++;
+      a = j.pts[i - 1]; b = j.pts[i];
+      k = Math.max(0, Math.min(1, (f - j.times[i - 1]) / ((j.times[i] - j.times[i - 1]) || 1)));
+      return { at: [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k], i: i };
+    }
+    var d = f * j.len;
     while (i < j.dist.length - 1 && j.dist[i] < d) i++;
-    var a = j.pts[i - 1], b = j.pts[i], seg = (j.dist[i] - j.dist[i - 1]) || 1, k = (d - j.dist[i - 1]) / seg;
+    a = j.pts[i - 1]; b = j.pts[i];
+    k = (d - j.dist[i - 1]) / ((j.dist[i] - j.dist[i - 1]) || 1);
     return { at: [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k], i: i };
   }
 
@@ -983,6 +1010,8 @@
       glide(marker, at);
     }
     marker.getElement().classList.toggle('is-ghost', !!ghost);
+    // Him: the cowl's badge when he's Batman — every night, and on a case — and just his face by day.
+    if (c.id === 'bruce') marker.getElement().classList.toggle('is-suited', !!(c.presence && c.presence.suit));
     return marker;
   }
 
@@ -1072,6 +1101,12 @@
       marker.setLngLat(here);
       if (following === id && !moving) map.jumpTo({ center: here });
     });
+    // With one of them: his marker at their shoulder, wherever they go.
+    var me = opts.bruce && opts.bruce(), mine = people.bruce;
+    if (me && me.presence && me.presence.follow && mine && !mine._trip && people[me.presence.follow]) {
+      var them = people[me.presence.follow].getLngLat();
+      mine.setLngLat([them.lng + 0.45 * K, them.lat + 0.3 * K]);
+    }
     if (arrived) placePeople();
   }
 
@@ -1153,6 +1188,15 @@
         (company.length ? ' · with ' + company.join(', ') : '');
     card.querySelector('[data-act="follow"]').hidden = !p.spot;
     card.querySelector('[data-act="follow"]').classList.toggle('is-on', following === id);
+    // Go to them himself, and stay with them: only where he can see them, and never to himself.
+    var join = card.querySelector('[data-act="join"]'), me = opts.bruce && opts.bruce();
+    if (join) {
+      var withThem = !!(me && me.presence && me.presence.follow === id);
+      join.hidden = !opts.go || !p.spot || !!p.seen_live;
+      join.classList.toggle('is-on', withThem);
+      join.querySelector('span').textContent = withThem ? 'With ' + c.name : 'Go to';
+      join.querySelector('.gm-btn__bat').innerHTML = ARKHAM_BAT;
+    }
   }
 
   function showTrail(id) {
@@ -1195,6 +1239,13 @@
 
   /* --- a place's own card: what it is, and what he thinks of it ------------- */
 
+  function spriteUrl(img) {
+    var canvas = document.createElement('canvas');
+    canvas.width = img.width; canvas.height = img.height;
+    canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
+    return canvas.toDataURL();
+  }
+
   function iconUrl(kind) {
     var img = icon(kind), canvas = document.createElement('canvas');
     canvas.width = img.width; canvas.height = img.height;
@@ -1205,6 +1256,7 @@
   function showInfo(title, sub, body, note, imageUrl, tint) {
     var card = $('.gm-info');
     openReport = null;
+    jetOpen = false;
     card.querySelector('.gm-info__log').hidden = true;
     card.querySelector('.gm-info__assign').hidden = true;
     var go = card.querySelector('.gm-info__go');
@@ -1297,8 +1349,13 @@
     canvas.width = img.width; canvas.height = img.height;
     canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
     var toll = tollText(report.toll);
-    showInfo(report.kind, report.place + ' · ' + clock(report.at) + ' · ' + report.status + (toll ? ' · ' + toll : ''),
+    var going = report.moving ? (report.route && report.route.mode === 'foot' ? 'On the move, on foot' : 'On the move, by car')
+                              : report.stopped ? 'Stopped' : report.fled ? 'Suspects fled' : '';
+    showInfo(report.kind, (report.was && report.was.length ? 'Was: ' + report.was.join(' \u2192 ') + ' · ' : '') +
+             (report.origin && report.origin !== report.place ? 'From ' + report.origin : report.place) + ' · ' +
+             clock(report.at) + ' · ' + (going || report.status) + (toll ? ' · ' + toll : ''),
              (report.suspect ? 'Suspect: ' + report.suspect + '. ' : report.gang ? 'Looks like ' + report.gang + '. ' : '') +
+             (report.crew >= 3 ? 'About ' + report.crew + ' of them. ' : '') +
              (report.dispatch ? 'Dispatch: \u201c' + report.dispatch + '\u201d' : 'Dispatch is still coming through.'),
              '', canvas.toDataURL(), SEVERITY[report.severity]);
     openReport = report.id;          // after showInfo, which clears it for any other card
@@ -1386,12 +1443,18 @@
     if (!ready || root.hidden) return;
     fetch('/api/map/incidents').then(function (r) { return r.json(); }).then(function (body) {
       reports = body.incidents || [];
+      reports.forEach(function (r) { if (r.route) r._way = journey(r.route); });
+      jet = body.jet || null;
+      if (window.GothamTraffic && GothamTraffic.jet) GothamTraffic.jet(jet);
+      if (jetOpen && !$('.gm-info').hidden) jetCard();
       var contacts = opts.contacts();
-      var stamp = JSON.stringify(reports.map(function (r) { return [r.id, r.status, r.assignee, r.case]; }));
+      var stamp = JSON.stringify(reports.map(function (r) { return [r.id, r.status, r.assignee, r.case, r.kind, r.stopped, r.x, r.y]; }));
       if (stamp !== incidentStamp) {
         incidentStamp = stamp;
         map.getSource('incidents').setData({ type: 'FeatureCollection', features: reports.map(function (r) {
           var props = Object.assign({}, r);
+          delete props._way; delete props.route;
+          if (r.done) props.fade = Math.max(0.15, 1 - (Date.now() / 1000 - (r.done_at || 0)) / (3 * 3600));
           if (r.assignee && contacts[r.assignee]) props.acc = contacts[r.assignee].accent;
           return { type: 'Feature', geometry: { type: 'Point', coordinates: ll(r.x, r.y) }, properties: props };
         }) });
@@ -1402,6 +1465,47 @@
         if (again) incidentCard(again);
       }
     }).catch(function () {});
+  }
+
+  /* --- the Batwing: where it is, and calling it -------------------------------- */
+
+  var jet = null, jetOpen = false;
+  // Where it is this second: along the leg it's flying, or wherever it's sitting.
+  function jetNow() {
+    var t = Date.now() / 1000, leg = (jet.legs || []).filter(function (l) { return l.start <= t && t < l.end; })[0];
+    if (!leg) return { x: jet.x, y: jet.y };
+    var f = (t - leg.start) / Math.max(1, leg.end - leg.start);
+    return { x: leg.pts[0][0] + (leg.pts[1][0] - leg.pts[0][0]) * f, y: leg.pts[0][1] + (leg.pts[1][1] - leg.pts[0][1]) * f };
+  }
+
+  function jetCard() {
+    if (!jet) return;
+    var contacts = opts.contacts(), aboard = (jet.riders || []).map(function (id) {
+      return id === 'bruce' ? 'you' : (contacts[id] || {}).name || id;
+    });
+    var mine = jet.waiting_for === 'bruce';
+    showInfo('The Batwing', 'Bruce\u2019s jet · ' + jet.status + (aboard.length ? ' · ' + aboard.join(' and ') + ' aboard' : ''),
+             'Faster than anything else in Gotham\u2019s sky. Flown from the cave when nobody\u2019s at the controls; two can ride, ' +
+             'one job at a time. Whoever needs it near enough gets it — call it, and it\u2019s yours till you go.',
+             '', spriteUrl(sprite(40, batwingSprite(false))), '#e8c86a');
+    jetOpen = true;
+    var go = $('.gm-info__go');
+    if (!go || !opts.summon) return;
+    go.hidden = false;
+    go.querySelector('.gm-info__go-bat').innerHTML = ARKHAM_BAT;
+    var taken = jet.waiting_for && !mine || /carrying|pickup|picking/.test(jet.status);
+    go.disabled = !!taken;
+    go.querySelector('.gm-info__go-text').textContent = mine ? 'Waiting for you — pick where to go' : taken ? 'On a job' : 'Bring it to me';
+    go.onclick = function () {
+      if (mine) return;
+      go.disabled = true;
+      opts.summon().then(function (state) {
+        if (state && state.error) { go.querySelector('.gm-info__go-text').textContent = state.error; return; }
+        jet = state || jet;
+        if (window.GothamTraffic && GothamTraffic.jet) GothamTraffic.jet(jet);
+        jetCard();
+      }).catch(function () {}).then(function () { go.disabled = false; });
+    };
   }
 
   /* --- the side panel: who's where, what's being worked, what the scanner says --- */
@@ -1481,9 +1585,10 @@
     var worked = reports.filter(function (r) { return r.assignee; });
     if (!worked.length) casesPane.innerHTML = '<li class="gm-list__empty">Nobody\u2019s on a case.</li>';
     worked.forEach(function (r) { casesPane.appendChild(reportItem(r, true)); });
-    reports.slice().sort(function (a, b) { return b.severity - a.severity || b.at - a.at; })
+    var live = reports.filter(function (r) { return !r.done; });
+    live.slice().sort(function (a, b) { return b.severity - a.severity || b.at - a.at; })
       .forEach(function (r) { scannerPane.appendChild(reportItem(r, true)); });
-    if (!reports.length) scannerPane.innerHTML = '<li class="gm-list__empty">The scanner\u2019s quiet.</li>';
+    if (!live.length) scannerPane.innerHTML = '<li class="gm-list__empty">The scanner\u2019s quiet.</li>';
     var count = $('.gm-tab__count');
     var open = worked.filter(function (r) { return r.case !== 'closed'; }).length;
     count.textContent = open;
@@ -1543,6 +1648,26 @@
     }
     if (layerShown('transit') || layerShown('crime')) movers();
     moveTravellers();
+    if (now - lastChase > 250) { lastChase = now; moveIncidents(); }
+  }
+
+  // A getaway on the move: along its way, every quarter second — gone when it's clean away.
+  var lastChase = 0;
+  function moveIncidents() {
+    var t = Date.now() / 1000, any = false;
+    reports.forEach(function (r) { if (r._way && r.moving) any = true; });
+    if (!any || !map.getSource('incidents')) return;
+    var contacts = opts.contacts();
+    map.getSource('incidents').setData({ type: 'FeatureCollection', features: reports.filter(function (r) {
+      return !(r._way && r.moving && t >= r._way.end);
+    }).map(function (r) {
+      var props = Object.assign({}, r);
+      delete props._way; delete props.route;
+      if (r.done) props.fade = Math.max(0.15, 1 - (t - (r.done_at || 0)) / (3 * 3600));
+      if (r.assignee && contacts[r.assignee]) props.acc = contacts[r.assignee].accent;
+      var at = r._way && r.moving ? onJourney(r._way, t).at : ll(r.x, r.y);
+      return { type: 'Feature', geometry: { type: 'Point', coordinates: at }, properties: props };
+    }) });
   }
 
   /* --- things that move: everything in gothamtraffic.js, drawn here ------------------- */
@@ -1680,8 +1805,22 @@
     form.className = 'gm-pinform';
     form.innerHTML = '<input class="gm-pinform__input" maxlength="40" aria-label="Pin name">' +
       '<div class="gm-pinform__actions"><button type="button" class="gm-btn" data-act="delete">Remove</button>' +
+      (opts.go ? '<button type="button" class="gm-btn gm-btn--bat" data-act="go"><i class="gm-btn__bat"></i>Go here</button>' : '') +
       '<button type="submit" class="gm-btn gm-btn--go">Save</button></div>';
     var input = form.querySelector('input');
+    var goBtn = form.querySelector('[data-act="go"]');
+    if (goBtn) {
+      // He goes there himself: Batman by night, Bruce Wayne by day.
+      goBtn.querySelector('.gm-btn__bat').innerHTML = ARKHAM_BAT;
+      goBtn.addEventListener('click', function () {
+        goBtn.disabled = true;
+        opts.go({ place: input.value.trim() || pin.label || 'Pin', x: pin.x, y: pin.y }).then(function (where) {
+          goBtn.lastChild.textContent = where && where.route
+            ? Math.max(1, Math.round((where.route.end - Date.now() / 1000) / 60)) + ' min' : 'Here';
+          setTimeout(function () { popup.remove(); }, 900);
+        }).catch(function () { goBtn.disabled = false; });
+      });
+    }
     input.value = pin.label;
     var popup = new maplibregl.Popup({ className: 'gm-popup', closeButton: false, offset: 18, maxWidth: '260px' })
       .setLngLat(marker.getLngLat()).setDOMContent(form).addTo(map);
@@ -1734,6 +1873,7 @@
       input.blur();
       if (o.person) return select(o.person, true);
       if (o.report) incidentCard(o.report);
+      if (o.jet) jetCard();
       map.flyTo({ center: ll(o.x, o.y), zoom: Math.max(map.getZoom(), o.district ? 14.2 : 15.6), duration: 1100 });
       flash(ll(o.x, o.y));
     }
@@ -1775,6 +1915,11 @@
           found.push({ name: r.kind, kind: r.place + ' · ' + r.status, x: r.x, y: r.y, report: r });
         }
       });
+      // The jet: wherever it is right now, whatever it's doing.
+      if (jet && ('the batwing jet plane flight'.indexOf(q) !== -1 || q.indexOf('batwing') !== -1)) {
+        var j = jetNow();
+        found.unshift({ name: 'The Batwing', kind: jet.status, x: j.x, y: j.y, jet: true });
+      }
       options = found.slice(0, 8);
       chosen = 0;
       draw();
@@ -1883,6 +2028,15 @@
       renderCard(selected);
       if (following) map.easeTo({ center: people[following].getLngLat(), zoom: Math.max(map.getZoom(), 15), duration: 900 });
     });
+    $('.gm-card [data-act="join"]').addEventListener('click', function () {
+      if (!selected || !opts.go) return;
+      var btn = this, who = selected;
+      btn.disabled = true;
+      opts.go({ person: who }).then(function (where) {
+        btn.querySelector('span').textContent = where && where.route
+          ? Math.max(1, Math.round((where.route.end - Date.now() / 1000) / 60)) + ' min' : 'With them';
+      }).catch(function () {}).then(function () { btn.disabled = false; });
+    });
     $('.gm-info__x').addEventListener('click', function () { $('.gm-info').hidden = true; openReport = null; });
     root.querySelectorAll('.gm-tab').forEach(function (t) {
       t.addEventListener('click', function () { showTab(t.dataset.tab); });
@@ -1983,7 +2137,7 @@
         // Safety is a view you ask for, not the default.
         setLayer('safety', recall(SHOWN_KEY, {}).safety === true);
         loadIncidents();
-        setInterval(loadIncidents, 60000);
+        setInterval(loadIncidents, 20000);
         batSignal();
         lighting();
         setInterval(lighting, 60000);                      // the dusk comes on minute by minute

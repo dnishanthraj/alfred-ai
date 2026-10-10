@@ -460,7 +460,7 @@ class Presence:
         """On their way to `place` at t, as the journey was last worked out."""
         trip = self._state.get("trip")
         return bool(trip and trip.get("to") == place and len(trip.get("pts") or []) > 1
-                    and trip.get("start", 0) <= t < trip.get("end", 0))
+                    and trip.get("left", trip.get("start", 0)) <= t < trip.get("end", 0))
 
     def coming(self, t=None):
         """Those on their way to join them, with the minutes they've got to go: [(name, minutes)]."""
@@ -472,7 +472,7 @@ class Presence:
         for p in group:
             if p is self:
                 continue
-            p.trip(place, places.resolve(place), t)            # their journey, worked out as of now
+            p.trip(place, p.spot(place, t), t)                 # their journey, worked out as of now
             if p._travelling(place, t):
                 found = directory().get(p.contact.id)
                 out.append((found.name if found else p.contact.id, max(1, round((p._state["trip"]["end"] - t) / 60))))
@@ -582,6 +582,8 @@ class Presence:
             now = t or time.time()
             live, how = self._seen_working(now), "seen working a case"
             if not live:
+                live, how = self._seen_on_a_job(now)
+            if not live:
                 live, how = self._known_with(now)
             if not live:
                 live, how = self._glimpsed(now)
@@ -598,7 +600,7 @@ class Presence:
         if getattr(self.contact, "shares_location", True):
             where, company = self.whereabouts(t)
             shown["with"] = sharing(company)
-            shown["spot"] = places.resolve(where)
+            shown["spot"] = self.spot(where, t)
             shown["where"] = self.label(where)
             trip = self.trip(where, shown["spot"], t)
             if trip:
@@ -639,7 +641,7 @@ class Presence:
         """Exactly where they are at t, (x, y) — on the road, on a patrol, or where their day has them — or None."""
         t = t or time.time()
         where, _ = self.whereabouts(t)
-        spot = places.resolve(where or "")
+        spot = self.spot(where, t)
         if not spot:
             return None
         trip = self.trip(where, spot, t)
@@ -694,6 +696,20 @@ class Presence:
             return None, ""
         how = f"with {' and '.join(sharers)}" if sharers else "at the plan they said yes to"
         return {"name": spot["name"], "x": spot["x"], "y": spot["y"], "area": spot.get("area", "")}, how
+
+    def _seen_on_a_job(self, t):
+        """
+        Selina, the night she's out: a gallery's cameras, an alarm, a shape on a roof
+        — seen at her own job for the first few minutes of it, then a last-seen.
+        """
+        if self.contact.id != "catwoman":
+            return None, ""
+        from . import incidents
+        for r in incidents.at(t):
+            if r.get("suspect") == incidents.CATWOMAN and t - r["at"] < 15 * 60:
+                return ({"name": r["place"], "x": r["x"], "y": r["y"], "area": r.get("area", "")},
+                        "caught on the cameras at a job of hers")
+        return None, ""
 
     def _seen_working(self, t):
         """The scene of the case they're on, if they've got there and it's still going: they're seen."""
@@ -774,13 +790,16 @@ class Presence:
             # In the suit — patrolling, or heading to a case — it's the roofs, not the roads.
             suited = places.is_patrol(doing) or ("on the way to the" in doing and bool(getattr(self.contact, "beat", None)))
             how = getattr(self.contact, "gets_about", "drive") or "drive"
-            pts, minutes = travel.route(origin, here, None if moving else before, spot["name"], patrol=suited,
-                                        mode=how)
+            if suited:
+                fast = travel.fastest(self.contact.id, origin, here, spot["name"], left_at, jet=False)
+                pts, minutes = fast["pts"], (fast["end"] - fast["start"]) / 60
+            else:
+                pts, minutes = travel.route(origin, here, None if moving else before, spot["name"], mode=how)
             if lead:
                 # The rest of the crossing, then the new way from where it lands.
                 minutes += (crossed - left_at) / 60
                 pts = lead + pts[1:]
-            means = ("over the rooftops" if suited and len(pts) <= 12 else "on the bike" if suited
+            means = (fast["by"] if suited
                      else "on foot" if len(pts) == 2 else "on the subway" if how == "subway" and len(pts) < 12 else "driving")
             trip = {"to": where, "from": "" if moving else (before or ""), "pts": pts, "start": left_at,
                     "end": left_at + minutes * 60, "by": means}
@@ -803,6 +822,25 @@ class Presence:
                 out.append({**walking["leg"], "by": "over the rooftops"})
             t += patrols.STOP
         return out
+
+    def set_trip(self, where, trip):
+        """A journey decided elsewhere — the jet booked for them, a chase to cut off: the way they're going."""
+        with self._lock:
+            trip = {**trip, "to": where, "from": trip.get("from", "")}
+            self._state["trip"] = trip
+            self._state["trips"] = (self._state.get("trips") or [])[-7:] + [trip]
+            self.save()
+        return trip
+
+    def spot(self, where, t=None):
+        """Where `where` is on the map for them: the place — or the exact point what they're doing pinned it to."""
+        found = places.resolve(where or "")
+        activity = self._state.get("activity") or {}
+        t = t or time.time()
+        if (found and activity.get("xy") and activity.get("where") == where
+                and activity.get("since", 0) <= t < activity.get("until", 0)):
+            found = {**found, "x": activity["xy"][0], "y": activity["xy"][1]}
+        return found
 
     def trips(self, since):
         """The journeys they've made since `since`, oldest first — the roads behind them on the map."""
@@ -836,7 +874,7 @@ class Presence:
         doing = (block.get("doing") or "").strip()
         where, company = self.whereabouts(t)
         book = directory()
-        trip = self.trip(where, places.resolve(where), t) if where else None
+        trip = self.trip(where, self.spot(where, t), t) if where else None
         if trip and not company:
             # On the way: who they're going to meet there.
             company = [p.contact.id for p in together(self, t)[1] if p is not self]
@@ -867,7 +905,7 @@ class Presence:
         if on_the_way and not doing:
             line += " On their way to you, not there yet: " + ", ".join(
                 f"{n} (about {m} minute{'s' if m != 1 else ''} out)" for n, m in on_the_way) + "."
-        spot = places.resolve(where) if where and not trip else None
+        spot = self.spot(where, t) if where and not trip else None
         walking = self.patrolling(where, t) if spot else None
         if walking:
             # Where on the patrol, exactly — the roof, the run — so "where are you?" gets the truth.
@@ -946,7 +984,7 @@ class Presence:
             self._state["last_active"] = t or time.time()
             self.save()
 
-    def set_activity(self, doing, status, minutes, t=None, where="", company=()):
+    def set_activity(self, doing, status, minutes, t=None, where="", company=(), xy=None):
         with self._lock:
             t = t or time.time()
             status = status if status in STATUSES else BUSY
@@ -955,6 +993,9 @@ class Presence:
                                        "since": t, "until": t + minutes * 60,
                                        "where": (where or "").strip()[:60],
                                        "with": [c for c in company if c != self.contact.id]}
+            if xy:
+                # Not the place's middle but a point by it: the corner a getaway was cut off at.
+                self._state["activity"]["xy"] = [round(xy[0], 2), round(xy[1], 2)]
             self.save()
         if where and not getattr(self.contact, "shares_status", True):
             self.seen_at(where, "they told you", t)

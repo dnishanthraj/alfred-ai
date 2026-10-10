@@ -62,12 +62,15 @@ NEEDS = {
     "Mauling": {"brutes": 0.6, "fight": 0.4}, "Assassination": {"pursuit": 0.4, "fight": 0.35, "detect": 0.25},
     "Mob hit": {"detect": 0.45, "pursuit": 0.3, "fight": 0.25}, "Officer down": {"fight": 0.45, "rescue": 0.35, "pursuit": 0.2},
     "Mass shooting": {"fight": 0.4, "rescue": 0.35, "crowd": 0.25}, "Vehicle pursuit": {"pursuit": 0.8, "tech": 0.2},
+    "Foot chase": {"pursuit": 0.7, "fight": 0.3}, "Hit-and-run": {"pursuit": 0.6, "tech": 0.25, "detect": 0.15},
+    "Cat burglary": {"stealth": 0.35, "pursuit": 0.4, "detect": 0.25},
+    "Carjacking": {"pursuit": 0.6, "fight": 0.4},
     "Breakout": {"pursuit": 0.4, "fight": 0.35, "detect": 0.25},
 }
 
 # How hard each of them is to bring in, on their own night (0–1).
 DIFFICULTY = {
-    "Ra's al Ghul": 0.96, "The Court of Owls": 0.94, "The Joker": 0.9, "Deathstroke": 0.9, "Bane": 0.86,
+    "Ra's al Ghul": 0.96, "The Court of Owls": 0.94, "The Joker": 0.9, "Deathstroke": 0.9, "Catwoman": 0.88, "Bane": 0.86,
     "Hush": 0.8, "Carmine Falcone": 0.8, "Clayface": 0.76, "Scarecrow": 0.72, "Poison Ivy": 0.72,
     "Mr. Freeze": 0.72, "Killer Croc": 0.7, "Hugo Strange": 0.7, "Black Mask": 0.66, "The Riddler": 0.66,
     "Rupert Thorne": 0.64, "The Penguin": 0.62, "Two-Face": 0.62, "Man-Bat": 0.6, "Professor Pyg": 0.6,
@@ -90,7 +93,7 @@ _VIOLENT_WORDS = ("stab", "machete", "shoot", "drive-by", "turf", "gang", "assau
 # before anyone arrives; a standoff can go on for hours; a body waits for whoever comes.
 WINDOW = {
     "Phone snatch": 3, "Mugging": 6, "Knifepoint robbery": 6, "Carjacking": 6, "Hit-and-run": 5, "Drive-by shooting": 6,
-    "Smash-and-grab": 8, "Car break-in": 8, "Unprovoked attack": 8, "Assault": 10, "Mob hit": 10, "Officer down": 10,
+    "Smash-and-grab": 8, "Car break-in": 8, "Cat burglary": 12, "Unprovoked attack": 8, "Assault": 10, "Mob hit": 10, "Officer down": 10,
     "Assassination": 10, "Shoplifting": 10, "Stabbing": 12, "Machete attack": 12, "Vandalism": 12, "Break-in": 15,
     "Drug deal": 15, "Bar fight": 15, "Brawl": 15, "Armed robbery": 15, "Shots fired": 15, "Sexual assault": 15,
     "Vehicle pursuit": 15, "Mass shooting": 15, "Domestic violence": 20, "Overdose": 20, "Mauling": 20,
@@ -221,11 +224,29 @@ def difficulty(case):
     return 0.15 + 0.1 * case.get("severity", 2)
 
 
+def outnumbered(case):
+    """How badly they're outnumbered: 0 when it's even, toward 1 against Bane and the thirty men he brought."""
+    from . import cases
+    crew = case.get("crew") or 1
+    team = max(1, len(cases.team(case)))
+    return max(0.0, min(1.0, (crew / (team * 4.0) - 1) / 4))        # each of them is good for about four
+
+
+def _holds_a_line(members):
+    """How well a team stands up to numbers: the fighters and the ones who can take a hit."""
+    rated = [RATINGS[m] for m in members if m in RATINGS]
+    if not rated:
+        return 0.5
+    return max((r["crowd"] + r["brutes"] + r["fight"]) / 3 for r in rated)
+
+
 def chance(case, gone_wrong=False, backup=False, late=False):
     """The odds of a good ending, 0.05–0.95."""
     from . import cases
     members = cases.team(case)
     p = 0.5 + (team_fit(members, case["kind"]) - difficulty(case)) * 1.3
+    # Thirty of Bane's men are thirty men: Tim alone goes under, Cass and Dick hold the door.
+    p -= 0.45 * outnumbered(case) * (1.15 - _holds_a_line(members))
     if gone_wrong:
         p -= 0.05 if backup else 0.18          # it went bad; help coming made the difference
     if late:
@@ -239,9 +260,11 @@ def decide(case, now=None):
     got away / lost / cold / worse / killed, "caught": the rogue brought in or "",
     "hurt": {member: injury}, "line": what happened, for whoever writes it up}.
     """
-    from . import cases
+    from . import cases, incidents
     members = cases.team(case)
     sort = family(case["kind"])
+    if case["kind"] in incidents.MOVING:
+        return _chase_ending(case, members)
     gone_wrong = cases.goes_wrong(case)
     joined_late = len(members) > 1
     late = too_late(case)
@@ -258,6 +281,12 @@ def decide(case, now=None):
     r = _roll(case, "end")
     good = r < p
     middling = not good and r < p + (1 - p) * 0.55
+    if good and suspect == "Catwoman":
+        # Selina: the diamonds back in their case by morning — and her, nowhere. Even "caught", she isn't, for long.
+        held = _roll(case, "cat") < 0.12
+        return {"ok": True, "how": "caught" if held else "recovered", "caught": "", "hurt": {}, "chance": round(p, 2),
+                "line": ("they had her cuffed on the roof — and she was out of them before the squad car came" if held
+                         else "what she took was back where it belonged by morning; she was long gone")}
     if good:
         how = {"hostage": "saved", "hunt": "solved", "disaster": "contained"}.get(sort, "caught")
         caught = bool(suspect) and (sort not in ("hostage", "disaster") or _roll(case, "caught") < 0.75)
@@ -288,3 +317,33 @@ def decide(case, now=None):
             hurt[m] = INJURIES[int(_roll(case, "injury") * len(INJURIES))]
     return {"ok": good, "how": how, "caught": suspect if (good and caught and suspect) else "", "hurt": hurt,
             "line": line, "chance": round(p, 2)}
+
+
+def catches(case, who=None):
+    """Whether the one cutting off a getaway — or chasing it — stops it: decided once, when they get there."""
+    from . import cases
+    team = cases.team(case) or ([who] if who else [])
+    p = 0.5 + (team_fit(team, case["kind"]) - difficulty(case)) * 1.3
+    return _roll(case, f"catch:{','.join(sorted(team))}") < max(0.08, min(0.92, p))
+
+
+def _chase_ending(case, members):
+    """A getaway ends where it was stopped, or it doesn't: nobody cut it off, and it's gone."""
+    who = case.get("suspect") or "whoever it was"
+    caught = (case.get("chase") or {}).get("caught")
+    if caught and case.get("suspect") == "Catwoman":
+        return {"ok": True, "how": "recovered", "caught": "", "hurt": {}, "chance": 1.0,
+                "line": "they ran her down across the roofs and got the bag back — she went off the edge laughing"}
+    if caught:
+        hurt = {}
+        if case["kind"] != "Foot chase" and _roll(case, "crash") < 0.25:
+            crew = [m for m in members if m != "bruce"]
+            if crew:
+                hurt[crew[int(_roll(case, "who") * len(crew))]] = INJURIES[int(_roll(case, "injury") * len(INJURIES))]
+        return {"ok": True, "how": "caught", "caught": case.get("suspect") or "", "hurt": hurt, "chance": 1.0,
+                "line": (f"they ran {who} down on foot" if case["kind"] == "Foot chase"
+                         else f"they cut the car off and {who} was pulled out of it and handed to GCPD")}
+    late = not case.get("chase")
+    return {"ok": False, "how": "too late" if late else "got away", "caught": "", "hurt": {}, "chance": 0.0,
+            "line": (f"by the time they were anywhere near it {who} was long gone" if late
+                     else f"they were on it, and {who} still got away")}

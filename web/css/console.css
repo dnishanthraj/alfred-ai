@@ -1577,6 +1577,8 @@ html[data-seats="5"] .seat__name, html[data-seats="6"] .seat__name, html[data-se
   display: grid; place-items: center; background: #0a0f18; border: 1px solid rgba(232, 200, 106, 0.7); border-radius: 7px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); }
 .gm-person__bat svg { width: 18px; height: 8px; fill: #e8c86a; }
+/* By day he's Bruce Wayne: no badge — the cowl comes on at night, and on a case. */
+.gm-person--bruce:not(.is-suited) .gm-person__bat { display: none; }
 .gm-person--bruce .gm-person__name { top: calc(100% + 9px); color: #e8c86a; }
 /* "Go here", and him in the row of people to put on a case. */
 .gm-info__go { display: inline-flex; align-items: center; gap: 8px; margin: 12px 0 2px; padding: 6px 12px 6px 9px;
@@ -1589,8 +1591,9 @@ html[data-seats="5"] .seat__name, html[data-seats="6"] .seat__name, html[data-se
 .gm-info__go-bat svg { width: 20px; height: 9px; fill: currentColor; display: block; }
 .gm-assign--bruce { color: #e8c86a; border-color: rgba(232, 200, 106, 0.4); }
 
-/* His pins. */
-.gm-pin { display: flex; align-items: center; gap: 5px; cursor: var(--cursor-grab); white-space: nowrap; }
+/* His pins — over everyone's markers, his own included, and the pin's card over them all. */
+.gm-pin { display: flex; align-items: center; gap: 5px; cursor: var(--cursor-grab); white-space: nowrap; z-index: 6; }
+.gm-popup { z-index: 8; }
 .gm-pin i { width: 12px; height: 12px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
   background: var(--operator); border: 2px solid #060a10; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); }
 .gm-pin b { font-weight: 500; font-size: 11px; color: var(--operator); text-shadow: 0 0 6px #060a10, 0 0 3px #060a10; }
@@ -1606,6 +1609,11 @@ html[data-seats="5"] .seat__name, html[data-seats="6"] .seat__name, html[data-se
   padding: 6px 10px; cursor: var(--cursor-pointer); transition: color 0.2s var(--ease), border-color 0.2s var(--ease); }
 .gm-btn:hover { color: var(--text); border-color: var(--text-faint); }
 .gm-btn--go, .gm-btn.is-on { color: var(--accent, var(--primary)); border-color: var(--accent, var(--primary-dim)); }
+/* Go there himself, from a pin: his gold, Arkham's bat. */
+.gm-btn--bat { display: inline-flex; align-items: center; gap: 6px; color: #e8c86a; border-color: rgba(232, 200, 106, 0.45); }
+.gm-btn--bat:hover { color: #e8c86a; border-color: #e8c86a; background: rgba(232, 200, 106, 0.08); }
+.gm-btn--bat:disabled { opacity: 0.6; }
+.gm-btn__bat svg { width: 16px; height: 7px; fill: currentColor; display: block; }
 
 /* Who's where, at the side; the one you picked, in a card. */
 .gm { --gm-side: 248px; }            /* the side panel's width: everything floating keeps clear of it */

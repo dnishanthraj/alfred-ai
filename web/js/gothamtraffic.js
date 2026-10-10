@@ -382,7 +382,28 @@
   // anyone's sure what they saw. Not every night has one; none come by day.
   var OVERFLY = ['Diamond District', 'Old Gotham', 'The Narrows', 'Crime Alley', 'Burnside', 'Otisburg', 'Amusement Mile',
                  'Upper East Side', 'Tricorner', 'Robinson Park', 'Chinatown', 'Coventry', 'New Town'];
+  // Once the console says where the jet is — on a job, waiting where it set someone down,
+  // on a pass, in the hangar — that's where it's drawn: the one Batwing, flying what it was asked to.
+  var JET = null;
+  function setJet(state) { JET = state; }
+  function realJet(s, out) {
+    var leg = (JET.legs || []).filter(function (l) { return l.start <= s && s < l.end; })[0], p, r;
+    if (leg) {
+      var a = ll(leg.pts[0][0], leg.pts[0][1]), b = ll(leg.pts[1][0], leg.pts[1][1]);
+      p = towards(a, b, (s - leg.start) / Math.max(1, leg.end - leg.start));
+      r = heading(a, b);
+    } else if (!JET.parked) {
+      p = ll(JET.x, JET.y); r = JET.r || 0;
+    } else {
+      return;                                   // in the hangar under the Manor
+    }
+    var job = leg ? { pickup: ' · coming down for a pickup', carry: ' · carrying ' + (leg.riders || []).length,
+                      home: ' · heading home', pass: '' }[leg.kind] || '' : ' · waiting';
+    out.push(point([p[0] + 0.8 * K, p[1] - 0.8 * K], { m: 'batwing-shadow', r: r }));
+    out.push(point(p, { m: 'batwing', r: r, n: 'The Batwing' + job }));
+  }
   function batwing(s, hour, out) {
+    if (JET) { realJet(s, out); return; }
     var manor = spots['Wayne Manor'];
     if (!manor || !(hour >= 21 || hour < 4)) return;
     var slot = 2700, k = Math.floor(s / slot), tau = s - k * slot - hash(k * 3 + 1) * 900;
@@ -428,5 +449,5 @@
     return out;
   }
 
-  window.GothamTraffic = { init: init, frame: frame, band: band };
+  window.GothamTraffic = { init: init, frame: frame, band: band, jet: setJet };
 })();

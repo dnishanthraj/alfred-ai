@@ -24,11 +24,23 @@ ON_FOOT = 0.6                         # the last stretch, from the road to the d
 SETTING_OFF = 2.0                     # keys, stairs, the car: minutes before anyone's moving
 PATROL = 1.35                         # on a bike, on patrol: quicker than the traffic
 ROOFTOPS = 3.4                        # grapple, run, glide: ~30 km/h across the roofs, straight-ish
+GRAPPLE = 9.0                         # on the line, across a street: ~80 km/h
+RUNNING = 1.9                         # on a roof between lines: a hard run, ~17 km/h
 GLIDE = 2.5                           # the most open water a glide will take; wider, it's the bike and a bridge
 WALKING = 0.53                        # on foot: ~5 km/h
 WALK_UNDER = 2.5                      # anywhere this close is a walk
 SUBWAY = 3.3                          # the subway, stops and all: ~30 km/h
 TRAIN_WAIT = 4.0                      # minutes on the platform
+BIKE = 1.45                           # in the suit on a bike: through the traffic, the lights don't count
+BATMOBILE = 1.85                      # the roads, and faster than anything else on them
+FLIGHT = 8.0                          # Randy's suit flies: straight there, water or not (~70 km/h)
+ROOF_RANGE = 9.0                      # the furthest anyone runs the roofs when a bike would do
+# How each of them gets about in the suit, fastest first being their choice each time.
+SUITED = {"bruce": ("rooftops", "batmobile", "jet"), "nightwing": ("rooftops", "bike", "jet"),
+          "robin": ("rooftops", "bike", "jet"), "batgirl": ("rooftops", "bike", "jet"),
+          "orphan": ("rooftops", "jet"), "redhood": ("rooftops", "bike"), "batwing": ("flight",)}
+# Taken over the roads or the roofs only if it's clearly quicker: a quarter off, and three minutes.
+JET_BETTER = (0.75, 3.0)
 
 _lock = threading.Lock()
 _graph = None
@@ -224,6 +236,31 @@ def _rooftops(a, b):
     return soft[:1] + soft[1:-1] + [pts[-1]]
 
 
+def roof_run(pts):
+    """
+    A run over the roofs, timed as it's done: a line fired across each street and
+    swung fast, then a hard run across the roof to the next edge — so on the map
+    they whip across the gaps and slow to a sprint on the tops. (times, minutes):
+    times are each point's share of the whole, 0 to 1.
+    """
+    spent = [0.0]
+    for i, (p, q) in enumerate(zip(pts, pts[1:], strict=False)):
+        spent.append(spent[-1] + math.dist(p, q) / (GRAPPLE if i % 2 else RUNNING))
+    total = spent[-1] or 1.0
+    return [round(x / total, 4) for x in spent], max(0.5, total)
+
+
+def position_at(pts, times, f):
+    """Where along pts a share f of the time is, when the pace isn't even (see roof_run)."""
+    f = max(0.0, min(1.0, f))
+    for i in range(1, len(pts)):
+        if f <= times[i] or i == len(pts) - 1:
+            span = (times[i] - times[i - 1]) or 1.0
+            k = max(0.0, min(1.0, (f - times[i - 1]) / span))
+            return (pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * k, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * k)
+    return tuple(pts[-1])
+
+
 def route(a, b, name_a=None, name_b=None, patrol=False, mode="drive"):
     """
     ([(x, y), ...], minutes) from a to b by the quickest way — `name_a` and
@@ -327,6 +364,8 @@ def position(trip, t):
         return tuple(pts[-1])
     if t <= trip["start"]:
         return tuple(pts[0])
+    if trip.get("times") and len(trip["times"]) == len(pts):
+        return position_at(pts, trip["times"], (t - trip["start"]) / (trip["end"] - trip["start"]))
     legs = [math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
     left = (t - trip["start"]) / (trip["end"] - trip["start"]) * sum(legs)
     for i, leg in enumerate(legs):
@@ -335,3 +374,56 @@ def position(trip, t):
             return (pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f)
         left -= leg
     return tuple(pts[-1])
+
+
+def fastest(who, a, b, name_b=None, t=None, book=False, jet=True):
+    """
+    The quickest plausible way there in the suit, for this one of them: over the
+    roofs if it's close and no more water than a glide will take; the bike, or
+    the Batmobile, on the roads; Randy flying straight there; the Batwing if
+    it's near enough to come for them and saves real time — two to a flight,
+    a second going the same way climbs aboard too. `book` takes the jet for
+    real. Returns a trip: {"pts", "start", "end", "by"} ("pickup" too, by jet).
+    """
+    import time as _time
+    t = t or _time.time()
+    a = (round(a[0], 2), round(a[1], 2))
+    b = (round(b[0], 2), round(b[1], 2))
+    means = SUITED.get(who, ("rooftops", "bike"))
+    graph = _load()
+    options = []
+    straight = math.dist(a, b)
+    if straight < 0.6:
+        options.append(([list(a), list(b)], max(0.5, straight / WALKING), "on foot"))
+    if "flight" in means:
+        options.append(([list(a), list(b)], max(1.0, straight / FLIGHT), "flying"))
+    roofs = None
+    if "rooftops" in means and straight <= ROOF_RANGE and _widest_water(graph, a, b) <= GLIDE:
+        pts = [[round(x, 2), round(y, 2)] for x, y in _rooftops(a, b)]
+        times, minutes = roof_run(pts)
+        roofs = times
+        options.append((pts, max(1.0, minutes), "over the rooftops"))
+    wheels = "batmobile" if "batmobile" in means else "bike" if "bike" in means else None
+    if wheels or not options:
+        pts, minutes = _route(a, b, "", name_b or "")
+        pace = BATMOBILE if wheels == "batmobile" else BIKE if wheels == "bike" else PATROL
+        options.append(([list(p) for p in pts], max(1.0, minutes / pace + 0.5),
+                        {"batmobile": "in the Batmobile", "bike": "on the bike"}.get(wheels, "on foot")))
+    pts, minutes, by = min(options, key=lambda o: o[1])
+    trip = {"pts": pts, "start": t, "end": t + min(minutes, 75.0) * 60, "by": by}
+    if by == "over the rooftops" and roofs:
+        trip["times"] = roofs                # fast on the lines, a sprint on the roofs
+    if jet and "jet" in means:
+        from . import jet as batwing
+        ride = batwing.share(who, a, b, t) if book else None
+        if ride is None:
+            deal = batwing.offer(a, b, t, who=who)
+            called = batwing.waiting_for(t) == who      # he called it: it's what he's going in, if it's no slower
+            quicker = deal and (deal["arrive"] - t) / 60 < minutes * JET_BETTER[0] and minutes - (deal["arrive"] - t) / 60 >= JET_BETTER[1]
+            if deal and (quicker or (called and (deal["arrive"] - t) / 60 <= minutes)):
+                ride = batwing.book(who, a, b, t) if book else {
+                    "pts": [list(a), list(b)], "start": deal["lift"], "end": deal["arrive"], "by": "on the Batwing",
+                    "pickup": deal["pickup"]}
+        if ride:
+            trip = ride
+    return trip

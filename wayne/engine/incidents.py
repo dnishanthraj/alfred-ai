@@ -12,6 +12,7 @@ Barbara, who watch the scanner, know what's out there.
 """
 import hashlib
 import json
+import math
 import random
 import threading
 import time
@@ -47,7 +48,8 @@ KINDS = [
     ("Phone snatch", 1, 2, DOWNTOWN), ("Car break-in", 1, 5, None), ("Shoplifting", 1, 1.5, DOWNTOWN),
     ("Bar fight", 1, 2, NIGHTLIFE), ("Overdose", 1, 2, ROUGH),
     ("Assault", 2, 6, None), ("Gang activity", 2, 1.6, TURF), ("Smash-and-grab", 2, 4, None),
-    ("Vehicle pursuit", 2, 3, None), ("Suspicious package", 2, 2, None), ("Missing person", 2, 3, None),
+    ("Vehicle pursuit", 2, 3, None), ("Foot chase", 2, 2.5, None), ("Suspicious package", 2, 2, None),
+    ("Missing person", 2, 3, None),
     ("Knifepoint robbery", 2, 4, None), ("Carjacking", 2, 3, None), ("Domestic violence", 2, 5, None),
     ("Hit-and-run", 2, 3, None), ("Unprovoked attack", 2, 3, None), ("Brawl", 2, 1, TURF),
     ("Protection racket", 2, 0.9, {"Chinatown", "The Bowery", "Robinsville", "Old Gotham"}),
@@ -70,7 +72,10 @@ KINDS = [
     ("Serial killing", 4, 0.3, None), ("Mass shooting", 4, 0.25, None), ("Officer down", 4, 0.4, ROUGH),
     ("Surgical abduction", 4, 0.2, {"The Narrows"}), ("Torture victim found", 4, 0.3, ROUGH),
     ("Assassination", 4, 0.25, {"Diamond District", "Financial District", "Old Gotham"}),
+    # Selina's: a gallery, a penthouse safe, a jeweller's after hours — only on the nights she's out.
+    ("Cat burglary", 2, 0.3, {"Diamond District", "Upper East Side", "Fashion District", "Old Gotham"}),
 ]
+CATWOMAN = "Catwoman"
 # Only ever theirs: with none of them out, these simply don't happen.
 ROGUE_ONLY = {"Laughing-gas attack", "Freezing incident", "Plant overgrowth attack", "Riddle left at a crime scene",
               "Surgical abduction", "Toxin exposure", "Mauling", "Assassination"}
@@ -111,6 +116,7 @@ TOLL = {
     "Surgical abduction": ((0, 1), (1, 2)), "Mob hit": ((1, 2), (0, 1)), "Assassination": ((1, 1), (0, 2)),
     "Mauling": ((0, 1), (1, 2)), "Torture victim found": ((0, 1), (1, 1)), "Cult gathering": ((0, 1), (0, 2)),
     "Vehicle pursuit": ((0, 1), (0, 3)), "Smash-and-grab": ((0, 0), (0, 1)), "Breakout": ((0, 2), (1, 6)),
+    "Foot chase": ((0, 0), (0, 1)), "Cat burglary": ((0, 0), (0, 0)),
 }
 
 
@@ -166,56 +172,366 @@ def _rate(t):
     return 1.7 if night else (1.3 if 17 <= hour < 20 else 0.95)
 
 
+def _slot(slot, spots, weights, weighted, written):
+    """Every report drawn in one ten-minute slot, whatever time it is now — seeded by the slot alone."""
+    seed = int(hashlib.sha1(f"gotham-scanner-2:{slot}".encode()).hexdigest()[:12], 16)
+    r = random.Random(seed)
+    start = slot * SLOT
+    count = sum(1 for _ in range(4) if r.random() < _rate(start) / 4)
+    out = []
+    for i in range(count):
+        place, level, _ = r.choices(spots, weights=weights)[0]
+        # The worst of it comes after dark.
+        dark = time.localtime(start).tm_hour >= 21 or time.localtime(start).tm_hour < 4
+        kind, severity, _, home = r.choices(weighted, weights=[
+            w * (level if s >= 3 else 1) * ((5 if place["area"] in home else 0.3) if home else 1)
+            * (1.8 if dark and s >= 3 else 1)
+            for _, s, w, home in weighted])[0]
+        began = start + r.uniform(0, SLOT)
+        # Cleared faster by day, with more cars out; slower where the district
+        # is already stretched; the serious ones go to backup first.
+        hour = time.localtime(began).tm_hour
+        shift = 0.7 if 7 <= hour < 19 else 1.15
+        stretched = 1 + 0.4 * max(0.0, level - 0.5)
+        ends = began + r.uniform(*CLEARS[severity]) * 60 * shift * stretched
+        backup = severity >= 4 or (severity == 3 and r.random() < 0.6)
+        report = {
+            "id": f"s2-{slot}-{i}", "kind": kind, "severity": severity,
+            "place": place["name"], "area": place["area"],
+            "x": round(place["x"] + r.uniform(-0.5, 0.5), 2), "y": round(place["y"] + r.uniform(-0.5, 0.5), 2),
+            "at": int(began), "ends": int(ends), "_backup": backup,
+        }
+        text = written.get(report["id"])
+        if text:
+            report["dispatch"] = text
+        if kind == "Cat burglary":
+            if not _selina_out(began):
+                continue            # a night she's in: nothing of hers on the scanner
+            report["suspect"] = CATWOMAN
+            out.append(report)
+            continue
+        suspect = _suspect(kind, place["area"], r)
+        if suspect:
+            report["suspect"] = suspect
+        out.append(report)
+    return out
+
+
+def _selina_out(t):
+    """Whether Selina's out on a job-shaped night at t — on the roofs, or casing somewhere — by her own day."""
+    from ..contacts import directory
+    from . import presence
+    selina = directory().get("catwoman")
+    if selina is None:
+        return False
+    whereabouts = presence._registry.get("catwoman") or presence.of(selina)
+    block, _company, _firm = whereabouts._situation(t)
+    doing = (block.get("doing") or "").lower()
+    return places.is_patrol(doing) or "casing" in doing or "rooftops" in doing
+
+
+def _tables():
+    spots = _spots()
+    out_now = _loose_kinds()
+    weighted = [(k, sv, w if k not in ROGUE_ONLY or k in out_now else 0.0, home) for k, sv, w, home in KINDS]
+    return spots, [weight for _, _, weight in spots], weighted
+
+
+def _finish(report, t, cased):
+    """A drawn report as it is at t: its status, toll, crew, and what it's turned into — or None if it's gone."""
+    report = dict(report)
+    backup = report.pop("_backup", False)
+    report["status"] = _status((t - report["at"]) / max(1, report["ends"] - report["at"]), backup)
+    report["toll"], gang = _toll(report)
+    if gang:
+        report["gang"] = gang
+    report["crew"] = _crew(report)
+    return _as_it_stands(report, t, cased)
+
+
 def at(t=None):
     """The reports open at time t, newest first."""
     t = t or time.time()
-    spots = _spots()
-    weights = [weight for _, _, weight in spots]
+    spots, weights, weighted = _tables()
     written = dispatches()          # read once, not once per report
-    out_now = _loose_kinds()
-    weighted = [(k, sv, w if k not in ROGUE_ONLY or k in out_now else 0.0, home) for k, sv, w, home in KINDS]
+    cased = _cases_now()
     open_now = []
     for slot in range(int(t // SLOT) - LONGEST * 60 // SLOT, int(t // SLOT) + 1):
-        seed = int(hashlib.sha1(f"gotham-scanner-2:{slot}".encode()).hexdigest()[:12], 16)
-        r = random.Random(seed)
-        start = slot * SLOT
-        count = sum(1 for _ in range(4) if r.random() < _rate(start) / 4)
-        for i in range(count):
-            place, level, _ = r.choices(spots, weights=weights)[0]
-            # The worst of it comes after dark.
-            dark = time.localtime(start).tm_hour >= 21 or time.localtime(start).tm_hour < 4
-            kind, severity, _, home = r.choices(weighted, weights=[
-                w * (level if s >= 3 else 1) * ((5 if place["area"] in home else 0.3) if home else 1)
-                * (1.8 if dark and s >= 3 else 1)
-                for _, s, w, home in weighted])[0]
-            began = start + r.uniform(0, SLOT)
-            # Cleared faster by day, with more cars out; slower where the district
-            # is already stretched; the serious ones go to backup first.
-            hour = time.localtime(began).tm_hour
-            shift = 0.7 if 7 <= hour < 19 else 1.15
-            stretched = 1 + 0.4 * max(0.0, level - 0.5)
-            ends = began + r.uniform(*CLEARS[severity]) * 60 * shift * stretched
-            backup = severity >= 4 or (severity == 3 and r.random() < 0.6)
-            if not began <= t < ends:
+        for report in _slot(slot, spots, weights, weighted, written):
+            if not report["at"] <= t < report["ends"]:
                 continue
-            report = {
-                "id": f"s2-{slot}-{i}", "kind": kind, "severity": severity,
-                "place": place["name"], "area": place["area"],
-                "x": round(place["x"] + r.uniform(-0.5, 0.5), 2), "y": round(place["y"] + r.uniform(-0.5, 0.5), 2),
-                "at": int(began), "ends": int(ends), "status": _status((t - began) / (ends - began), backup),
-            }
-            text = written.get(report["id"])
-            if text:
-                report["dispatch"] = text
-            suspect = _suspect(kind, place["area"], r)
-            if suspect:
-                report["suspect"] = suspect
-            report["toll"], gang = _toll(report)
-            if gang:
-                report["gang"] = gang
-            open_now.append(report)
+            report = _finish(report, t, cased)
+            if report is not None:
+                open_now.append(report)
     open_now.extend(_breakouts(t))
     return sorted(open_now, key=lambda i: -i["at"])
+
+
+def ended(t=None, hours=3.0):
+    """
+    Tonight's calls that are over — cleared by GCPD, or worked by the family and
+    closed — as they stood at the end: for the map, faded, till they've been
+    over a while. Newest first, each with `done_at`.
+    """
+    t = t or time.time()
+    spots, weights, weighted = _tables()
+    written = dispatches()
+    cased = _cases_now()
+    out = []
+    for slot in range(int((t - hours * 3600) // SLOT) - LONGEST * 60 // SLOT, int(t // SLOT) + 1):
+        for report in _slot(slot, spots, weights, weighted, written):
+            if not t - hours * 3600 <= report["ends"] < t:
+                continue
+            final = _finish(report, report["ends"] - 1, cased)
+            if final is not None:
+                out.append({**final, "status": "resolved", "done_at": report["ends"]})
+    return sorted(out, key=lambda r: -r["done_at"])
+
+
+# --- how a call turns, and the ones that move -------------------------------------
+
+SEVERITY = {k: sv for k, sv, _w, _h in KINDS}
+SEVERITY["Breakout"] = 4
+# The calls that move: a getaway on the roads, a chase on foot through the streets.
+MOVING = {"Vehicle pursuit": "car", "Carjacking": "car", "Hit-and-run": "car", "Kidnapping": "car",
+          "Foot chase": "foot"}
+PACE = {"car": 4.2, "foot": 1.7}              # map units a minute: a car through the city, a man running
+LASTS = {"car": (5, 14), "foot": (2, 6)}      # minutes it runs before they're clear, if nobody stops it
+# How a call turns into another — the robbery that becomes a getaway, the bar fight
+# that becomes a stabbing: (into, odds, minutes after it came in (lo, hi)). Drawn
+# per report, so the same night always goes the same way — unless someone's there
+# in time to stop it turning.
+EVOLVES = {
+    "Armed robbery": [("Vehicle pursuit", 0.3, (3, 9)), ("Hostage situation", 0.1, (5, 14)), ("Foot chase", 0.12, (2, 6))],
+    "Knifepoint robbery": [("Foot chase", 0.35, (1, 4))], "Mugging": [("Foot chase", 0.3, (1, 3))],
+    "Phone snatch": [("Foot chase", 0.45, (0.5, 2))], "Shoplifting": [("Foot chase", 0.25, (1, 3))],
+    "Smash-and-grab": [("Vehicle pursuit", 0.4, (1, 4))], "Carjacking": [("Hostage situation", 0.06, (6, 14))],
+    "Break-in": [("Foot chase", 0.2, (3, 10))], "Car break-in": [("Foot chase", 0.2, (1, 4))],
+    "Drug deal": [("Foot chase", 0.25, (2, 8)), ("Shots fired", 0.1, (4, 12))],
+    "Bar fight": [("Brawl", 0.2, (3, 10)), ("Stabbing", 0.15, (4, 14))],
+    "Brawl": [("Stabbing", 0.2, (5, 15)), ("Shots fired", 0.08, (6, 18))],
+    "Gang activity": [("Turf war", 0.18, (10, 30)), ("Drive-by shooting", 0.12, (8, 25)), ("Shots fired", 0.15, (5, 20))],
+    "Turf war": [("Drive-by shooting", 0.25, (6, 20)), ("Machete attack", 0.15, (5, 15))],
+    "Shots fired": [("Vehicle pursuit", 0.18, (3, 10)), ("Officer down", 0.07, (5, 15))],
+    "Drive-by shooting": [("Vehicle pursuit", 0.35, (1, 4))],
+    "Domestic violence": [("Stabbing", 0.08, (5, 20)), ("Hostage situation", 0.06, (10, 30))],
+    "Assault": [("Foot chase", 0.2, (1, 4))], "Unprovoked attack": [("Foot chase", 0.3, (1, 3))],
+    "Sexual assault": [("Foot chase", 0.2, (1, 4))], "Stabbing": [("Foot chase", 0.25, (1, 4))],
+    "Machete attack": [("Foot chase", 0.25, (1, 4))], "Mob hit": [("Vehicle pursuit", 0.3, (1, 5))],
+    "Assassination": [("Vehicle pursuit", 0.25, (1, 5))], "Suspicious package": [("Explosion reported", 0.1, (15, 50))],
+    "Arson": [("Explosion reported", 0.12, (10, 35))], "Kidnapping": [("Hostage situation", 0.2, (20, 60))],
+    "Hostage situation": [("Vehicle pursuit", 0.15, (30, 90))], "Riot": [("Arson", 0.25, (15, 45)), ("Officer down", 0.12, (10, 40))],
+    "Protection racket": [("Assault", 0.25, (5, 20)), ("Arson", 0.15, (10, 40))],
+    "Laughing-gas attack": [("Hostage situation", 0.2, (15, 40)), ("Riot", 0.15, (10, 30))],
+    "Freezing incident": [("Hostage situation", 0.15, (15, 40))], "Breakout": [("Vehicle pursuit", 0.3, (10, 40))],
+    "Mauling": [("Missing person", 0.15, (10, 40))], "Cult gathering": [("Riot", 0.12, (20, 50))],
+    "Cat burglary": [("Foot chase", 0.3, (2, 6))],              # over the roofs after her, briefly
+}
+# How many are in it — the man with the knife, or Bane and the thirty men he brought.
+CREW = {"Mugging": (1, 2), "Phone snatch": (1, 2), "Knifepoint robbery": (1, 2), "Armed robbery": (2, 4),
+        "Smash-and-grab": (2, 4), "Carjacking": (1, 3), "Gang activity": (3, 8), "Brawl": (4, 12), "Turf war": (8, 20),
+        "Drive-by shooting": (2, 4), "Machete attack": (2, 5), "Protection racket": (2, 5), "Riot": (20, 60),
+        "Hostage situation": (2, 6), "Kidnapping": (2, 4), "Mob hit": (1, 3), "Shots fired": (1, 3),
+        "Vehicle pursuit": (1, 3), "Foot chase": (1, 2), "Breakout": (3, 12), "Cult gathering": (8, 25)}
+# The rogues who bring an army.
+ARMY = {"Bane": (15, 35), "The Joker": (6, 18), "The Penguin": (5, 14), "Black Mask": (6, 16), "Two-Face": (4, 10),
+        "Carmine Falcone": (5, 12), "Sal Maroni": (4, 10), "Rupert Thorne": (4, 10), "Ra's al Ghul": (8, 24),
+        "The Court of Owls": (4, 12), "Firefly": (2, 6), "Mad Hatter": (3, 8), "Scarecrow": (3, 10),
+        "Harley Quinn": (3, 9), "Hugo Strange": (3, 8), "Professor Pyg": (3, 8)}
+
+
+def _crew(report):
+    """How many they're up against — seeded by the report, so it's the same every time."""
+    r = random.Random(f"crew:{report['id']}")
+    lo, hi = ARMY.get(report.get("suspect") or "") or CREW.get(report["kind"], (1, 2 if report["severity"] < 3 else 4))
+    return lo + int((hi - lo + 1) * r.random() ** 1.3)
+
+
+def _cases_now():
+    """The cases on the scanner's reports — read once a pass, not once a report."""
+    from . import cases
+    return {c["id"]: c for c in cases.everything()}
+
+
+def _landed(case):
+    """When the first of them got to the scene, or None if nobody has yet."""
+    members = (case or {}).get("members") or {}
+    times = [m.get("joined", 0) + m.get("travel", 9) * 60 for m in members.values()]
+    return min(times) if times else None
+
+
+def turns(report, case=None):
+    """
+    The call as it came in and what it became — [(when, kind, severity)] —
+    unless someone was on scene in time to stop it turning: their odds of
+    holding it are their odds on the case.
+    """
+    rnd = random.Random(f"turns:{report['id']}")
+    stages = [(report["at"], report["kind"], report["severity"])]
+    heat = 1.5 if report.get("suspect") else 1.0           # a rogue's night escalates more than a mugger's
+    for _ in range(2):
+        roll, acc, chosen = rnd.random(), 0.0, None
+        for into, odds, span in EVOLVES.get(stages[-1][1], ()):
+            acc += odds * heat
+            if roll < acc:
+                chosen = (into, span)
+                break
+        if chosen is None:
+            break
+        into, (lo, hi) = chosen
+        when = stages[-1][0] + rnd.uniform(lo, hi) * 60
+        if when >= report["ends"]:
+            break
+        stages.append((when, into, max(stages[-1][2], SEVERITY.get(into, 2))))
+    landed = _landed(case)
+    if case and landed is not None:
+        from . import outcomes
+        for i, (when, _kind, _sev) in enumerate(stages[1:], 1):
+            if landed < when and _draw(report["id"], "held", i) < outcomes.chance(case) * 0.9:
+                return stages[:i]            # they were there: it never got that far
+    return stages
+
+
+def _draw(*parts):
+    return int(hashlib.sha1(":".join(map(str, parts)).encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
+
+
+_chases = {}
+
+
+def chase(report_id, start_xy, start_t, mode):
+    """
+    The way a getaway goes: from where it started, through the streets — the
+    roads for a car, the alleys and the streets for a man on foot — as far as
+    it gets in the minutes it runs. {"pts", "start", "end", "by", "mode"}.
+    """
+    key = (report_id, round(start_t), mode)
+    if key in _chases:
+        return _chases[key]
+    from . import travel
+    rnd = random.Random(f"chase:{report_id}:{round(start_t)}")
+    minutes = rnd.uniform(*LASTS[mode])
+    reach = PACE[mode] * minutes
+    graph = travel._load()
+    nodes = graph["nodes"]
+    ring = [p for p in nodes[::7] if 0.45 * reach <= math.dist(p, start_xy) <= 0.85 * reach]
+    if not ring:
+        _chases[key] = None
+        return None
+    goal = rnd.choice(ring)
+    try:
+        pts, _ = travel._route(tuple(start_xy), tuple(goal), "", "")
+    except Exception:
+        pts = None
+    if not pts or len(pts) < 2:
+        _chases[key] = None
+        return None
+    # As far as it gets: the route cut where the minutes run out.
+    out, left = [list(pts[0])], reach
+    for a, b in zip(pts, pts[1:], strict=False):
+        leg = math.dist(a, b)
+        if leg >= left:
+            f = left / leg if leg else 0
+            out.append([round(a[0] + (b[0] - a[0]) * f, 2), round(a[1] + (b[1] - a[1]) * f, 2)])
+            break
+        out.append([round(b[0], 2), round(b[1], 2)])
+        left -= leg
+    length = sum(math.dist(p, q) for p, q in zip(out, out[1:], strict=False))
+    route = {"pts": out, "start": start_t, "end": start_t + max(1.0, length / PACE[mode]) * 60,
+             "by": "on foot" if mode == "foot" else "by car", "mode": mode}
+    if len(_chases) > 600:
+        _chases.clear()
+    _chases[key] = route
+    return route
+
+
+def _as_it_stands(report, t, cased):
+    """
+    A report as it is at t: what it's turned into, and — if it's on the move —
+    where along its way it's got to. One that got clean away is off the scanner
+    (None); one they stopped stays where they stopped it; and whatever it turns
+    into after a getaway happens where the getaway ended — the van's hideout.
+    """
+    from . import travel
+    case = cased.get(report["id"])
+    stages = turns(report, case)
+    now = [st for st in stages if st[0] <= t] or stages[:1]
+    out = dict(report)
+    if len(now) > 1:
+        out.update(kind=now[-1][1], severity=now[-1][2], was=[st[1] for st in now[:-1]], turned_at=int(now[-1][0]))
+    here = (report["x"], report["y"])
+    stopped = (case or {}).get("chase") or {}
+    for i, (when, kind, _severity) in enumerate(now):
+        if kind not in MOVING:
+            continue
+        # Moving from wherever the last turn left it — the scene of the robbery the getaway drives off from.
+        scene = here
+        way = chase(report["id"], here, when, MOVING[kind])
+        if not way:
+            continue
+        caught = stopped.get("start") == round(way["start"]) and stopped.get("caught") and t >= stopped.get("at", 1e18)
+        if i < len(now) - 1:
+            here = (stopped["x"], stopped["y"]) if caught else tuple(way["pts"][-1])
+            continue
+        if caught:
+            out.update(x=stopped["x"], y=stopped["y"], route=way, moving=False, stopped=True, origin=report["place"])
+            return out
+        if t >= way["end"]:
+            if i == 0:
+                return None                  # a chase and nothing else: clean away, gone off the scanner
+            # The getaway's gone; the scene it left — the shop, the bodies on the pavement — is still GCPD's.
+            out.update(kind=now[i - 1][1], severity=now[i - 1][2], was=[st[1] for st in now[:i - 1]],
+                       x=round(scene[0], 2), y=round(scene[1], 2), fled=True)
+            if not out["was"]:
+                out.pop("was", None)
+                out.pop("turned_at", None)
+            return out
+        x, y = travel.position(way, t)
+        out.update(x=round(x, 2), y=round(y, 2), route=way, moving=True, origin=report["place"])
+        return out
+    if here != (report["x"], report["y"]):
+        name, area = _nearest_place(*here)
+        out.update(x=round(here[0], 2), y=round(here[1], 2), origin=report["place"], place=name or report["place"],
+                   area=area or report["area"])
+    return out
+
+
+def _nearest_place(x, y):
+    """The named place nearest a point, and its district — where a getaway that ended there 'is'."""
+    best = min((p for p, _level, _weight in _spots() if p.get("kind") in ("landmark", "spot")),
+               key=lambda p: math.dist((p["x"], p["y"]), (x, y)), default=None)      # never anyone's home
+    if best is None or math.dist((best["x"], best["y"]), (x, y)) > 4:
+        return "", ""
+    return best["name"], best["area"]
+
+
+def intercept(report, here, who="nightwing", now=None):
+    """
+    Where someone at `here` can cut off a moving report: the first point along
+    its way they can reach before it does, the fastest way they have — (point,
+    trip) — or None when it'll be gone before they get anywhere near it.
+    """
+    from . import travel
+    way = report.get("route")
+    if not way:
+        return None
+    now = now or time.time()
+    pts, start, end = way["pts"], way["start"], way["end"]
+    legs = [math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
+    total = sum(legs) or 1.0
+    walked, step = 0.0, max(1, len(pts) // 24)
+    for i in range(len(pts)):
+        at = start + (end - start) * (walked / total)
+        if i < len(legs):
+            walked += legs[i]
+        if at < now + 45 or (i % step and i != len(pts) - 1):
+            continue
+        if now + math.dist(here, pts[i]) / max(travel.FLIGHT, 14.0) * 60 > at:
+            continue                         # not even the jet would beat it there
+        trip = travel.fastest(who, here, tuple(pts[i]), None, now, book=False)
+        if trip["end"] <= at + 30:
+            return tuple(pts[i]), trip
+    return None
 
 
 BREAKOUT_HOURS = 3

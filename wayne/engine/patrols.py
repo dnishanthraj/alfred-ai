@@ -372,7 +372,8 @@ def where(contact_id, sector_name, t, arrived=None, seed_id=None, offset=(0.0, 0
         if run and t < stop_start + run:
             pts = travel._rooftops(prev, dest)
             pts = [[round(x + offset[0], 2), round(y + offset[1], 2)] for x, y in pts]
-            leg = {"pts": pts, "start": stop_start, "end": stop_start + run}
+            # A line across each street, a run along each roof: the pace of it, not a glide.
+            leg = {"pts": pts, "start": stop_start, "end": stop_start + run, "times": travel.roof_run(pts)[0]}
             here = travel.position(leg, t)
             return {"x": round(here[0], 2), "y": round(here[1], 2), "near": near(*here), "leg": leg}
         here, leg = dest, None

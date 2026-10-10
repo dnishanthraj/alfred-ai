@@ -110,6 +110,7 @@ def assign(report, contact_id, by="him", travel=0):
             case = {"id": report["id"], "kind": report["kind"], "severity": report["severity"],
                     "place": report["place"], "area": report["area"], "x": report["x"], "y": report["y"],
                     "dispatch": report.get("dispatch", ""), "suspect": report.get("suspect", ""),
+                    "gang": report.get("gang", ""), "crew": report.get("crew", 1), "was": report.get("was", []),
                     "began": report.get("at", now), "opened_at": now, "log": [], "team": [], "members": {}}
             cases.append(case)
         case.setdefault("team", team(case))

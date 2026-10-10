@@ -37,11 +37,12 @@ def test_a_call_goes_reported_responding_contained_resolved():
 
 def test_only_someone_out_can_be_the_suspect_and_only_for_their_kind_of_crime():
     rogues = {g["name"]: g for g in incidents.rogues()}
-    reports = [r for r in _reports(range(0, 24, 2)) if r.get("suspect")]
+    reports = [r for r in _reports(range(0, 24, 2)) if r.get("suspect") and r["suspect"] != incidents.CATWOMAN]
     assert reports
-    for r in reports:
+    for r in reports:                                  # (Selina's jobs are hers, on her nights — see test_chases)
         rogue = rogues[r["suspect"]]
-        assert rogue["status"] == "at large" and r["kind"] in rogue["kinds"]
+        came_in_as = (r.get("was") or [r["kind"]])[0]          # what it was before it turned
+        assert rogue["status"] == "at large" and came_in_as in rogue["kinds"]
 
 
 def test_the_locked_up_are_somewhere_and_the_loose_are_nowhere():

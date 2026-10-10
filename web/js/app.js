@@ -3368,6 +3368,10 @@
                                         body: JSON.stringify(target) })
           .then(function (r) { return r.json(); }).then(function (where) { setBruce(where); return where; });
       },
+      // Calling the Batwing to wherever he is.
+      summon: function () {
+        return fetch('/api/jet/summon', { method: 'POST' }).then(function (r) { return r.json(); });
+      },
       order: function () { return state.order; },
       portrait: function (node, c) { portraitStyle(node, c, 'center 22%'); },
       label: presenceLabel,
@@ -3389,7 +3393,8 @@
     if (!where || !where.spot) return;
     state.bruce = state.bruce || { id: 'bruce', name: 'You', full_name: 'Bruce Wayne', accent: '#e8c86a', bruce: true };
     state.bruce.presence = { status: 'online', where: where.where, spot: where.spot, route: where.route || null,
-                             doing: where.route ? (where.route.by || 'on the way') : '', suit: where.suit };
+                             doing: where.route ? (where.route.by || 'on the way') : '', suit: where.suit,
+                             follow: where.follow || '' };
     if (window.GothamMap && GothamMap.isOpen()) GothamMap.refreshPeople();
   }
   function loadBruce() {
