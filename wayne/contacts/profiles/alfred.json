@@ -305,6 +305,7 @@
     }
   ],
   "texting_pace": {
+    "lingers": 600,
     "online_read": [
       3,
       10

@@ -140,6 +140,14 @@ def note_call(session, contacts, start_index, present=()):
     threading.Thread(target=run, daemon=True).start()
 
 
+def spread(source, text, to, delay=_DELAY):
+    """Something big travels: `source` (a name) tells each of `to` (contact ids), in their own time."""
+    with _lock:
+        for other in to:
+            entries = _load(other) + [{"from": source, "text": text, "at": time.time() + random.uniform(*delay)}]
+            atomic_write(_path(other), json.dumps(entries[-_KEEP:], indent=1))
+
+
 def clear(contact_id):
     path = _path(contact_id)
     if path.exists():

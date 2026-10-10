@@ -110,7 +110,7 @@ def assign(report, contact_id, by="him", travel=0):
             case = {"id": report["id"], "kind": report["kind"], "severity": report["severity"],
                     "place": report["place"], "area": report["area"], "x": report["x"], "y": report["y"],
                     "dispatch": report.get("dispatch", ""), "suspect": report.get("suspect", ""),
-                    "opened_at": now, "log": [], "team": [], "members": {}}
+                    "began": report.get("at", now), "opened_at": now, "log": [], "team": [], "members": {}}
             cases.append(case)
         case.setdefault("team", team(case))
         case.setdefault("members", {})
@@ -193,10 +193,11 @@ _CAUGHT = re.compile(r"(?i)\b(custody|arrest\w*|cuffed|caught|locked (him|her|th
                      r"back in arkham|back to arkham|off to blackgate)\b")
 
 
-def close(case_id, outcome):
+def close(case_id, outcome, result=None):
     """
-    It's over: how it ended, in a line. If one of the rogues was behind it and
-    the ending has them caught, they're in GCPD custody now (see codex.capture).
+    It's over: how it ended, in a line — and, decided by the odds (see
+    outcomes.decide), whether it went well. If one of the rogues was caught,
+    they're in GCPD custody now (see codex.capture).
     """
     now = time.time()
     with _lock:
@@ -205,8 +206,15 @@ def close(case_id, outcome):
         if case is None or case["status"] == "closed":
             return None
         case.update({"status": "closed", "closed_at": now, "updated_at": now, "outcome": outcome.strip()[:240]})
+        if result:
+            case["result"] = {k: result[k] for k in ("ok", "how", "caught", "hurt") if k in result}
         case["log"].append({"at": now, "text": "closed"})
         _save(cases)
+    if result is not None:
+        if result.get("caught"):
+            from . import codex
+            codex.capture(result["caught"], f"caught on the {case['kind'].lower()} at {case['place']}")
+        return case
     if case.get("suspect") and _CAUGHT.search(outcome or ""):
         from . import codex
         codex.capture(case["suspect"], f"caught on the {case['kind'].lower()} at {case['place']}")
@@ -286,7 +294,8 @@ def brief(contact_id, now=None):
             how = f"on your way to join them, about {left} minute{'s' if left != 1 else ''} out"
         from ..contacts import directory
         book = directory()
-        others = [book.get(c).name if book.get(c) else c for c in team(case) if c != contact_id]
+        others = [book.get(c).name if book.get(c) else "Bruce — Batman himself" if c == "bruce" else c
+                  for c in team(case) if c != contact_id]
         return (f"You're working a case: {case['kind'].lower()} at {case['place']} ({case['area']})"
                 + (f" — dispatch said: \"{case['dispatch']}\"" if case.get("dispatch") else "")
                 + f". {who} {minutes} minutes ago" + (f", with {' and '.join(others)} on it too" if others else "")

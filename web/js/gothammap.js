@@ -946,8 +946,9 @@
     var marker = people[c.id];
     if (!marker) {
       var el = document.createElement('div');
-      el.className = 'gm-person';
+      el.className = 'gm-person' + (c.id === 'bruce' ? ' gm-person--bruce' : '');
       el.innerHTML = '<span class="gm-person__ring"></span><span class="gm-person__face"></span>' +
+                     (c.id === 'bruce' ? '<span class="gm-person__bat">' + ARKHAM_BAT + '</span>' : '') +
                      '<span class="gm-person__name"></span>';
       el.style.setProperty('--accent', c.accent);
       el.querySelector('.gm-person__name').textContent = c.name;
@@ -969,10 +970,18 @@
     return h < 24 ? h + 'h ago' : Math.round(h / 24) + 'd ago';
   }
 
+  // The family, and him — his own marker among theirs.
+  function everyone() {
+    var all = Object.assign({}, opts.contacts());
+    var me = opts.bruce && opts.bruce();
+    if (me && me.presence && me.presence.spot) all.bruce = me;
+    return all;
+  }
+
   function placePeople() {
     if (!ready) return;
     var byspot = {}, moving = [], ghosts = [];
-    var contacts = opts.contacts();
+    var contacts = everyone();
     Object.keys(contacts).forEach(function (id) {
       var c = contacts[id], p = c.presence;
       if (!p) return;
@@ -1045,9 +1054,9 @@
 
   function renderRoster() {
     var list = $('.gm-roster');
-    var contacts = opts.contacts();
+    var contacts = everyone();
     list.innerHTML = '';
-    opts.order().forEach(function (id) {
+    (contacts.bruce ? ['bruce'] : []).concat(opts.order()).forEach(function (id) {
       var c = contacts[id];
       if (!c) return;
       var p = c.presence || {};
@@ -1177,6 +1186,8 @@
     openReport = null;
     card.querySelector('.gm-info__log').hidden = true;
     card.querySelector('.gm-info__assign').hidden = true;
+    var go = card.querySelector('.gm-info__go');
+    if (go) go.hidden = true;
     card.querySelector('.gm-info__note').classList.remove('is-plain');
     card.style.setProperty('--accent', tint || C.edge);
     card.querySelector('.gm-info__icon').style.backgroundImage = imageUrl ? 'url(' + imageUrl + ')' : '';
@@ -1187,6 +1198,22 @@
     card.querySelector('.gm-info__note').textContent = note || '';
     card.querySelector('.gm-info__note').hidden = !note;
     card.hidden = false;
+  }
+
+  // "Go here": he sets off for a place, the way he would at this hour.
+  function offerGo(name) {
+    var go = $('.gm-info__go');
+    if (!go || !opts.go) return;
+    go.hidden = false;
+    go.querySelector('.gm-info__go-bat').innerHTML = ARKHAM_BAT;
+    go.querySelector('.gm-info__go-text').textContent = 'Go here';
+    go.onclick = function () {
+      go.disabled = true;
+      opts.go({ place: name }).then(function (where) {
+        go.querySelector('.gm-info__go-text').textContent = where && where.route
+          ? 'On your way — ' + Math.max(1, Math.round((where.route.end - Date.now() / 1000) / 60)) + ' min' : 'You\u2019re here';
+      }).catch(function () {}).then(function () { go.disabled = false; });
+    };
   }
 
   function placeCard(name) {
@@ -1202,6 +1229,7 @@
       return;
     }
     showInfo(p.name, p.area, p.bio, p.note, iconUrl(p.icon || ''), ICON_TINT[p.icon]);
+    offerGo(p.name);
   }
 
   // The incident log behind a report — who called it in, what units found, where it stands.
@@ -1260,6 +1288,30 @@
     // Put someone on it: the ones who work scenes, nearest first.
     var assign = $('.gm-info__assign'), people = $('.gm-info__people');
     people.innerHTML = '';
+    var team = report.team || (report.assignee ? [report.assignee] : []);
+    if (report.case !== 'closed' && opts.go) {
+      // Him: he goes himself — the Batmobile by night — and it's his case too.
+      var me = document.createElement('button');
+      me.type = 'button';
+      var mine = team.indexOf('bruce') !== -1;
+      me.className = 'gm-assign gm-assign--bruce' + (mine ? ' is-on' : '');
+      me.disabled = mine;
+      me.style.setProperty('--accent', '#e8c86a');
+      me.setAttribute('data-tip', mine ? 'You\u2019re on it' : 'Go yourself');
+      var myFace = document.createElement('span');
+      if (opts.bruce && opts.bruce()) opts.portrait(myFace, opts.bruce());
+      me.appendChild(myFace);
+      me.appendChild(document.createTextNode('You'));
+      me.addEventListener('click', function () {
+        opts.go({ report: report.id }).then(function (where) {
+          said.textContent = where && where.route ? 'On your way — ' + (where.route.by || '') + ', ' +
+            Math.max(1, Math.round((where.route.end - Date.now() / 1000) / 60)) + ' min.' : 'You\u2019re on it.';
+          said.hidden = false;
+          loadIncidents();
+        }).catch(function () {});
+      });
+      people.appendChild(me);
+    }
     if (report.case !== 'closed') {
       FIELD.map(function (id) { return contacts[id]; }).filter(Boolean).sort(function (a, b) {
         var sa = (a.presence || {}).spot, sb = (b.presence || {}).spot;
@@ -1359,7 +1411,8 @@
     var li = document.createElement('li');
     li.className = 'gm-list__item';
     li.style.setProperty('--sev', SEVERITY[r.severity]);
-    var book = opts.contacts();
+    var book = everyone();
+    if (!book.bruce && opts.bruce && opts.bruce()) book.bruce = opts.bruce();
     var crew = (r.team || (r.assignee ? [r.assignee] : [])).map(function (id) { return book[id]; }).filter(Boolean);
     var who = crew[0];
     // The time in a column of its own at the right, the face (if any) under it:
@@ -1371,9 +1424,11 @@
     var toll = tollText(r.toll);
     li.querySelector('small').textContent = r.place + (r.area && r.area !== r.place ? ', ' + r.area : '') + (toll ? ' · ' + toll : '');
     var status = li.querySelector('.gm-list__status');
-    status.textContent = who ? crew.map(function (c) { return c.name; }).join(' + ') + ' · ' +
-                               (r.case === 'closed' ? 'closed' : r.case) : r.status;
-    status.dataset.s = who ? 'case' : r.status.replace(/ /g, '-');
+    // Closed, how it went: caught, saved, got away, lost — in its colour.
+    var ended = r.case === 'closed' ? (r.result || 'closed') : '';
+    var names = crew.length > 2 ? crew[0].name + ' +' + (crew.length - 1) : crew.map(function (c) { return c.name; }).join(' + ');
+    status.textContent = who ? names + ' · ' + (ended || r.case) : r.status;
+    status.dataset.s = !who ? r.status.replace(/ /g, '-') : !ended ? 'case' : r.ok ? 'won' : /^(got away|cold|too late)$/.test(r.result) ? 'lost-trail' : 'failed';
     if (withWho && crew.length) {
       // Everyone on it, overlapping like a hand of cards, the lead on top.
       var faces = document.createElement('span');
@@ -1972,6 +2027,7 @@
     _map: function () { return map; },
     update: function () { if (map && !root.hidden) placePeople(); },
     refreshCases: function () { if (map && !root.hidden) loadIncidents(); },
+    refreshPeople: function () { if (map && !root.hidden) placePeople(); },
     search: function () { if (root && !root.hidden) $('.gm-search__input').focus(); },
     focus: function (id) { if (map && !root.hidden) select(id, true); },
     // A place from the Codex: there, close enough to see it.

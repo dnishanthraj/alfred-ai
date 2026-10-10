@@ -238,6 +238,7 @@
     {"user": "what are you doing", "assistant": "ballet\nthen punching"}
   ],
   "texting_pace": {
+    "lingers": 420,
     "online_read": [
       2,
       10

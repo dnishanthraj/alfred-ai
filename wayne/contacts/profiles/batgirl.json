@@ -254,6 +254,7 @@
     }
   ],
   "texting_pace": {
+    "lingers": 900,
     "online_read": [
       1,
       5

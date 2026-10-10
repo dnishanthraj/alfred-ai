@@ -1501,6 +1501,7 @@ class Console(GroupChats):
         await self._maybe_reach_out(now)
         await self._group_tick(now)
         await self._case_tick(now)
+        await self._comms_tick(now)
 
     async def _write_status_lines(self):
         """
@@ -1584,8 +1585,10 @@ class Console(GroupChats):
         Returns the case, or {"texted": True} / {"declined": True}.
         """
         from ..engine import cases, incidents
-        contact = self.directory.get(contact_id)
         report = incidents.get(report_id) or cases.for_report(report_id)
+        if contact_id == "bruce" and report is not None:
+            return await self._bruce_takes(report)
+        contact = self.directory.get(contact_id)
         if contact is None or report is None or contact_id not in cases.FIELD:
             return None
         about = f"{report['kind'].lower()} at {report['place']}" + (
@@ -1607,6 +1610,7 @@ class Console(GroupChats):
         minutes = (travel.route((here["x"], here["y"]), (report["x"], report["y"]), here["name"], report["place"],
                                 patrol=bool(getattr(contact, "beat", None)))[1] if here else 12.0)
         case = cases.assign(report, contact_id, by=by, travel=minutes)
+        await self._case_comms(case)
         if report.get("suspect"):
             from ..engine import codex
             codex.encounter(report["suspect"], f"{report['kind'].lower()} at {report['place']}")
@@ -1627,6 +1631,86 @@ class Console(GroupChats):
                 self._spawn(self._later(random.uniform(8, 40), self._send_unprompted(contact, about, why)))
         return case
 
+    async def _bruce_takes(self, report):
+        """He goes himself: the Batmobile by night, the car by day — and he's on the case with whoever's there."""
+        from ..engine import batman, cases
+        trip = await asyncio.to_thread(batman.go, report["place"], report["x"], report["y"], report["id"])
+        minutes = (trip["end"] - trip["start"]) / 60 if trip else 10.0
+        case = cases.assign(report, "bruce", by="him", travel=minutes)
+        await self._case_comms(case)
+        await self.broadcast({"type": "cases"})
+        await self.broadcast({"type": "bruce", "bruce": batman.state()})
+        log.info("bruce on case %s (%s at %s), %.0f min out", report["id"], report["kind"], report["place"], minutes)
+        return case
+
+    async def _case_comms(self, case):
+        """
+        More than one of them on a case — or him and one of them — and there's a
+        comms channel: everyone on it in a group chat while it lasts, talking the
+        way people do mid-op. Whoever joins later is added.
+        """
+        from ..engine import cases
+        from ..memory import groups as store
+        crew = [m for m in cases.team(case) if self.directory.get(m)]
+        if case["status"] == "closed" or not (len(crew) >= 2 or ("bruce" in cases.team(case) and crew)):
+            return None
+        found = next((g for g in store.all_groups() if (g.meta() or {}).get("case") == case["id"]), None)
+        if found is None:
+            found = store.create(f"Comms · {case['kind']} · {case['place']}"[:60], crew)
+            found.update_meta(lambda meta: meta.update({"case": case["id"], "comms": True,
+                                                        "next_post": time.time() + random.uniform(15, 45)}))
+            found.system(f"Comms open: {case['kind'].lower()} at {case['place']}")
+            await self.broadcast({"type": "group_created", "group": self.group_payload(found)})
+            return found
+        for member in crew:
+            if member not in found.members:
+                found.add_member(member, backlog=8)
+                found.system(f"{self.directory.get(member).name} joined comms")
+        await self.broadcast({"type": "group_updated", "group": self.group_payload(found)})
+        return found
+
+    async def _comms_tick(self, now):
+        """
+        On comms while it's live: a line every minute or two from whoever's on it,
+        about where it's got to; when it's over, a sign-off, and the channel closes
+        a little later as everyone goes their own way.
+        """
+        from ..engine import cases
+        from ..memory import groups as store
+        for group in store.all_groups():
+            meta = group.meta() or {}
+            if not meta.get("comms"):
+                continue
+            case = cases.for_report(meta["case"])
+            if case is None or (case["status"] == "closed" and now > meta.get("close_at", now + 1)):
+                await self.group_delete(group.id)
+                continue
+            if case["status"] == "closed":
+                if not meta.get("signed_off"):
+                    group.update_meta(lambda m: m.update({"signed_off": True, "close_at": now + 20 * 60}))
+                    result = (case.get("result") or {}).get("how", "")
+                    group.system(f"Case closed{': ' + result if result else ''}")
+                    speaker = next((self.directory.get(m) for m in group.members if self.directory.get(m)), None)
+                    if speaker is not None and speaker.id not in self._members():
+                        self._spawn(self._post_as(group, speaker, opening=f"it's over: {case.get('outcome', 'done')} — "
+                                                  "sign off on comms your way, a few words"))
+                continue
+            if now < meta.get("next_post", 0) or self.current_id or self.turn_lock.locked():
+                continue
+            group.update_meta(lambda m: m.update({"next_post": now + random.uniform(60, 150)}))
+            on_it = [self.directory.get(m) for m in group.members if self.directory.get(m) and m not in self._members()]
+            if not on_it:
+                continue
+            speaker = random.choice(on_it)
+            _phase, how = cases.phase(case, now)
+            mine = (case.get("members") or {}).get(speaker.id) or {}
+            if mine.get("status") == "assigned" and case["status"] == "on scene":
+                how = "on your way to join them"
+            self._spawn(self._post_as(group, speaker, opening=(
+                f"you're on comms for the {case['kind'].lower()} at {case['place']} — right now you're {how}. "
+                "A quick line to the team, the way people talk on comms mid-op: where you are, what you see, "
+                "a call, a warning — short, no greetings")))
+
     async def _case_tick(self, now):
         """
         Patrols take what's near them; cases reach the scene, and run their course.
@@ -1644,13 +1728,17 @@ class Console(GroupChats):
         open_ = [r for r in incidents.at(now) if r["id"] not in taken and r["severity"] >= 2
                  and r["status"] in ("reported", "units responding", "backup requested")]
         violent = ("shoot", "stab", "machete", "gang", "turf", "drive-by", "robbery", "hostage", "assault", "attack")
+        hour = time.localtime(now).tm_hour
+        dark = hour >= 19 or hour < 5
         for cid in cases.FIELD:
             contact = self.directory.get(cid)
             if contact is None or cid in busy or cid in self._members():
                 continue
             whereabouts = presence.of(contact)
-            if not places.is_patrol(whereabouts.now()["doing"]) or now < (whereabouts.get("case_rest") or 0):
-                continue
+            state = whereabouts.now()
+            if state["status"] == presence.OFFLINE or now < (whereabouts.get("case_rest") or 0):
+                continue        # asleep, out of reach, or just back from one
+            patrolling = places.is_patrol(state["doing"])
             spot = places.resolve(whereabouts.whereabouts(now)[0] or "")
             areas = {(places.resolve(b) or {}).get("area") for b in contact.beat}
 
@@ -1660,13 +1748,17 @@ class Console(GroupChats):
             choices = []
             for r in open_:
                 far = near(r["x"], r["y"])
-                if r["area"] not in areas and far > 6:
-                    continue
+                if patrolling:
+                    if r["area"] not in areas and far > 6:
+                        continue
+                elif far > (3.5 if dark else 2.5) or r["severity"] < (3 if dark else 4):
+                    continue        # off duty: only something bad, and close — then the game can wait
                 if cid == "redhood" and not any(v in r["kind"].lower() for v in violent):
                     continue        # Jason doesn't do break-ins
                 # A tick is half a minute: the worst on their doorstep in a minute or two, a
                 # minor one across the district maybe never.
-                choices.append((0.05 * r["severity"] * (1.4 if far < 2.5 else 1.0 if far < 6 else 0.5), r, "take"))
+                duty = 1.0 if patrolling else 0.6 if dark else 0.35
+                choices.append((0.05 * r["severity"] * duty * (1.4 if far < 2.5 else 1.0 if far < 6 else 0.5), r, "take"))
             for c in openly:
                 kind, _how = cases.phase(c, now)
                 if (kind == "gone wrong" or c["severity"] >= 4) and near(c["x"], c["y"]) <= 8:
@@ -1678,6 +1770,11 @@ class Console(GroupChats):
                 whereabouts.put("case_rest", now + random.uniform(25, 70) * 60)
                 await self.assign_case(what["id"], cid, by="self")
                 busy.add(cid)
+                # Whoever they're with comes too: Dick and Tim drop the controllers together.
+                for friend in whereabouts.whereabouts(now)[1]:
+                    if friend in cases.FIELD and friend not in busy and friend not in self._members():
+                        await self.assign_case(what["id"], friend, by="self")
+                        busy.add(friend)
         # A case gone bad: whoever's in it may call for help — a text, or for the
         # worst of them, a ring — once, and as themselves. Jason never does.
         for case in cases.board(now):
@@ -1723,35 +1820,91 @@ class Console(GroupChats):
 
     async def _close_case(self, case):
         """
-        It's run its course: they write how it ended, and may tell him — as
-        one of the day's unprompted texts, not on top of them, and not in his
-        quiet hours or about a case that ended hours ago while the console was shut.
+        It's run its course: how it went is decided by the odds (who was on it,
+        what it was, who was behind it — see engine.outcomes), and whoever led it
+        writes it up in their own words. They may tell him — as one of the day's
+        unprompted texts, not on top of them, and not in his quiet hours or about
+        a case that ended hours ago while the console was shut. The hurt carry it;
+        the ones who were there remember it; the rest of the family hear.
         """
-        from ..engine import cases
+        from ..engine import cases, outcomes
         try:
-            contact = self.directory.get(case["assignee"])
-            if contact is None:
-                return cases.close(case["id"], "handled")
-            session = self.session_for(contact.id)
+            result = outcomes.decide(case)
+            writer = next((self.directory.get(m) for m in cases.team(case) if self.directory.get(m)), None)
+            if writer is None:
+                closed = cases.close(case["id"], result["line"][:1].upper() + result["line"][1:] + ".", result)
+                await self.broadcast({"type": "cases"})
+                if closed:
+                    self._remember_case(closed, result)
+                return
+            session = self.session_for(writer.id)
             async with self.turn_lock:
-                outcome = await asyncio.get_running_loop().run_in_executor(None, session.case_outcome, case)
-            closed = cases.close(case["id"], outcome or "handled")
+                outcome = await asyncio.get_running_loop().run_in_executor(None, session.case_outcome, case, result)
+            closed = cases.close(case["id"], outcome or result["line"], result)
             if not closed:
                 return
-            whereabouts = presence.of(contact)
-            whereabouts.clear_activity()
-            whereabouts.put("case_rest", time.time() + random.uniform(45, 120) * 60)
-            await self._presence_changed(contact)
+            now = time.time()
+            for member in cases.team(closed):
+                contact = self.directory.get(member)
+                if contact is None:
+                    continue
+                whereabouts = presence.of(contact)
+                whereabouts.clear_activity()
+                whereabouts.put("case_rest", now + random.uniform(45, 120) * 60)
+                if member in result["hurt"]:
+                    whereabouts.put("hurt", {"how": result["hurt"][member], "until": now + 36 * 3600,
+                                             "on": f"the {closed['kind'].lower()} at {closed['place']}"})
+                await self._presence_changed(contact)
+            self._remember_case(closed, result)
             await self.broadcast({"type": "cases"})
-            log.info("%s closed case %s: %s", contact.id, case["id"], outcome)
-            now, chatty = time.time(), min(1.0, (contact.initiative or {}).get("per_day", 0.4))
-            if (contact.id not in self._members() and now - case.get("due", now) < 2 * 3600
+            log.info("%s closed case %s (%s, p=%.2f): %s", writer.id, case["id"], result["how"], result["chance"], outcome)
+            # Hurt on it: they may tell him — a text, or a ring if it's bad and he's free. Or not.
+            for member, injury in result["hurt"].items():
+                contact = self.directory.get(member)
+                if contact is None or member in self._members():
+                    continue
+                about = f"{injury}, on the {closed['kind'].lower()} at {closed['place']}"
+                bad = any(w in injury for w in ("concussion", "bullet", "knife", "dislocated"))
+                if bad and not self.current_id and not self._incoming and random.random() < 0.35:
+                    await self._ring(contact, f"hurt — {about}")
+                elif random.random() < (contact.initiative or {}).get("asks_for_help", 0.4) + 0.2:
+                    self._spawn(self._later(random.uniform(60, 600), self._send_unprompted(contact, about, "case_hurt")))
+            chatty = min(1.0, (writer.initiative or {}).get("per_day", 0.4))
+            if (writer.id not in self._members() and now - case.get("due", now) < 2 * 3600
                     and self._may_reach_out(now) and random.random() < (0.3 + 0.12 * case["severity"]) * chatty):
                 self._count_initiative()
-                await self._send_unprompted(contact, f"{case['kind'].lower()} at {case['place']} — {outcome}",
+                await self._send_unprompted(writer, f"{case['kind'].lower()} at {case['place']} — {outcome}",
                                             "case_closed")
         finally:
             self._closing.discard(case["id"])
+
+    def _remember_case(self, case, result):
+        """
+        The nights that matter stay: everyone who was there keeps it ("I was
+        there when the Joker went down"), and the rest of the family hear it.
+        """
+        from ..engine import cases, grapevine
+        from ..memory.vault import Vault
+        big = bool(result.get("caught")) or case["severity"] >= 4 or result["how"] in ("lost", "killed")
+        if not big:
+            return
+        team = cases.team(case)
+        names = {m: (self.directory.get(m).name if self.directory.get(m) else "Bruce" if m == "bruce" else m) for m in team}
+        when = time.strftime("%-d %B %Y")
+        for member in team:
+            if self.directory.get(member) is None:
+                continue
+            others = [names[m] for m in team if m != member]
+            try:
+                Vault(member).memorize(f"On {when} you were on the {case['kind'].lower()} at {case['place']}"
+                                       + (f" with {' and '.join(others)}" if others else "") + f": {result['line']}.")
+            except Exception:
+                log.exception("couldn't remember case %s for %s", case["id"], member)
+        if result.get("caught"):
+            told = [c.id for c in self.directory if c.id not in team]
+            grapevine.spread(names[team[0]] if team else "the scanner",
+                             f"{result['caught']} was caught tonight — " + " and ".join(names.values())
+                             + f" brought them in at {case['place']}", told, delay=(10 * 60, 3 * 3600))
 
     async def _keep_up(self):
         """
@@ -2366,6 +2519,9 @@ async def session_info():
     """
     return JSONResponse({
         "operator": wayne_operator.full_name(),
+        # His own face and framing, from the Codex — his marker on the map.
+        "operator_portrait": codex.portrait_of("bruce"),
+        "operator_frame": codex.frames().get(codex.frame_key("bruce")) or {},
         "contacts": [_contact_payload(c) for c in console.directory],
         "current": console.current_id,
         "default": config.DEFAULT_CONTACT,
@@ -2427,7 +2583,8 @@ async def map_incidents():
         case = by_id.get(r["id"])
         if case:
             r = {**r, "assignee": case["assignee"], "team": cases.team(case), "case": case["status"],
-                 "outcome": case.get("outcome", "")}
+                 "outcome": case.get("outcome", ""), "result": (case.get("result") or {}).get("how", ""),
+                 "ok": (case.get("result") or {}).get("ok")}
         reports.append(r)
     return JSONResponse({"incidents": reports})
 
@@ -2446,6 +2603,37 @@ async def assign_case(request: Request):
     if not result:
         return JSONResponse({"error": "can't assign that"}, status_code=400)
     return JSONResponse(result if ("texted" in result or "declined" in result) else {"case": result})
+
+
+@app.get("/api/bruce")
+async def bruce_state():
+    """Where he is — and where he's going, if he's on his way."""
+    from ..engine import batman
+    return JSONResponse(batman.state())
+
+
+@app.post("/api/bruce/go")
+async def bruce_go(request: Request):
+    """He sets off: for a place on the map, or a report off the scanner (which makes it his case too)."""
+    from ..engine import batman, cases, incidents
+    body = await request.json()
+    report_id = str(body.get("report") or "")
+    if report_id:
+        report = incidents.get(report_id) or cases.for_report(report_id)
+        if report is None:
+            return JSONResponse({"error": "no such report"}, status_code=404)
+        await console._bruce_takes(report)
+        return JSONResponse(batman.state())
+    where = str(body.get("place") or "").strip()
+    x, y = body.get("x"), body.get("y")
+    if not where and x is None:
+        return JSONResponse({"error": "somewhere to go"}, status_code=400)
+    trip = await asyncio.to_thread(batman.go, where or "a spot on the map", x if x is None else float(x),
+                                   y if y is None else float(y))
+    if trip is None:
+        return JSONResponse({"error": "can't get there"}, status_code=400)
+    await console.broadcast({"type": "bruce", "bruce": batman.state()})
+    return JSONResponse(batman.state())
 
 
 @app.get("/api/map/trail/{contact_id}")

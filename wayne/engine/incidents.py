@@ -110,7 +110,7 @@ TOLL = {
     "Plant overgrowth attack": ((0, 1), (1, 6)), "Chemical spill": ((0, 1), (2, 10)), "Kidnapping": ((0, 0), (0, 1)),
     "Surgical abduction": ((0, 1), (1, 2)), "Mob hit": ((1, 2), (0, 1)), "Assassination": ((1, 1), (0, 2)),
     "Mauling": ((0, 1), (1, 2)), "Torture victim found": ((0, 1), (1, 1)), "Cult gathering": ((0, 1), (0, 2)),
-    "Vehicle pursuit": ((0, 1), (0, 3)), "Smash-and-grab": ((0, 0), (0, 1)),
+    "Vehicle pursuit": ((0, 1), (0, 3)), "Smash-and-grab": ((0, 0), (0, 1)), "Breakout": ((0, 2), (1, 6)),
 }
 
 
@@ -210,7 +210,37 @@ def at(t=None):
             if gang:
                 report["gang"] = gang
             open_now.append(report)
+    open_now.extend(_breakouts(t))
     return sorted(open_now, key=lambda i: -i["at"])
+
+
+BREAKOUT_HOURS = 3
+
+
+def _breakouts(t):
+    """
+    Someone just got out of Arkham or Blackgate: rare, and the worst thing on the
+    scanner while it lasts — a few hours of guards hurt, sirens on the causeway,
+    and a manhunt anyone can join.
+    """
+    from . import codex
+    out = []
+    for rogue in _rogues():
+        state = codex.where(rogue, t)
+        how = state.get("how") or ""
+        since = state.get("since") or 0
+        if state.get("status") != "at large" or not how.startswith("broke out of") or not 0 <= t - since < BREAKOUT_HOURS * 3600:
+            continue
+        held = places.resolve(how.replace("broke out of", "").strip())
+        if not held:
+            continue
+        report = {"id": f"esc-{rogue['name'].lower().replace(' ', '-')}-{int(since)}", "kind": "Breakout", "severity": 4,
+                  "place": held["name"], "area": held["area"], "x": held["x"], "y": held["y"], "at": int(since),
+                  "ends": int(since + BREAKOUT_HOURS * 3600), "suspect": rogue["name"],
+                  "status": _status((t - since) / (BREAKOUT_HOURS * 3600), backup=True)}
+        report["toll"], _ = _toll(report)
+        out.append(report)
+    return out
 
 
 def rogues():
@@ -391,6 +421,38 @@ def _stored(report_id):
     return kept or {"entries": [], "status": ""}
 
 
+# How a witness or an officer would put each of them — never a name they don't know.
+SEEN_AS = {"bruce": "the Bat himself — big, dark, there and then not", "nightwing": "Nightwing — the acrobat in black and blue",
+           "robin": "Robin — a kid in red and black, fast, with gadgets", "batgirl": "Batgirl",
+           "orphan": "a girl in black with no face, who fights like nothing anyone's seen",
+           "redhood": "the Red Hood — the red helmet, the guns", "batwing": "the flying one in the armoured suit — Batwing"}
+
+
+def _case_view(report, now):
+    """Who from the family is on it, as the street saw them — and how far it's got: '' if nobody."""
+    from . import cases
+    case = cases.for_report(report["id"])
+    if not case:
+        return "", ""
+    members = case.get("members") or {}
+    seen = []
+    for cid in cases.team(case):
+        m = members.get(cid) or {}
+        arrived = m.get("joined", case["opened_at"]) + m.get("travel", 9) * 60
+        if arrived <= now and cid in SEEN_AS:
+            seen.append(f"{SEEN_AS[cid]} (from {time.strftime('%H:%M', time.localtime(arrived))})")
+    result = case.get("result") or {}
+    ended = case.get("outcome", "") if case["status"] == "closed" else ""
+    key = f"{'+'.join(cases.team(case))}:{len(seen)}:{result.get('how', '')}"
+    view = ""
+    if seen:
+        view = (" Witnesses and the first officers saw the vigilantes on scene: " + "; ".join(seen)
+                + " — the log can say so, the way a witness or a wary officer would, never with anyone's real name.")
+    if ended:
+        view += f" How it ended: {ended} ({result.get('how', '')})."
+    return view, key
+
+
 def write_log(report, model, options, now=None):
     """
     The incident log behind a report, as GCPD keeps it: the call, the
@@ -404,7 +466,8 @@ def write_log(report, model, options, now=None):
     if report.get("suspect"):
         from . import codex
         codex.encounter(report["suspect"], f"{report['kind'].lower()} at {report['place']}")
-    if kept["entries"] and kept["status"] == report["status"]:
+    family, family_key = _case_view(report, now or time.time())
+    if kept["entries"] and kept["status"] == report["status"] and kept.get("family", "") == family_key:
         return kept["entries"]
     began = time.strftime("%H:%M", time.localtime(report["at"]))
     clock = time.strftime("%H:%M", time.localtime(now or time.time()))
@@ -419,12 +482,13 @@ def write_log(report, model, options, now=None):
              + (f" The dispatch went out as: \"{report['dispatch']}\"" if report.get("dispatch") else "")
              + (f" It's {report['gang']}: the colours, the tags, the street talk say so." if report.get("gang") else "")
              + (f" Evidence points to {suspect} ({rogue['mo']}) — the log can say so, as officers would; "
-                "it's as bad as they are." if rogue else ""))
+                "it's as bad as they are." if rogue else "") + family)
     rules = (" Plain police language — specific, terse, human: weapons, wounds, ages, what the street saw. Quote "
              "callers, witnesses and suspects in their own words — scared, drunk, furious, swearing the way real "
              "people do. This is Gotham: murder, mutilation, torture and sexual assault happen here and are logged "
-             "as facts, said plainly — never with sexual detail, and nothing sexual involving a child, ever. Never "
-             "mention Batman or any vigilante. Return JSON only: "
+             "as facts, said plainly — never with sexual detail, and nothing sexual involving a child, ever. "
+             + ("Mention the vigilantes only as witnesses saw them, above. " if family else
+                "Never mention Batman or any vigilante. ") + "Return JSON only: "
              '{"log": [{"time": "HH:MM", "who": "Caller | Dispatch | a unit like 2-Adam-14 | Det. Name", "text": "..."}]}')
     if kept["entries"]:
         so_far = "\n".join(f"{e['time']} {e['who']}: {e['text']}" for e in kept["entries"])
@@ -448,7 +512,7 @@ def write_log(report, model, options, now=None):
     if fresh:
         with _lock:
             data = logs()
-            data[report["id"]] = {"entries": entries, "status": report["status"]}
+            data[report["id"]] = {"entries": entries, "status": report["status"], "family": family_key}
             data = dict(list(data.items())[-200:])
             atomic_write(_log_path(), json.dumps(data, ensure_ascii=False))
             # Logged before the dispatch was written: the log's own dispatch is it, so the two agree.

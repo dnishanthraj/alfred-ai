@@ -1533,6 +1533,26 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
   font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
   color: var(--accent); white-space: nowrap; text-shadow: 0 0 6px #060a10, 0 0 3px #060a10; }
 .gm-person.is-selected .gm-person__face { box-shadow: 0 0 0 3px #060a10, 0 0 0 5px var(--accent), 0 4px 18px rgba(0, 0, 0, 0.7); }
+/* Him: a size up, a gold double ring, and Arkham's bat as a badge — on top of everyone else. */
+.gm-person--bruce { width: 40px; height: 40px; z-index: 3; }
+.gm-person--bruce .gm-person__face { border-width: 2px; box-shadow: 0 0 0 2px #060a10, 0 0 0 3.5px rgba(232, 200, 106, 0.55),
+  0 0 16px rgba(232, 200, 106, 0.35); }
+.gm-person--bruce .gm-person__ring { inset: -7px; border-color: rgba(232, 200, 106, 0.6); }
+.gm-person__bat { position: absolute; left: 50%; bottom: -7px; width: 26px; height: 12px; transform: translateX(-50%);
+  display: grid; place-items: center; background: #0a0f18; border: 1px solid rgba(232, 200, 106, 0.7); border-radius: 7px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); }
+.gm-person__bat svg { width: 18px; height: 8px; fill: #e8c86a; }
+.gm-person--bruce .gm-person__name { top: calc(100% + 9px); color: #e8c86a; }
+/* "Go here", and him in the row of people to put on a case. */
+.gm-info__go { display: inline-flex; align-items: center; gap: 8px; margin: 12px 0 2px; padding: 6px 12px 6px 9px;
+  background: transparent; border: 1px solid rgba(232, 200, 106, 0.45); color: #e8c86a; font-family: var(--mono);
+  font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; cursor: var(--cursor-pointer);
+  transition: background 0.2s var(--ease), border-color 0.2s var(--ease); }
+.gm-info__go[hidden] { display: none; }
+.gm-info__go:hover { background: rgba(232, 200, 106, 0.08); border-color: #e8c86a; }
+.gm-info__go:disabled { opacity: 0.6; }
+.gm-info__go-bat svg { width: 20px; height: 9px; fill: currentColor; display: block; }
+.gm-assign--bruce { color: #e8c86a; border-color: rgba(232, 200, 106, 0.4); }
 
 /* His pins. */
 .gm-pin { display: flex; align-items: center; gap: 5px; cursor: var(--cursor-grab); white-space: nowrap; }
@@ -1664,6 +1684,9 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm-list__status[data-s="backup-requested"] { color: #ff6b5f; border-color: rgba(255, 107, 95, 0.4); }
 .gm-list__status[data-s="contained"], .gm-list__status[data-s="resolved"] { color: #58c08a; border-color: rgba(88, 192, 138, 0.3); }
 .gm-list__status[data-s="case"] { color: var(--text); border-color: rgba(143, 211, 255, 0.35); }
+.gm-list__status[data-s="won"] { color: #58c08a; border-color: rgba(88, 192, 138, 0.4); }
+.gm-list__status[data-s="lost-trail"] { color: #e0a43a; border-color: rgba(224, 164, 58, 0.4); }
+.gm-list__status[data-s="failed"] { color: #ff6b5f; border-color: rgba(255, 107, 95, 0.45); }
 .gm-list__faces { display: flex; flex-direction: row-reverse; justify-content: flex-start; }
 .gm-list__faces .gm-list__face { position: relative; margin-left: -7px; box-shadow: 0 0 0 2px var(--surface, #0a0f18); }
 .gm-list__faces .gm-list__face:last-child { margin-left: 0; }

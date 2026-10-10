@@ -533,6 +533,14 @@
      is one, the silhouette if not, cropped by the profile's framing. Shared by
      the directory and the personnel file. */
   function portraitStyle(node, contact, fallbackPosition) {
+    if (contact.id === 'bruce') {
+      // His own face: the Codex picture, framed as he set it there.
+      var own = state.operatorFrame || {};
+      node.style.backgroundImage = "url('" + (state.operatorPortrait || '/static/portraits/_silhouette.svg') + "')";
+      node.style.backgroundSize = own.size || 'cover';
+      node.style.backgroundPosition = own.position || fallbackPosition || 'center 22%';
+      return;
+    }
     // Stamped with when the picture was saved: a new one is never the cached old one.
     var stamp = state.portraitStamp || contact.portrait_v;
     var base = '/static/portraits/' + contact.id, v = stamp ? '?v=' + stamp : '';
@@ -2680,6 +2688,11 @@
         if (window.GothamMap) GothamMap.refreshCases();
         break;
 
+      case 'bruce':
+        // Where he is and where he's going: his own marker on the map.
+        setBruce(event.bruce);
+        break;
+
       case 'picked_up':
         // They've picked up, whether or not their first words survived — if
         // it's someone this page is ringing or has on the line. A pick-up from
@@ -3290,6 +3303,13 @@
       root: $('map-view'),
       data: state.map,
       contacts: function () { return state.contacts; },
+      bruce: function () { return state.bruce || null; },
+      // Sending himself: a place by name, or a report (which makes it his case).
+      go: function (target) {
+        return fetch('/api/bruce/go', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify(target) })
+          .then(function (r) { return r.json(); }).then(function (where) { setBruce(where); return where; });
+      },
       order: function () { return state.order; },
       portrait: function (node, c) { portraitStyle(node, c, 'center 22%'); },
       label: presenceLabel,
@@ -3306,9 +3326,25 @@
     if (toCodex && window.Codex) toCodex.addEventListener('click', function () { Codex.open(); });
   }
 
+  /* Bruce himself, to the map one more person — his own marker, his own journeys. */
+  function setBruce(where) {
+    if (!where || !where.spot) return;
+    state.bruce = state.bruce || { id: 'bruce', name: 'You', full_name: 'Bruce Wayne', accent: '#e8c86a', bruce: true };
+    state.bruce.presence = { status: 'online', where: where.where, spot: where.spot, route: where.route || null,
+                             doing: where.route ? (where.route.by || 'on the way') : '', suit: where.suit };
+    if (window.GothamMap && GothamMap.isOpen()) GothamMap.refreshPeople();
+  }
+  function loadBruce() {
+    fetch('/api/bruce').then(function (r) { return r.json(); }).then(setBruce).catch(function () {});
+  }
+
   function loadSession() {
     return fetch('/api/session').then(function (r) { return r.json(); }).then(function (info) {
       state.map = info.map || null;
+      state.operatorPortrait = info.operator_portrait || '';
+      state.operatorFrame = info.operator_frame || {};
+      loadBruce();
+      if (!state.bruceTimer) state.bruceTimer = setInterval(loadBruce, 15000);   // and as he goes
       (info.contacts || []).forEach(function (contact) {
         state.contacts[contact.id] = contact;
         state.order.push(contact.id);

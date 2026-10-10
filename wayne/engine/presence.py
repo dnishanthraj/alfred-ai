@@ -372,8 +372,11 @@ class Presence:
             return {"status": activity["status"], "doing": activity["doing"],
                     "until": activity["until"], "source": "conversation", "last_active": last,
                     "terminal": activity.get("terminal", False)}
-        if 0 <= t - last < ENGAGED_FOR:
-            return {"status": ONLINE, "doing": "", "until": last + ENGAGED_FOR,
+        # Just been on their phone with him: still in the thread, for as long as
+        # they'd linger there — Tim for ages, Jason not long (`lingers`, seconds).
+        linger = (self.contact.texting_pace or {}).get("lingers", ENGAGED_FOR)
+        if 0 <= t - last < linger:
+            return {"status": ONLINE, "doing": "", "until": last + linger,
                     "source": "engaged", "last_active": last}
         block = self._routine(t) or self._whim(t)
         if block:
@@ -719,6 +722,9 @@ class Presence:
         nearby = places.around(spot["x"], spot["y"], but=spot["name"]) if spot else []
         if nearby:
             line += f" Close by: {', '.join(nearby)}."
+        hurt = self.get("hurt")
+        if hurt and hurt.get("until", 0) > t:
+            line += f" You're hurt — {hurt['how']}, from {hurt.get('on', 'a case')}; it shows when you move."
         if state["status"] == OFFLINE:
             line += " Your phone wasn't in your hand; he's reached you anyway."
         elif state["status"] == BUSY and doing and not on_the_way:
@@ -904,6 +910,11 @@ def read_delay(contact, state, rng=random):
     """
     pace = contact.texting_pace or {}
     status = state["status"]
+    if state.get("source") == "engaged":
+        # Mid-conversation, phone in hand: read in seconds, every time — never slower
+        # than they'd read with the phone out anyway.
+        lo, hi = pace.get("online_read", [2, 9])
+        return rng.uniform(*pace.get("thread_read", [min(lo, 1.0), min(hi, 5.0)]))
     # Glued to it, a text's read in seconds; in a dry spell it waits.
     pull = engagement(contact) ** 0.8
     if status == ONLINE:

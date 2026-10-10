@@ -1166,13 +1166,23 @@ class ContactSession:
         text = _SEARCH_MARKER.sub("", text)
         return _HANG_UP.sub("", text).strip()
 
-    def case_outcome(self, case):
-        """How a case ended, in a line of their own — for the board, and for him."""
+    def case_outcome(self, case, result=None):
+        """How a case ended, in a line of their own — for the board, and for him — true to how it went."""
+        from ..contacts import directory
+        book = directory()
+        others = [book.get(m).name if book.get(m) else ("Bruce" if m == "bruce" else m)
+                  for m in (case.get("team") or []) if m != self.contact.id]
+        hurt_line = ""
+        for who, injury in ((result or {}).get("hurt") or {}).items():
+            name = "You" if who == self.contact.id else (book.get(who).name if book.get(who) else "One of you")
+            hurt_line = f". {name} came out of it with {injury}"
         instruction = (
             f"You've just finished working a case: {case['kind'].lower()} at {case['place']}"
             + (f" (dispatch: \"{case['dispatch']}\")" if case.get("dispatch") else "")
+            + (f", with {' and '.join(others)}" if others else "")
+            + (f". How it actually ended: {result['line']}" if result else "") + hurt_line
             + ". In one short line, the way you'd put it in your own notes, how it ended — who, what you "
-            "found, what you did. Plausible for Gotham and for you. Reply with only the line.")
+            "found, what you did. True to how it went; plausible for Gotham and for you. Reply with only the line.")
         payload = prompting.build_payload(self.contact, self.history.for_model(), instruction)
         try:
             text = self._chat_once(payload, temperature=0.85, num_predict=70)
@@ -1469,6 +1479,9 @@ class ContactSession:
         elif why == "case_closed":
             ask = (f"You've just wrapped up a case: {about}. Let him know how it went, your way — a line or "
                    "two, not a report. If you wouldn't bother, reply with exactly SKIP.")
+        elif why == "case_hurt":
+            ask = (f"You got hurt on the case: {about}. Tell him the way you would — asking for help, playing it "
+                   "down, or a joke through gritted teeth. If you'd keep it to yourself, reply with exactly SKIP.")
         elif why == "worry":
             ask = (f"Since you last spoke, something's stayed with you: {about}. Check in on him — "
                    "the way you would, which might be a word, a joke, or something that never says "
@@ -1892,13 +1905,18 @@ class ContactSession:
         Alfred in the cave, Barbara at her screens — when he's asking after
         someone. Those who don't share their location aren't on it.
         """
-        if not getattr(self.contact, "sees_whereabouts", False) or not self._WHEREABOUTS.search(prompt or ""):
+        # Alfred and Barbara watch it on their screens; the rest of the family have
+        # the same app on their phones and can look, when there's reason to.
+        watches = getattr(self.contact, "sees_whereabouts", False)
+        has_app = watches or (getattr(self.contact, "group", "") or "").lower() in ("family", "wayne manor")
+        if not has_app or not self._WHEREABOUTS.search(prompt or ""):
             return ""
         from ..contacts import directory
         book = directory()
         others = [c.name for c in book if c.id != self.contact.id]
         asking_after = (re.search(r"(?i)\b(everyone|everybody|the family|the others|anyone|the kids|the team|"
-                                  r"scanner|police|reports?|crime|trouble|quiet tonight)\b", prompt)
+                                  r"scanner|police|reports?|crime|trouble|quiet tonight|where (?:am i|i am|i'm)|"
+                                  r"my location|see me|find me|track me|on my way|i'm (?:coming|heading))\b", prompt)
                         or any(re.search(rf"(?i)\b{re.escape(n)}\b", prompt) for n in others))
         if not asking_after:
             return ""
@@ -1921,9 +1939,15 @@ class ContactSession:
                 continue
             lines.append(f"{other.name}: {state['status']}" + (f", {state['doing']}" if state["doing"] else "")
                          + (f" — {them.label(where)}" if where else "") + (f", with {' and '.join(with_)}" if with_ else ""))
-        from . import cases, incidents
+        from . import batman, cases, incidents
+        lines.insert(0, batman.note())
         scanner = incidents.scanner_note()
         board = cases.board_note({c.id: c.name for c in book})
+        if not watches:
+            # A look at the app, not a feed of the city: no scanner, no board.
+            return ("You can check the family's location app on your phone. If you'd actually look, say so as you "
+                    "do — 'hang on, pulling it up' — and this is what it shows. Answer only what he asked, the way "
+                    "you would: " + "; ".join(lines) + (f". Not on it: {', '.join(dark)}." if dark else "."))
         return ("The family tracker, as you see it on your screens. Answer only what he asked — "
                 "whoever he asked about, the way you would — not a roll call: " + "; ".join(lines)
                 + (f". Not on it: {', '.join(dark)}." if dark else ".")
