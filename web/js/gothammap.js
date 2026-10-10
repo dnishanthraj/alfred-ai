@@ -141,6 +141,37 @@
     return { width: size, height: size, data: ctx.getImageData(0, 0, size, size).data };
   }
 
+  // Things that move, drawn pointing north (the map turns them): a ferry with its
+  // wake, and a police helicopter from above — rotor, body, tail, beacon.
+  function sprite(size, draw) {
+    var ratio = 2, canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size * ratio;
+    var ctx = canvas.getContext('2d');
+    ctx.scale(ratio, ratio);
+    ctx.translate(size / 2, size / 2);
+    draw(ctx);
+    return { width: size * ratio, height: size * ratio, data: ctx.getImageData(0, 0, size * ratio, size * ratio).data };
+  }
+  function boat(ctx) {
+    ctx.fillStyle = 'rgba(143, 211, 255, 0.22)';
+    ctx.beginPath(); ctx.moveTo(-3, 7); ctx.lineTo(-7, 14); ctx.lineTo(7, 14); ctx.lineTo(3, 7); ctx.fill();
+    ctx.fillStyle = '#d8ecfa'; ctx.strokeStyle = '#02050a'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, -10); ctx.quadraticCurveTo(5, -4, 4, 8); ctx.lineTo(-4, 8);
+    ctx.quadraticCurveTo(-5, -4, 0, -10); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#4fa8e0'; ctx.fillRect(-2, -2, 4, 5);
+  }
+  function heli(ctx) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';                    // its shadow, below and behind
+    ctx.beginPath(); ctx.ellipse(2.5, 1.5, 4, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(200, 230, 255, 0.12)'; ctx.strokeStyle = 'rgba(210, 236, 255, 0.7)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, -2, 10.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-10, -2); ctx.lineTo(10, -2); ctx.moveTo(0, -12.5); ctx.lineTo(0, 8.5); ctx.stroke();
+    ctx.fillStyle = '#1c2c3c'; ctx.strokeStyle = '#bfe6ff'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.ellipse(0, -2, 3.4, 5.6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 3.5); ctx.lineTo(0, 11); ctx.moveTo(-2.6, 11); ctx.lineTo(2.6, 11); ctx.stroke();
+    ctx.fillStyle = '#ff3b3b'; ctx.beginPath(); ctx.arc(0, 0.5, 1.2, 0, Math.PI * 2); ctx.fill();
+  }
+
   // A report on the scanner: a warning triangle, amber to red with how bad it is.
   var SEVERITY = { 1: '#c9a23a', 2: '#e08a3f', 3: '#e0574f', 4: '#ff3b3b' };
 
@@ -176,19 +207,29 @@
     tints.push(TINTS[0]);
     return {
       version: 8,
+      // Paint changes apply at once: the effects animate themselves, and a
+      // 300 ms fade on every tick kept the whole map redrawing at frame rate.
+      transition: { duration: 0, delay: 0 },
       glyphs: '/static/map/fonts/{fontstack}/{range}.pbf',
       // The night over the city when it tilts: the horizon fades into fog.
       sky: { 'sky-color': '#02050a', 'horizon-color': '#0b2236', 'fog-color': '#02050a',
              'fog-ground-blend': 0.9, 'horizon-fog-blend': 0.35, 'sky-horizon-blend': 0.6, 'atmosphere-blend': 0 },
       sources: {
-        city: { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, generateId: true },
-        buildings: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-        trees: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+        // Tiled to z14 and overzoomed past it: stored to 1.5 m, the geometry is no
+        // finer, and tiling deeper only cost the workers time on every zoom in.
+        city: { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, generateId: true, maxzoom: 14 },
+        buildings: { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, maxzoom: 14, buffer: 32 },
+        trees: { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, maxzoom: 14, buffer: 32 },
         incidents: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         trail: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+        movers: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         // The ground itself: hills shaded in 2D, raised when the map tilts.
         terrain: { type: 'raster-dem', tiles: ['/static/map/terrain/{z}/{x}/{y}.png'], tileSize: 256,
-                   encoding: 'mapbox', minzoom: 9, maxzoom: 11, bounds: [-0.48, -0.36, 0.38, 0.5] }
+                   encoding: 'mapbox', minzoom: 9, maxzoom: 11, bounds: [-0.48, -0.36, 0.38, 0.5] },
+        // The same ground for the hillshade: one DEM source serving both shading
+        // and 3D terrain renders each worse (MapLibre's own advice).
+        relief: { type: 'raster-dem', tiles: ['/static/map/terrain/{z}/{x}/{y}.png'], tileSize: 256,
+                  encoding: 'mapbox', minzoom: 9, maxzoom: 11, bounds: [-0.48, -0.36, 0.38, 0.5] }
       },
       layers: [
         { id: 'void', type: 'background', paint: { 'background-color': C.void } },
@@ -208,7 +249,7 @@
         { id: 'safety', type: 'fill', source: 'city', filter: is('district'), layout: { visibility: 'none' },
           paint: { 'fill-color': ['interpolate', ['linear'], ['get', 'cr'], 0, C.good, 0.5, '#c9a23a', 1, C.alert],
                    'fill-opacity': 0.24 } },
-        { id: 'relief', type: 'hillshade', source: 'terrain',
+        { id: 'relief', type: 'hillshade', source: 'relief',
           paint: { 'hillshade-exaggeration': 0.4, 'hillshade-shadow-color': '#03080f',
                    'hillshade-highlight-color': '#1d4d6e', 'hillshade-accent-color': '#06121c',
                    'hillshade-illumination-direction': 315 } },
@@ -240,12 +281,21 @@
         { id: 'site', type: 'fill', source: 'city', filter: is('site'), paint: { 'fill-color': '#2a2414', 'fill-opacity': 0.9 } },
         { id: 'site-edge', type: 'line', source: 'city', filter: is('site'),
           paint: { 'line-color': '#c9a23a', 'line-width': 0.8, 'line-dasharray': [2, 2], 'line-opacity': 0.6 } },
-        // Light on the water, twinkling (animated in the loop below).
-        { id: 'sparkle', type: 'circle', source: 'city', filter: is('sparkle'), minzoom: 11,
-          paint: { 'circle-radius': z([11, 0.6, 15, 1.6, 18, 2.6]), 'circle-color': C.lit, 'circle-opacity': 0, 'circle-blur': 0.4 } },
+        // Light on the water, twinkling (animated in the loop below): eight groups,
+        // each its own rhythm, so every tick sets eight numbers rather than
+        // re-evaluating 2,600 points.
+      ].concat(SPARKLE.map(function (k) {
+        return { id: 'sparkle-' + k, type: 'circle', source: 'city', minzoom: 11,
+                 filter: ['all', is('sparkle'), ['==', ['%', ['floor', ['*', ['get', 'p'], SPARKLE.length / (2 * Math.PI)]], SPARKLE.length], k]],
+                 paint: { 'circle-radius': z([11, 0.6, 15, 1.6, 18, 2.6]), 'circle-color': C.lit, 'circle-opacity': 0, 'circle-blur': 0.4 } };
+      })).concat([
         { id: 'ferry', type: 'line', source: 'city', filter: is('ferry'),
           paint: { 'line-color': '#3a7aa8', 'line-width': z([10, 0.6, 15, 1.4]), 'line-dasharray': [1, 3], 'line-opacity': 0.75 } },
         { id: 'pier', type: 'fill', source: 'city', filter: is('pier'), paint: { 'fill-color': '#163650', 'fill-opacity': 0.95 } },
+        // The ferries on their routes, a wake behind them.
+        { id: 'boat', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'ferry'], minzoom: 11,
+          layout: { 'icon-image': 'gm-boat', 'icon-size': z([11, 0.7, 15, 1.1, 18, 1.5]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
         { id: 'coast', type: 'line', source: 'city', filter: is('land'),
           paint: { 'line-color': C.edge, 'line-width': z([10, 0.8, 14, 1.6, 17, 3]), 'line-opacity': 0.75 } },
         // Roads, quietest first. Widths grow with the zoom, as on any good map.
@@ -279,10 +329,17 @@
         { id: 'rail', type: 'line', source: 'city', filter: road('rail'),
           paint: { 'line-color': '#5f86a6', 'line-width': z([10, 0.6, 14, 1.4, 17, 3]), 'line-dasharray': [3, 2.2], 'line-opacity': 0.8 } },
         // Underground, faintly: the subway, its lines in their own colours.
-        { id: 'subway', type: 'line', source: 'city', filter: is('subway'), minzoom: 11.6,
+        { id: 'subway', type: 'line', source: 'city', filter: is('subway'), minzoom: 11.9,
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: { 'line-color': ['get', 'col'], 'line-width': z([11.6, 1, 14, 2.4, 17, 4]),
                    'line-opacity': z([11.6, 0, 12.4, 0.55]) } },
+        // The trains on them, there and back (see movers()).
+        { id: 'train-glow', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'subway'], minzoom: 11.6,
+          paint: { 'circle-radius': z([11.6, 5, 15, 11, 18, 18]), 'circle-color': ['get', 'col'], 'circle-opacity': 0.45,
+                   'circle-blur': 1 } },
+        { id: 'train', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'subway'], minzoom: 11.6,
+          paint: { 'circle-radius': z([11.6, 2, 15, 3.8, 18, 6]), 'circle-color': '#f2f9ff',
+                   'circle-stroke-color': ['get', 'col'], 'circle-stroke-width': z([11.6, 1, 15, 1.8]) } },
         // The skyway stands above the street: its shadow falls beside it.
         { id: 'skyway-shadow', type: 'line', source: 'city', filter: ['all', road('highway'), ['has', 'e']],
           paint: { 'line-color': '#000', 'line-width': z([10, 2, 14, 5, 17, 14]), 'line-translate': [4, 5],
@@ -298,7 +355,7 @@
           paint: { 'line-color': C.highway, 'line-width': z([10, 1, 14, 2.6, 16, 6, 18, 18]) } },
         // The city in three dimensions: every block, its height from its district.
         // Footprints first, as lit outlines — the hologram's crisp edges at street level.
-        { id: 'footprint', type: 'line', source: 'buildings', minzoom: 13.4,
+        { id: 'footprint', type: 'line', source: 'buildings', minzoom: 13.6,
           paint: { 'line-color': ['case', ['has', 'n'], C.lit, '#2f6f9c'], 'line-width': z([13.4, 0.3, 16, 1, 18, 1.6]),
                    'line-opacity': z([13.4, 0, 14.2, 0.55]) } },
         // The city in three dimensions: dark volumes, brightening with height;
@@ -311,17 +368,19 @@
               ['interpolate', ['linear'], ['get', 'h'], 0, '#081521', 25, '#0b2133', 60, '#10334d', 120, '#184d73', 240, '#2f78ad']],
             'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 12.6, 0, 13.8, ['get', 'h']],
             'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 12.6, 0, 13.8, ['get', 'b']],
-            'fill-extrusion-opacity': 0.86,
+            'fill-extrusion-opacity': 1,      // solid: a translucent extrusion is drawn twice, and looked the same
             'fill-extrusion-vertical-gradient': true
           } },
         // Trees: a trunk, and a crown in two tiers that rounds off at the top.
-        { id: 'trees', type: 'fill-extrusion', source: 'trees', minzoom: 13,
-          paint: { 'fill-extrusion-color': ['case', ['==', ['get', 'p'], 0], '#13261f',
-                                            ['interpolate', ['linear'], ['get', 'h'], 8, ['case', ['==', ['get', 'p'], 2], '#17573f', '#0f3d2d'],
-                                             17, ['case', ['==', ['get', 'p'], 2], '#2a8a62', '#1d6b4c']]],
+        { id: 'trees', type: 'fill-extrusion', source: 'trees', minzoom: 13, filter: ['!=', ['get', 'p'], 0],
+          paint: { 'fill-extrusion-color': ['interpolate', ['linear'], ['get', 'h'], 8, ['case', ['==', ['get', 'p'], 2], '#17573f', '#0f3d2d'],
+                                            17, ['case', ['==', ['get', 'p'], 2], '#2a8a62', '#1d6b4c']],
                    'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 13, 0, 14, ['get', 'top']],
                    'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 13, 0, 14, ['get', 'b']],
-                   'fill-extrusion-opacity': 0.94 } },
+                   'fill-extrusion-opacity': 1 } },
+        // Their trunks, only close enough to see under the crowns.
+        { id: 'trunks', type: 'fill-extrusion', source: 'trees', minzoom: 15, filter: ['==', ['get', 'p'], 0],
+          paint: { 'fill-extrusion-color': '#13261f', 'fill-extrusion-height': ['get', 'top'], 'fill-extrusion-opacity': 1 } },
         // Where someone has been.
         { id: 'trail', type: 'line', source: 'trail', filter: ['==', ['geometry-type'], 'LineString'],
           layout: { 'line-cap': 'round', 'line-join': 'round' },
@@ -360,6 +419,16 @@
         { id: 'incident', type: 'symbol', source: 'incidents',
           layout: { 'icon-image': ['concat', 'gm-warn-', ['to-string', ['get', 'severity']]], 'icon-size': z([10.6, 0.6, 14, 0.85, 17, 1]),
                     'icon-allow-overlap': true, 'icon-anchor': 'bottom' } },
+        // A police helicopter over the worst report, its searchlight on the street.
+        { id: 'heli-light', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'light'], minzoom: 11,
+          paint: { 'circle-radius': z([11, 9, 15, 36, 18, 96]), 'circle-color': '#fff1c4', 'circle-opacity': 0.2,
+                   'circle-blur': 0.85, 'circle-pitch-alignment': 'map' } },
+        { id: 'heli-spot', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'light'], minzoom: 11,
+          paint: { 'circle-radius': z([11, 3, 15, 12, 18, 32]), 'circle-color': '#fff6dc', 'circle-opacity': 0.32,
+                   'circle-blur': 0.6, 'circle-pitch-alignment': 'map' } },
+        { id: 'heli', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'heli'], minzoom: 11,
+          layout: { 'icon-image': 'gm-heli', 'icon-size': z([11, 0.8, 15, 1.2, 18, 1.6]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
         { id: 'station', type: 'circle', source: 'city', filter: is('station'), minzoom: 12.6,
           paint: { 'circle-radius': z([12.6, 2, 15, 4, 18, 6]), 'circle-color': C.void,
                    'circle-stroke-color': ['get', 'col'], 'circle-stroke-width': z([12.6, 1, 15, 2]) } },
@@ -407,16 +476,22 @@
                     'text-size': 11, 'text-offset': [0, 1.5], 'text-anchor': 'top', 'text-optional': true,
                     'text-max-width': 9 },
           paint: { 'text-color': '#b9d3e6', 'text-halo-color': C.void, 'text-halo-width': 1.6 } }
-      ]
+      ])
     };
   }
 
   function loadCity() {
-    return fetch('/static/map/gotham.geojson').then(function (r) { return r.json(); }).then(function (fc) {
+    // All three at once — then built in order, so the city draws first.
+    var files = ['gotham.geojson', 'gotham-buildings.json', 'gotham-trees.json'].map(function (name) {
+      return fetch('/static/map/' + name).then(function (r) { return r.json(); });
+    });
+    return files[0].then(function (fc) {
       fc.features.forEach(function (f) { f.geometry.coordinates = convert(f.geometry.coordinates); });
       map.getSource('city').setData(fc);
-      return fetch('/static/map/gotham-buildings.json');
-    }).then(function (r) { return r.json(); }).then(function (rows) {
+      routes = fc.features.filter(function (f) { return f.properties.l === 'subway' || f.properties.l === 'ferry'; })
+        .map(route).filter(function (r) { return r.len > 0; });
+      return files[1];
+    }).then(function (rows) {
       // [height, base, x, y, x, y, ..., kind?] in hundredths of a unit.
       var features = rows.map(function (row) {
         var kind = typeof row[row.length - 1] === 'string' ? row[row.length - 1] : null;
@@ -429,8 +504,8 @@
         return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: props };
       });
       map.getSource('buildings').setData({ type: 'FeatureCollection', features: features });
-      return fetch('/static/map/gotham-trees.json');
-    }).then(function (r) { return r.json(); }).then(function (trees) {
+      return files[2];
+    }).then(function (trees) {
       // Each tree stands up in 3D: a thin trunk, a wide crown, a smaller one on
       // top — round from above, rounded from the side.
       function disc(x, y, r, sides) {
@@ -471,8 +546,24 @@
   }
 
   function wireHover() {
+    // A query in 3D reads pixels back from the GPU, several times: one a frame
+    // at most, none while the map is being dragged, and not over a marker
+    // (which has its own tip).
+    var pending = null, hoverable = null;
     map.on('mousemove', function (e) {
-      var hits = map.queryRenderedFeatures(e.point, { layers: HOVERABLE.filter(function (id) { return map.getLayer(id); }) });
+      var target = e.originalEvent && e.originalEvent.target;
+      if (map.isMoving() || (e.originalEvent && e.originalEvent.buttons) ||
+          (target && target.closest && target.closest('.maplibregl-marker'))) {
+        hover.hidden = true;
+        return;
+      }
+      if (pending) { pending.e = e; return; }
+      pending = { e: e };
+      requestAnimationFrame(function () { var job = pending; pending = null; hoverAt(job.e); });
+    });
+    function hoverAt(e) {
+      hoverable = hoverable || HOVERABLE.filter(function (id) { return map.getLayer(id); });
+      var hits = map.queryRenderedFeatures(e.point, { layers: hoverable });
       var top = null;
       for (var i = 0; i < hits.length; i++) { if (describe(hits[i])) { top = hits[i]; break; } }
       var district = hits.filter(function (h) { return h.properties.l === 'district'; })[0];
@@ -490,7 +581,7 @@
       hover.style.left = (e.point.x + 14) + 'px';
       hover.style.top = (e.point.y + 14) + 'px';
       map.getCanvas().style.cursor = dropping ? 'crosshair' : (top.properties.l === 'place' ? 'pointer' : '');
-    });
+    }
     map.getCanvas().addEventListener('mouseleave', function () { hover.hidden = true; });
     map.on('click', 'landmark', function (e) {
       if (dropping) return;
@@ -502,6 +593,15 @@
   }
 
   /* --- people ----------------------------------------------------------------- */
+
+  // With terrain on, every marker reads the GPU's depth buffer to decide
+  // whether a hill hides it — ten times a second each, while the camera
+  // moves. People and pins are never hidden by Gotham's few hills.
+  // (_updateOpacity is MapLibre's own, as of the vendored 4.7.1.)
+  function flat(marker) {
+    marker._updateOpacity = function () {};
+    return marker;
+  }
 
   function visible() {
     var contacts = opts.contacts();
@@ -547,7 +647,7 @@
           el.querySelector('.gm-person__name').textContent = c.name;
           opts.portrait(el.querySelector('.gm-person__face'), c);
           el.addEventListener('click', function (e) { e.stopPropagation(); select(c.id); });
-          marker = people[c.id] = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat(at).addTo(map);
+          marker = people[c.id] = flat(new maplibregl.Marker({ element: el, anchor: 'center' })).setLngLat(at).addTo(map);
         } else {
           glide(marker, at);
         }
@@ -590,7 +690,11 @@
       li.appendChild(face);
       li.appendChild(text);
       li.dataset.status = p.status || '';
-      if (p.spot) li.addEventListener('click', function () { select(id, true); });
+      if (p.spot) {
+        li.tabIndex = 0;
+        li.setAttribute('role', 'button');
+        li.addEventListener('click', function () { select(id, true); });
+      }
       list.appendChild(li);
     });
   }
@@ -710,7 +814,10 @@
         b.type = 'button';
         b.className = 'gm-assign' + (report.assignee === c.id ? ' is-on' : '');
         b.style.setProperty('--accent', c.accent);
-        b.setAttribute('data-tip', 'Put ' + c.name + ' on it');
+        var p = c.presence || {};
+        var state = p.status === 'offline' ? 'asleep or out of reach' : p.doing || p.status || '';
+        b.setAttribute('data-tip', 'Put ' + c.name + ' on it' + (state ? ' — ' + state : ''));
+        b.dataset.status = p.status || '';
         var face = document.createElement('span');
         opts.portrait(face, c);
         b.appendChild(face);
@@ -718,29 +825,45 @@
         b.addEventListener('click', function () {
           fetch('/api/cases/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                        body: JSON.stringify({ report: report.id, contact: c.id }) })
-            .then(function () { loadIncidents(); });
+            .then(function (r) { return r.json(); })
+            .then(function (body) {
+              // What came of it: asleep, they'll see a text; unwilling, they've said no.
+              said.textContent = body.texted ? 'Texted ' + c.name + ' — they\u2019ll see it when they wake.'
+                : body.declined ? c.name + ' isn\u2019t taking it.' : body.case ? c.name + ' is on the way.' : '';
+              said.hidden = !said.textContent;
+              loadIncidents();
+            }).catch(function () {});
         });
         people.appendChild(b);
       });
     }
+    var said = $('.gm-info__said');
+    if (!said) {
+      said = document.createElement('p');
+      said.className = 'gm-info__said';
+      assign.appendChild(said);
+    }
+    said.hidden = true;
     assign.hidden = report.case === 'closed';
   }
 
   /* --- the scanner ------------------------------------------------------------ */
 
-  var reports = [];
+  var reports = [], incidentStamp = '';
   function loadIncidents() {
     if (!ready || root.hidden) return;
     fetch('/api/map/incidents').then(function (r) { return r.json(); }).then(function (body) {
       reports = body.incidents || [];
       var contacts = opts.contacts();
-      map.getSource('incidents').setData({ type: 'FeatureCollection', features: reports.filter(function (r) {
-        return layerShown('crime');
-      }).map(function (r) {
-        var props = Object.assign({}, r);
-        if (r.assignee && contacts[r.assignee]) props.acc = contacts[r.assignee].accent;
-        return { type: 'Feature', geometry: { type: 'Point', coordinates: ll(r.x, r.y) }, properties: props };
-      }) });
+      var stamp = JSON.stringify(reports.map(function (r) { return [r.id, r.status, r.assignee, r.case]; }));
+      if (stamp !== incidentStamp) {
+        incidentStamp = stamp;
+        map.getSource('incidents').setData({ type: 'FeatureCollection', features: reports.map(function (r) {
+          var props = Object.assign({}, r);
+          if (r.assignee && contacts[r.assignee]) props.acc = contacts[r.assignee].accent;
+          return { type: 'Feature', geometry: { type: 'Point', coordinates: ll(r.x, r.y) }, properties: props };
+        }) });
+      }
       renderLists();
       if (openReport) {
         var again = reports.filter(function (r) { return r.id === openReport; })[0];
@@ -755,7 +878,10 @@
   var openReport = null;
 
   function showTab(name) {
-    root.querySelectorAll('.gm-tab').forEach(function (t) { t.classList.toggle('is-on', t.dataset.tab === name); });
+    root.querySelectorAll('.gm-tab').forEach(function (t) {
+      t.classList.toggle('is-on', t.dataset.tab === name);
+      t.setAttribute('aria-selected', t.dataset.tab === name ? 'true' : 'false');
+    });
     root.querySelectorAll('[data-pane]').forEach(function (p) { p.hidden = p.dataset.pane !== name; });
   }
 
@@ -780,6 +906,8 @@
       opts.portrait(face, who);
       li.appendChild(face);
     }
+    li.tabIndex = 0;
+    li.setAttribute('role', 'button');
     li.addEventListener('click', function () {
       map.flyTo({ center: ll(r.x, r.y), zoom: Math.max(map.getZoom(), 15), duration: 900 });
       incidentCard(r);
@@ -806,6 +934,7 @@
   /* --- the living map: water that twinkles, reports that pulse ------------------ */
 
   var frame = null, last = 0, lastStep = -1;
+  var SPARKLE = [0, 1, 2, 3, 4, 5, 6, 7];
   // A dash travelling along the line: the same pattern, shifted a little each step.
   var TRAFFIC = (function () {
     var steps = [], gap = 6, n = 14;
@@ -815,24 +944,93 @@
     }
     return steps;
   })();
+  // Runs only while the map is open and the window in front: closed or
+  // hidden, it stops altogether rather than ticking over doing nothing.
+  // Each tick restyles the map, and in 3D a restyle re-drapes everything over
+  // the terrain — so while the camera moves, the effects hold still and the
+  // pan stays smooth, and nothing is restyled that isn't being drawn.
+  var moving = false;
   function animate(now) {
+    if (root.hidden || document.hidden || !ready) { frame = null; return; }
     frame = requestAnimationFrame(animate);
-    if (root.hidden || !ready || now - last < 90) return;
+    if (moving || now - last < 90) return;
     last = now;
-    var t = now / 700;
-    // Each point of light catches it briefly, then not, in its own rhythm.
-    map.setPaintProperty('sparkle', 'circle-opacity',
-      ['*', 0.75, ['^', ['max', 0, ['sin', ['+', ['get', 'p'], t]]], 14]]);
-    var step = Math.floor(now / 110) % TRAFFIC.length;
-    if (step !== lastStep) { lastStep = step; map.setPaintProperty('traffic', 'line-dasharray', TRAFFIC[step]); }
-    var pulse = (now % 1800) / 1800;
-    map.setPaintProperty('incident-pulse', 'circle-radius', 8 + pulse * 22);
-    var drift = (now % 5200) / 5200;
-    map.setPaintProperty('smoke', 'circle-radius', 18 + drift * 34);
-    map.setPaintProperty('smoke', 'circle-opacity', 0.38 * (1 - drift * 0.7));
-    map.setPaintProperty('venue-glow', 'circle-opacity', 0.26 + 0.1 * Math.sin(now / 900));
-    map.setPaintProperty('incident-pulse', 'circle-opacity', 0.35 * (1 - pulse));
+    var t = now / 700, zoom = map.getZoom();
+    // Each group of lights catches it briefly, then not, in its own rhythm.
+    SPARKLE.forEach(function (k) {
+      var phase = (k + 0.5) * 2 * Math.PI / SPARKLE.length;
+      map.setPaintProperty('sparkle-' + k, 'circle-opacity', 0.75 * Math.pow(Math.max(0, Math.sin(phase + t)), 14));
+    });
+    if (zoom >= 11.4) {
+      var step = Math.floor(now / 110) % TRAFFIC.length;
+      if (step !== lastStep) { lastStep = step; map.setPaintProperty('traffic', 'line-dasharray', TRAFFIC[step]); }
+    }
+    if (layerShown('crime') && reports.length) {
+      var pulse = (now % 1800) / 1800, drift = (now % 5200) / 5200;
+      map.setPaintProperty('incident-pulse', 'circle-radius', 8 + pulse * 22);
+      map.setPaintProperty('incident-pulse', 'circle-opacity', 0.35 * (1 - pulse));
+      map.setPaintProperty('smoke', 'circle-radius', 18 + drift * 34);
+      map.setPaintProperty('smoke', 'circle-opacity', 0.38 * (1 - drift * 0.7));
+    }
+    if (layerShown('life') && zoom >= 12.6) map.setPaintProperty('venue-glow', 'circle-opacity', 0.26 + 0.1 * Math.sin(now / 900));
+    if (layerShown('transit') || layerShown('crime')) movers(now);
   }
+
+  /* --- things that move: trains on their lines, ferries crossing, a chopper over trouble --- */
+
+  var routes = [];
+
+  // A line as something to travel along: its points, and how far along each one is.
+  function route(f) {
+    var g = f.geometry, lines = g.type === 'MultiLineString' ? g.coordinates : [g.coordinates];
+    var pts = lines.reduce(function (a, b) { return b.length > a.length ? b : a; }, []);
+    var dist = [0];
+    for (var i = 1; i < pts.length; i++) {
+      dist.push(dist[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    }
+    return { pts: pts, dist: dist, len: dist[dist.length - 1] || 0, kind: f.properties.l, col: f.properties.col || C.edge };
+  }
+
+  // Where a fraction u (0–1) of the way along is, and the heading there (degrees from north).
+  function along(r, u) {
+    var d = Math.max(0, Math.min(1, u)) * r.len, i = 1;
+    while (i < r.dist.length - 1 && r.dist[i] < d) i++;
+    var a = r.pts[i - 1], b = r.pts[i], seg = (r.dist[i] - r.dist[i - 1]) || 1, k = (d - r.dist[i - 1]) / seg;
+    return { at: [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k],
+             heading: Math.atan2(b[0] - a[0], b[1] - a[1]) * 180 / Math.PI };
+  }
+
+  function movers(now) {
+    var s = now / 1000, features = [];
+    routes.forEach(function (r, n) {
+      // Two trains a line, one boat a route; end to end in a minute and a half, or two and a half.
+      var trips = r.kind === 'subway' ? [0, 1] : [0.3], period = r.kind === 'subway' ? 80 : 150;
+      trips.forEach(function (offset) {
+        var u = ((s / period + offset + n * 0.37) % 2 + 2) % 2, back = u > 1;
+        if (back) u = 2 - u;
+        if (r.kind === 'ferry') u = Math.max(0, Math.min(1, (u - 0.08) / 0.84));     // a while at each pier
+        var p = along(r, u);
+        features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: p.at },
+                        properties: { m: r.kind, col: r.col, r: back ? p.heading + 180 : p.heading } });
+      });
+    });
+    // Over the worst thing on the scanner, a police helicopter circles, its light on the street.
+    var worst = reports.filter(function (r) { return r.severity >= 3 && r.status !== 'resolved'; })
+      .sort(function (a, b) { return b.severity - a.severity || b.at - a.at; })[0];
+    if (worst) {
+      var c = ll(worst.x, worst.y), a = s * 0.45, rad = 0.0011;
+      features.push({ type: 'Feature', properties: { m: 'light' },
+                      geometry: { type: 'Point', coordinates: [c[0] + Math.cos(a) * rad * 0.3, c[1] + Math.sin(a) * rad * 0.3] } });
+      features.push({ type: 'Feature', properties: { m: 'heli', r: -a * 180 / Math.PI },
+                      geometry: { type: 'Point', coordinates: [c[0] + Math.cos(a) * rad, c[1] + Math.sin(a) * rad] } });
+    }
+    map.getSource('movers').setData({ type: 'FeatureCollection', features: features });
+  }
+
+  function startAnimating() {
+    if (!frame && ready && root && !root.hidden && !document.hidden) frame = requestAnimationFrame(animate);
+  }
+  document.addEventListener('visibilitychange', startAnimating);
 
   var signal = null;
   function batSignal() {
@@ -873,7 +1071,7 @@
     el.innerHTML = '<i></i><b></b>';
     el.querySelector('b').textContent = pin.label;
     el.setAttribute('data-tip', pin.label + ' — drag to move, click to edit');
-    var marker = new maplibregl.Marker({ element: el, anchor: 'bottom-left', draggable: true })
+    var marker = flat(new maplibregl.Marker({ element: el, anchor: 'bottom-left', draggable: true }))
       .setLngLat(ll(pin.x, pin.y)).addTo(map);
     marker._pin = pin;
     el.addEventListener('click', function (e) { e.stopPropagation(); editPin(pin, marker); });
@@ -1020,28 +1218,32 @@
   var LAYER_GROUPS = {
     places: ['landmark', 'quarter-label'],
     streets: ['street', 'avenue', 'road-label'],
-    buildings: ['buildings', 'footprint', 'trees'],
-    transit: ['subway', 'station', 'station-label', 'ferry'],
-    crime: ['incident', 'incident-pulse', 'smoke'],
+    buildings: ['buildings', 'footprint', 'trees', 'trunks'],
+    transit: ['subway', 'station', 'station-label', 'ferry', 'train', 'train-glow', 'boat'],
+    crime: ['incident', 'incident-pulse', 'smoke', 'case-ring', 'heli', 'heli-light', 'heli-spot'],
     life: ['venue', 'venue-glow'],
     safety: ['safety'],
     trails: ['trail', 'trail-stop']
   };
 
-  function layerShown(name) { return recall(SHOWN_KEY, {})[name] !== false; }
+  var shownLayers = null;
+  function layerShown(name) {
+    shownLayers = shownLayers || recall(SHOWN_KEY, {});
+    return shownLayers[name] !== false;
+  }
 
   function setLayer(name, on) {
     if (on === undefined) on = !layerShown(name);
-    var shown = recall(SHOWN_KEY, {});
-    shown[name] = on;
-    remember(SHOWN_KEY, shown);
+    shownLayers = shownLayers || recall(SHOWN_KEY, {});
+    shownLayers[name] = on;
+    remember(SHOWN_KEY, shownLayers);
     (LAYER_GROUPS[name] || []).forEach(function (id) {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
     });
     if (name === 'people') Object.keys(people).forEach(function (id) { people[id].getElement().style.display = on ? '' : 'none'; });
     if (name === 'pins') Object.keys(pins).forEach(function (id) { pins[id].getElement().style.display = on ? '' : 'none'; });
     var chip = $('[data-layer="' + name + '"]');
-    if (chip) chip.classList.toggle('is-on', on);
+    if (chip) { chip.classList.toggle('is-on', on); chip.setAttribute('aria-checked', on ? 'true' : 'false'); }
   }
 
   function relief(on) {
@@ -1101,11 +1303,23 @@
     // The side panel folds away for more map; remembered.
     function side(hidden) {
       root.classList.toggle('is-wide', hidden);
-      remember('gotham-map-side-hidden', hidden);
-      setTimeout(function () { map.resize(); }, 260);
+      // Folding the drawer of a squeezed map isn't a preference; folding the panel is.
+      if (!root.classList.contains('is-cramped')) remember('gotham-map-side-hidden', hidden);
     }
     $('.gm-side__toggle').addEventListener('click', function () { side(!root.classList.contains('is-wide')); });
     if (recall('gotham-map-side-hidden', false)) root.classList.add('is-wide');
+    // Squeezed — the chat open beside it, a small window — the side panel turns
+    // into a drawer over the map, folded until asked for; given room again, it's
+    // as he left it. (The canvas follows its container on its own.)
+    var cramped = null;
+    new ResizeObserver(function () {
+      if (!root.clientWidth) return;            // closed
+      var now = root.clientWidth < 820;
+      if (now === cramped) return;
+      cramped = now;
+      root.classList.toggle('is-cramped', now);
+      root.classList.toggle('is-wide', now || !!recall('gotham-map-side-hidden', false));
+    }).observe(root);
     $('.gm-card [data-act="dismiss"]').addEventListener('click', function () {
       selected = null; following = null;
       $('.gm-card').hidden = true;
@@ -1140,6 +1354,8 @@
           if (!map.hasImage('gm-' + kind)) map.addImage('gm-' + kind, icon(kind), { pixelRatio: 2 });
         });
         [1, 2, 3, 4].forEach(function (s) { map.addImage('gm-warn-' + s, warning(s), { pixelRatio: 2 }); });
+        map.addImage('gm-boat', sprite(30, boat), { pixelRatio: 2 });
+        map.addImage('gm-heli', sprite(30, heli), { pixelRatio: 2 });
         ready = true;
         loadCity();
         ['places', 'streets', 'buildings', 'transit', 'crime', 'life', 'trails', 'people', 'pins'].forEach(function (name) {
@@ -1151,7 +1367,7 @@
         setInterval(loadIncidents, 60000);
         batSignal();
         setInterval(batSignal, 300000);
-        frame = requestAnimationFrame(animate);
+        startAnimating();
         loadPins();
         if (!root.hidden) { map.resize(); if (!fitted) { fit(); fitted = true; } placePeople(); }
       });
@@ -1164,6 +1380,8 @@
         threeD = tilted;
         $('[data-act="3d"]').classList.toggle('is-on', threeD);
       });
+      map.on('movestart', function () { moving = true; });
+      map.on('moveend', function () { moving = false; });
       map.on('zoom', fogFor);
       map.on('zoom', function () {
         var most = 30 + Math.max(0, Math.min(40, (map.getZoom() - 11) * 22));
@@ -1184,6 +1402,7 @@
         placePeople();
         loadIncidents();
         fogFor();
+        startAnimating();
         if (focus) select(focus, true);
       }, 30);
     },

@@ -176,6 +176,12 @@ def _console(tmp_path, monkeypatch, contact):
     return console, events
 
 
+def _wrote(text, **turn):
+    """What _write_text hands back: the reply, and what the turn decided."""
+    return {"text": text, "choice": None, "deferred": None, "group_task": None, "meant": None,
+            "take": None, "react": None, **turn}
+
+
 def test_texts_in_a_row_are_read_and_answered_together(tmp_path, monkeypatch):
     contact = _contact()
     presence.of(contact).touch()          # mid-conversation: reads in moments
@@ -184,7 +190,7 @@ def test_texts_in_a_row_are_read_and_answered_together(tmp_path, monkeypatch):
 
     async def write(c, body):
         written.append(body)
-        return "on it"
+        return _wrote("on it")
     console._write_text = write
     monkeypatch.setattr(web.random, "uniform", lambda a, b: a)
     monkeypatch.setattr(web.random, "random", lambda: 0.99)
@@ -205,7 +211,7 @@ def test_a_text_to_someone_asleep_waits_until_they_can_see_it(tmp_path, monkeypa
     console, events = _console(tmp_path, monkeypatch, contact)
 
     async def write(c, body):
-        return "morning"
+        return _wrote("morning")
     console._write_text = write
     monkeypatch.setattr(web, "RECHECK_SECONDS", 0.1)
     monkeypatch.setattr(web.random, "uniform", lambda a, b: a)
@@ -351,3 +357,74 @@ def test_autocorrect_swaps_in_a_real_wrong_word():
     fat_thumbs = _contact(texting_style={"typos": 1.0, "autocorrect": 1.0, "corrects": 0.0})
     sent, correction = initiative.slip(fat_thumbs, "meet me at the docks", rng)
     assert sent == "meet me at the ducks" and correction is None
+
+
+def test_a_phone_buzzing_awake_answers_rather_than_crashing(tmp_path, monkeypatch):
+    """The third text to someone asleep may wake them — and that path raised, so nobody answered."""
+    contact = _contact(routine=({"from": 0, "to": 24, "doing": "asleep", "status": "offline"},),
+                       texting_pace={"phone": 0.0, "online_read": [0.05, 0.05], "wpm": 10000, "wake": 1.0})
+    console, events = _console(tmp_path, monkeypatch, contact)
+
+    async def write(c, body):
+        return _wrote("what. what is it")
+    console._write_text = write
+    monkeypatch.setattr(web, "RECHECK_SECONDS", 0.1)
+    monkeypatch.setattr(web.random, "uniform", lambda a, b: a)
+    monkeypatch.setattr(web.random, "random", lambda: 0.99)      # "wake": 1.0 — the buzzing wakes them
+
+    async def run():
+        for text in ("you up?", "hey", "HEY"):
+            await console.text("nightwing", text)
+        await asyncio.sleep(1.5)
+
+    asyncio.run(run())
+    assert [e for e in events if e["type"] == "text_reply"]
+
+
+def test_after_any_text_reply_they_think_over_what_was_said(tmp_path, monkeypatch):
+    """The pass that keeps promises and notices worry ran only when a text asked for something in a group."""
+    contact = _contact()
+    presence.of(contact).touch()
+    console, events = _console(tmp_path, monkeypatch, contact)
+    thought = []
+
+    async def afterthought(session, exchanges, by):
+        thought.append(by)
+    console._afterthought = afterthought
+
+    async def write(c, body):
+        return _wrote("i'll call you when i'm out")
+    console._write_text = write
+    monkeypatch.setattr(web.random, "uniform", lambda a, b: a)
+    monkeypatch.setattr(web.random, "random", lambda: 0.99)
+
+    async def run():
+        await console.text("nightwing", "call me when you're out of there")
+        await asyncio.sleep(1.5)
+
+    asyncio.run(run())
+    assert thought == ["text"]
+
+
+def test_a_reply_held_for_later_still_arrives(tmp_path, monkeypatch):
+    """What they held back was read after the wait — by then any other turn had wiped it."""
+    contact = _contact(texting_pace={"phone": 0.0, "online_read": [0.05, 0.05], "wpm": 10000,
+                                     "on_read_for": [0.05, 0.05]})
+    presence.of(contact).touch()
+    console, events = _console(tmp_path, monkeypatch, contact)
+    recorded = []
+    console.session_for = lambda cid: SimpleNamespace(history=SimpleNamespace(
+        messages=[], record_exchange=lambda said, held, via: recorded.append(held)))
+
+    async def write(c, body):
+        return _wrote("fine.", choice="later", deferred=("you okay?", "fine."))
+    console._write_text = write
+    monkeypatch.setattr(web.random, "uniform", lambda a, b: a)
+    monkeypatch.setattr(web.random, "random", lambda: 0.99)
+
+    async def run():
+        await console.text("nightwing", "you okay?")
+        await asyncio.sleep(1.5)
+
+    asyncio.run(run())
+    assert recorded == ["fine."] and [e for e in events if e["type"] == "text_reply"]

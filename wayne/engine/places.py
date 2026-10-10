@@ -14,8 +14,12 @@ from functools import lru_cache
 from pathlib import Path
 
 # What a patrol looks like in someone's day, whoever wrote it.
-_PATROL = re.compile(r"(?i)\b(patrol\w*|rooftops?|on comms|night shift|sweep|stakeout|swing\w*|"
-                     r"on the streets|flying|prowl\w*|hunting)\b")
+# Out on patrol, said any of the ways they say it — but not "swing by Alfred's",
+# "flying to Metropolis", "house hunting", "a rooftop bar", "sweep the kitchen"
+# or "on comms", every one of which put someone on their beat.
+_PATROL = re.compile(r"(?i)\b(patrol\w*|stake ?outs?|staking (it )?out|prowl\w*|on the streets|"
+                     r"(out )?on the rooftops|(swinging|flying|running) (the )?(rooftops|city|beat|over|across)|"
+                     r"on the beat|night rounds)\b")
 # How long they stay in one part of their beat before moving on.
 BEAT_STEP = 15 * 60
 

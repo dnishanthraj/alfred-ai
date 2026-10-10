@@ -104,7 +104,10 @@ def apply(session, found):
     if isinstance(doing, str) and doing.strip() and doing.strip().lower() not in ("null", "none"):
         status = found.get("status") if found.get("status") in (presence.BUSY, presence.OFFLINE) \
             else presence.BUSY
-        minutes = _number(found.get("minutes"), 60)
+        minutes = _number(found.get("minutes"), None)
+        if minutes is None:
+            # "Night, B": gone to sleep, with no time given, is gone until morning.
+            minutes = _until_morning() if status == presence.OFFLINE else 60
         where = found.get("where") if isinstance(found.get("where"), str) else ""
         state.set_activity(doing, status, minutes,
                            where="" if where.strip().lower() in ("null", "none") else where,
@@ -135,7 +138,7 @@ def apply(session, found):
         leaning = session.contact.initiative or {}
         odds = leaning.get("checks_in", 0.15 + leaning.get("per_day", 0.4) * 0.35)
         if random.random() < odds and not any(i.get("origin") in ("promise", "worry") for i in state.intents()):
-            due = time.time() + random.uniform(25, 180) * 60
+            due = _after_quiet_hours(time.time() + random.uniform(25, 180) * 60)
             state.intend("text", worry.strip()[:120], due, origin="worry")
 
 
@@ -158,6 +161,32 @@ def _people(names, contact):
     names = {str(n).strip().lower() for n in names} if isinstance(names, list) else set()
     return [p.id for p in directory() if p.id != contact.id
             and (p.name.lower() in names or p.id in names or p.full_name.lower() in names)]
+
+
+def _until_morning(now=None):
+    """Minutes until eight tomorrow (or this) morning — however long a night's sleep has left."""
+    now = now or time.time()
+    local = time.localtime(now)
+    morning = time.mktime((local.tm_year, local.tm_mon, local.tm_mday, 8, 0, 0, 0, 0, -1))
+    if morning <= now:
+        morning += 86400
+    return max(30, (morning - now) / 60)
+
+
+def _after_quiet_hours(due):
+    """A worry that would land at four in the morning keeps until the quiet hours end."""
+    from .. import config
+    try:
+        start, end = (int(h) for h in config.QUIET_HOURS.split("-"))
+    except ValueError:
+        return due
+    local = time.localtime(due)
+    if not (start <= local.tm_hour < end if start <= end else local.tm_hour >= start or local.tm_hour < end):
+        return due
+    wake = time.mktime((local.tm_year, local.tm_mon, local.tm_mday, end, 0, 0, 0, 0, -1))
+    if wake <= due:
+        wake += 86400
+    return wake + random.uniform(10, 50) * 60
 
 
 def _number(value, default):

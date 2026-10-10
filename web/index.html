@@ -124,8 +124,8 @@
     <aside class="messages" id="messages" hidden>
       <div class="messages__resize" id="messages-resize" data-tip="Drag to resize"></div>
       <header class="messages__head">
-        <button class="messages__avatar" id="messages-avatar" type="button" data-tip="Open personnel file"></button>
-        <div class="messages__who" id="messages-who" data-tip="Open personnel file">
+        <button class="messages__avatar" id="messages-avatar" type="button" data-tip="Open personnel file" aria-label="Open personnel file"></button>
+        <div class="messages__who" id="messages-who" data-tip="Open personnel file" role="button" tabindex="0">
           <span class="messages__name" id="messages-name"></span>
           <span class="messages__role" id="messages-role"></span>
         </div>
@@ -157,22 +157,22 @@
             <ul class="gm-search__list" hidden></ul>
           </div>
           <div class="gm-layers">
-            <button type="button" class="gm-layers__btn" aria-haspopup="true" aria-expanded="false">
+            <button type="button" class="gm-layers__btn" aria-haspopup="true" aria-expanded="false" aria-label="Layers">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 8l10 5 10-5z"/><path d="m2 13 10 5 10-5"/></svg>
-              Layers
+              <span class="gm-layers__label">Layers</span>
             </button>
             <div class="gm-layers__menu" role="menu" hidden>
-            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" data-layer="people">People</button>
-            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" data-layer="places">Places</button>
-            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" data-layer="streets">Streets</button>
-            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" data-layer="buildings">Buildings</button>
-            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" data-layer="transit">Transit</button>
-            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" data-layer="crime">Crime</button>
-            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" data-layer="life">City life</button>
-            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" data-layer="safety">Safety</button>
-            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" data-layer="trails">Trails</button>
-            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" data-layer="pins">Pins</button>
-                      </div>
+            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" aria-checked="true" data-layer="people">People</button>
+            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" aria-checked="true" data-layer="places">Places</button>
+            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" aria-checked="true" data-layer="streets">Streets</button>
+            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" aria-checked="true" data-layer="buildings">Buildings</button>
+            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" aria-checked="true" data-layer="transit">Transit</button>
+            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" aria-checked="true" data-layer="crime">Crime</button>
+            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" aria-checked="true" data-layer="life">City life</button>
+            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" aria-checked="true" data-layer="safety">Safety</button>
+            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" aria-checked="true" data-layer="trails">Trails</button>
+            <button type="button" class="gm-chip gm-layers__item" role="menuitemcheckbox" aria-checked="true" data-layer="pins">Pins</button>
+            </div>
           </div>
           <div class="gm__tools">
             <button type="button" class="gm-tool" data-act="close" data-tip="Close the map" aria-label="Close the map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
@@ -193,9 +193,9 @@
           </button>
           <aside class="gm-side">
             <div class="gm-tabs" role="tablist">
-              <button type="button" class="gm-tab is-on" data-tab="people" role="tab">People</button>
-              <button type="button" class="gm-tab" data-tab="cases" role="tab">Cases <b class="gm-tab__count" hidden></b></button>
-              <button type="button" class="gm-tab" data-tab="scanner" role="tab">Scanner</button>
+              <button type="button" class="gm-tab is-on" data-tab="people" role="tab" aria-selected="true">People</button>
+              <button type="button" class="gm-tab" data-tab="cases" role="tab" aria-selected="false">Cases <b class="gm-tab__count" hidden></b></button>
+              <button type="button" class="gm-tab" data-tab="scanner" role="tab" aria-selected="false">Scanner</button>
             </div>
             <ul class="gm-roster" data-pane="people"></ul>
             <ul class="gm-list" data-pane="cases" hidden></ul>
@@ -258,7 +258,7 @@
       </div>
 
       <form class="compose" id="compose">
-        <button type="button" class="ptt" id="ptt" data-tip="Hold to speak (or hold Space)">
+        <button type="button" class="ptt" id="ptt" data-tip="Hold to speak (or hold Space)" aria-label="Hold to speak">
           <span class="ptt__ring" aria-hidden="true"></span>
           <span class="ptt__glyph" aria-hidden="true"></span>
         </button>

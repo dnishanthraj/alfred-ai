@@ -82,10 +82,11 @@ def together(presence, t=None):
 
     A plan or a conversation can say "with Cass"; it only holds if it holds
     for Cass too: she said the same, or she's free then, or her own plan
-    already has her there. What someone said in a conversation outranks any
-    plan, and someone asleep or out of reach is in nobody's plans but their
-    own. Everyone in a group is in one place — so the map, the card under
-    their name and what each of them is told all agree.
+    already has her there. What she said about where she is outranks anyone's
+    plan; someone asleep or out of reach is in nobody's plans but their own;
+    and Jason and Randy, who keep their lives to themselves, are with someone
+    only when they say so too. Everyone in a group is in one place — so the
+    map, the card under their name and what each of them is told all agree.
     """
     from ..contacts import directory
     t = t or time.time()
@@ -116,7 +117,9 @@ def together(presence, t=None):
             return True             # they both say so
         if firm or block.get("status") == OFFLINE:
             return False            # b said where they are, or is asleep or out of reach
-        return not block or situation(a)[2] or near(a, b)
+        if not getattr(everyone[b].contact, "shares_status", True):
+            return False            # in nobody's plans but their own, unless they say so too
+        return not block or near(a, b)      # free then, or already there by their own plan
 
     links = {cid: set() for cid in everyone}
     for a in everyone:
@@ -134,6 +137,13 @@ def together(presence, t=None):
     leader = min(group, key=lambda cid: (not situation(cid)[2],
                                          not (set(situation(cid)[1]) & group), order[cid]))
     return everyone[leader], [everyone[cid] for cid in sorted(group, key=order.get)]
+
+
+def sharing(company):
+    """Those of them who let him see where they are: "with Jason" would give Jason away."""
+    from ..contacts import directory
+    book = directory()
+    return [c for c in company if book.get(c) is None or getattr(book.get(c), "shares_location", True)]
 
 
 def describe_until(until, now=None):
@@ -197,11 +207,11 @@ class Presence:
                 if start <= at < end:
                     return block
         for index, block in enumerate(self.contact.routine):
-            if (self._state.get("plans") or {}).get(time.strftime("%Y-%m-%d", local)):
-                break       # they planned today themselves; the routine is only a fallback
             for began in (t, t - 86400):        # a night may have begun yesterday
                 day = time.localtime(began)
                 key = time.strftime("%Y-%m-%d", day)
+                if plans.get(key):
+                    continue    # they planned that day themselves; the routine is only a fallback
                 if "days" in block and day.tm_wday not in block["days"]:
                     continue
                 if _draw(self.contact.id, index, key) >= block.get("chance", 1.0):
@@ -246,6 +256,10 @@ class Presence:
         if _draw(self.contact.id, "whim", spell) >= self.contact.texting_pace.get("whim_rate", 0.18):
             return None
         whim = whims[int(_draw(self.contact.id, "which", spell) * len(whims))]
+        start, end = whim.get("hours", (8, 22))
+        hour = time.localtime(t).tm_hour
+        if not (start <= hour < end if start < end else hour >= start or hour < end):
+            return None     # nobody's on the golf course at three in the morning
         lasts = whim.get("minutes", 60) * 60
         begins = spell * 7200 + _draw(self.contact.id, "when", spell) * max(0, 7200 - lasts)
         return whim if begins <= t < begins + lasts else None
@@ -346,9 +360,7 @@ class Presence:
         """
         activity = self._state.get("activity")
         if activity and activity.get("since", 0) <= t < activity.get("until", 0):
-            if activity.get("where") or (places.is_patrol(activity.get("doing"))
-                                         and places.on_beat(self.contact, t)):
-                return activity, list(activity.get("with") or []), True
+            return activity, list(activity.get("with") or []), True
         block = self._routine(t) or self._whim(t) or {}
         return block, list(block.get("with") or []), False
 
@@ -356,9 +368,33 @@ class Presence:
         """Where they'd be at t by themselves, before anyone they're with comes into it."""
         block, _, firm = self._situation(t)
         if firm:
-            if places.is_patrol(block.get("doing")) and places.on_beat(self.contact, t):
-                return places.on_beat(self.contact, t)
-            return block["where"]
+            return self._activity_place(block, t)
+        return self._planned_place(block, t)
+
+    def _activity_place(self, activity, t):
+        """
+        Where what they said they're doing puts them: the patrol they named,
+        walked where they said; the place they named; a place in what they're
+        doing ("a board meeting at Wayne Tower"); home, gone to sleep; and
+        otherwise wherever they were when they said it.
+        """
+        doing, where = activity.get("doing") or "", activity.get("where") or ""
+        if places.is_patrol(doing):
+            spot = places.patrol_spot(self.contact, where, t)
+            if spot:
+                return spot
+        if where:
+            return self._home_is_home(where)
+        named = places.resolve(doing)
+        if named:
+            return named["name"]
+        if activity.get("status") == OFFLINE:
+            return getattr(self.contact, "home", "") or ""
+        since = activity.get("since", t)
+        return self._planned_place(self._routine(since) or self._whim(since) or {}, since)
+
+    def _planned_place(self, block, t):
+        """Where their plan or routine has them at t."""
         if places.is_patrol(block.get("doing")):
             # A patrol moves: along their beat, inside wherever the plan put
             # them — "the rooftops" or "Blüdhaven" is a beat to walk, and Tim
@@ -371,11 +407,19 @@ class Presence:
         return getattr(self.contact, "home", "") or ""
 
     def _home_is_home(self, where):
-        """'Home, Bristol' in Alfred's plan is the Manor: home is where they live."""
+        """
+        'Home, Bristol' in Alfred's plan is the Manor: home is where they live.
+        But 'Home, Blüdhaven' in Tim's is someone else's place over there — Dick's
+        — so it stays where it says.
+        """
         home = getattr(self.contact, "home", "") or ""
-        if home and re.match(r"(?i)\s*(at\s+)?home\b", where or ""):
-            return home
-        return where
+        found = re.match(r"(?i)\s*(?:at\s+)?home\b[\s,:-]*(.*)", where or "")
+        if not home or not found:
+            return where
+        there, mine = places.resolve(found.group(1)) if found.group(1) else None, places.resolve(home)
+        if there and mine and there["area"] != mine["area"]:
+            return found.group(1)
+        return home
 
     def trail(self, hours=2.0, step=300, t=None):
         """
@@ -408,7 +452,8 @@ class Presence:
         shown = {"status": state["status"], "doing": state["doing"],
                  "last_active": state["last_active"] or None, "line": self.line(t)}
         if getattr(self.contact, "shares_location", True):
-            shown["where"], shown["with"] = self.whereabouts(t)
+            shown["where"], company = self.whereabouts(t)
+            shown["with"] = sharing(company)
             shown["spot"] = places.resolve(shown["where"])
         return shown
 
@@ -537,11 +582,12 @@ def answers(contact, state, again=False, rng=random):
     """
     odds = {**_ANSWERS, **(contact.initiative or {}).get("answers", {})}
     chance = odds.get(state["status"], 0.9)
-    # Each call hard on the heels of the last cuts the chance of ignoring it to
-    # a third: twice reads as urgent, three times is hard to sleep through.
+    # Each call hard on the heels of the last cuts the chance of ignoring it —
+    # by how much is theirs (`redial`): Alfred picks up the second time almost
+    # surely; Randy, who doesn't answer, mostly still doesn't.
     tries = int(again)
     if tries:
-        chance = 1 - (1 - chance) / (3 ** tries)
+        chance = 1 - (1 - chance) / ((contact.initiative or {}).get("redial", 3.0) ** tries)
     if rng.random() < chance:
         return None
     if state["status"] == OFFLINE:

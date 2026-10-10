@@ -1223,6 +1223,9 @@ class ContactSession:
         elif why == "case_assigned":
             ask = (f"He's just put you on a case: {about}. Text him back the way you would — taking it, "
                    "asking something, a word. No briefing, no numbered points, no lists.")
+        elif why == "case_declined":
+            ask = (f"He's just put you on a case: {about}. You're not taking it — tonight, or from him, or "
+                   "at all; tell him so your way, or don't answer: if you'd leave it, reply with exactly SKIP.")
         elif why == "case_taken":
             ask = (f"You've just taken a case yourself: {about}. Tell him, briefly, your way — or if you "
                    "wouldn't bother him with it, reply with exactly SKIP.")
@@ -1270,7 +1273,7 @@ class ContactSession:
         # A text, not a letter: told "a line or two", a model writes a paragraph.
         lines = [guards.cap_length(line, 3) for line in text.splitlines() if line.strip()][:4]
         text = "\n".join(lines)
-        if why in ("second_thought", "chase", "worry", "case_taken", "case_closed", "tapback") \
+        if why in ("second_thought", "chase", "worry", "case_taken", "case_closed", "tapback", "case_declined") \
                 and re.match(r"\W*skip\b", text, re.I):
             return ""
         if text:
@@ -1586,7 +1589,7 @@ class ContactSession:
                 dark.append(other.name)
                 continue
             state, (where, company) = presence.of(other).now(), presence.of(other).whereabouts()
-            with_ = [book.get(c).name for c in company if book.get(c)]
+            with_ = [book.get(c).name for c in presence.sharing(company) if book.get(c)]
             lines.append(f"{other.name}: {state['status']}" + (f", {state['doing']}" if state["doing"] else "")
                          + (f" — {where}" if where else "") + (f", with {' and '.join(with_)}" if with_ else ""))
         from . import cases, incidents

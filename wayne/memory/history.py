@@ -7,6 +7,7 @@ whether the last exchange was ten minutes or three weeks ago, which is most of
 the difference between "Evening again" and "It's been a while."
 """
 import json
+import threading
 import time
 
 from .. import delivery, paths
@@ -80,6 +81,11 @@ class History:
     # Timestamp of the message the model's window currently opens on. Held
     # across turns so the window only moves when it must (see `TRIM_TO`).
     _window_start = None
+    # Turns write from the model's worker thread while the console's loop
+    # records texts and asides: one lock round every change and save, or two
+    # appends interleave and the turns stop alternating. (One for all: the
+    # writes are tiny.)
+    _lock = threading.RLock()
 
     def __init__(self, contact_id):
         self.contact_id = contact_id
@@ -200,28 +206,30 @@ class History:
         exactly how a character starts sounding like it has no memory of
         speaking to you.
         """
-        kept = []
-        index = 0
-        while index < len(self.messages):
-            message = self.messages[index]
-            is_pair = (message["role"] == "user"
-                       and self._is_marker(message, marker)
-                       and index + 1 < len(self.messages)
-                       and self.messages[index + 1]["role"] == "assistant")
-            if is_pair:
-                index += 2      # drop the placeholder and the greeting with it
-                continue
-            kept.append(message)
-            index += 1
-        self.messages = kept
+        with self._lock:
+            kept = []
+            index = 0
+            while index < len(self.messages):
+                message = self.messages[index]
+                is_pair = (message["role"] == "user"
+                           and self._is_marker(message, marker)
+                           and index + 1 < len(self.messages)
+                           and self.messages[index + 1]["role"] == "assistant")
+                if is_pair:
+                    index += 2      # drop the placeholder and the greeting with it
+                    continue
+                kept.append(message)
+                index += 1
+            self.messages = kept
 
     def append(self, role, content):
-        # Stage cues are for the voice, not the record. Kept in memory they
-        # would be imitated, and every reply would start to come with a sigh.
-        # Only his side carries cues; what the operator said is kept verbatim.
-        if role == "assistant":
-            content = delivery.clean(content)
-        self.messages.append({"role": role, "content": content, "at": time.time()})
+        with self._lock:
+            # Stage cues are for the voice, not the record. Kept in memory they
+            # would be imitated, and every reply would start to come with a sigh.
+            # Only his side carries cues; what the operator said is kept verbatim.
+            if role == "assistant":
+                content = delivery.clean(content)
+            self.messages.append({"role": role, "content": content, "at": time.time()})
 
     def record_aside(self, text):
         """
@@ -234,19 +242,20 @@ class History:
         user turn before it breaks the alternation the model relies on. Said
         one after the other with nothing in between, they *were* one turn.
         """
-        if not text:
-            return
-        if self.messages and self.messages[-1]["role"] == "assistant":
-            # Kept in its own field, not concatenated. Appending to the content
-            # meant a second check-in stacked onto the first — "Still here.
-            # Still here." — and once that was in the context he produced more
-            # of it. One turn has at most one trailing aside; a newer one
-            # replaces the older, because that is what actually happened.
-            self.messages[-1]["aside"] = delivery.clean(text)
-            self.messages[-1]["at"] = time.time()
-        else:
-            self.append("assistant", text)
-        self.save()
+        with self._lock:
+            if not text:
+                return
+            if self.messages and self.messages[-1]["role"] == "assistant":
+                # Kept in its own field, not concatenated. Appending to the content
+                # meant a second check-in stacked onto the first — "Still here.
+                # Still here." — and once that was in the context he produced more
+                # of it. One turn has at most one trailing aside; a newer one
+                # replaces the older, because that is what actually happened.
+                self.messages[-1]["aside"] = delivery.clean(text)
+                self.messages[-1]["at"] = time.time()
+            else:
+                self.append("assistant", text)
+            self.save()
 
     def record_exchange(self, prompt, reply, via=None):
         """
@@ -254,17 +263,19 @@ class History:
         `via="text"` marks a text conversation, so a later call knows what was
         texted rather than said, and the message thread can show it.
         """
-        self.append("user", prompt)
-        self.append("assistant", reply)
-        if via:
-            self.messages[-1]["via"] = self.messages[-2]["via"] = via
-        self.save()
+        with self._lock:
+            self.append("user", prompt)
+            self.append("assistant", reply)
+            if via:
+                self.messages[-1]["via"] = self.messages[-2]["via"] = via
+            self.save()
 
     def amend_last_reply(self, text):
         """What they said turned out to belong somewhere else: the record says so."""
-        if self.messages and self.messages[-1]["role"] == "assistant":
-            self.messages[-1]["content"] = text
-            self.save()
+        with self._lock:
+            if self.messages and self.messages[-1]["role"] == "assistant":
+                self.messages[-1]["content"] = text
+                self.save()
 
     def texts(self, limit=60):
         """The text thread: messages sent by text, oldest first."""
@@ -293,10 +304,12 @@ class History:
         return describe_gap(self.seconds_since_last())
 
     def save(self):
-        del self.messages[:-MAX_HISTORY_MESSAGES]
-        atomic_write(self.path, json.dumps(self.messages, indent=2))
+        with self._lock:
+            del self.messages[:-MAX_HISTORY_MESSAGES]
+            atomic_write(self.path, json.dumps(self.messages, indent=2))
 
     def clear(self):
-        if self.path.exists():
-            self.path.unlink()
-        self.messages = []
+        with self._lock:
+            if self.path.exists():
+                self.path.unlink()
+            self.messages = []

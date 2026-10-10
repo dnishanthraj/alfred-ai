@@ -239,7 +239,11 @@
     },
     "busy_text": 0.2,
     "callback": 0.45,
-    "callback_call": 0.3
+    "callback_call": 0.3,
+    "redial": 1.5,
+    "checks_in": 0.25,
+    "resurface_after": 24,
+    "takes_orders": 0.6
   },
   "shares_status": false,
   "silence": "You don't chase a silence: a dry line, or you'll hang up on him.",

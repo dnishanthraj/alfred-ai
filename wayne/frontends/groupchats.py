@@ -482,10 +482,4 @@ class GroupChats:
         await self._post_as(group, poster, opening="the call with him and the others that just ended — "
                                                    "whatever you'd say about it afterwards, if anything")
 
-    def _may_reach_out(self, now):
-        from .. import config
-        if config.INITIATIVE_PER_DAY <= 0 or self._quiet(now) or not self.clients:
-            return False
-        sent = [t for t in self._initiative_log() if now - t < 86400]
-        return len(sent) < config.INITIATIVE_PER_DAY and not (sent and now - max(sent) < 45 * 60)
 

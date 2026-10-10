@@ -536,6 +536,7 @@
   }
 
   function renderDirectory() {
+    hideHovercard();          // its avatar is about to be replaced, and with it the mouseleave
     el.book.innerHTML = '';
     var inCall = state.party.length > 0;
     var group = state.party.length > 1;
@@ -1106,6 +1107,10 @@
     var group = th.kind === 'group';
     var contact = group ? null : state.contacts[th.id];
     var box = el['messages-thread'];
+    // Reading back through the thread, it stays where he is; at the bottom,
+    // it follows what comes in (see scrollThreadToEnd).
+    var kept = box.scrollTop;
+    state.threadAtEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
     box.innerHTML = '';
     if (th.more) {
       var more = document.createElement('li');
@@ -1157,15 +1162,21 @@
     } else if (state.typing[th.id]) {
       box.appendChild(bubbleNode({ from: 'them', text: '', typing: true }, contact));
     }
+    if (state.threadAtEnd === false) box.scrollTop = kept;
   }
 
-  function scrollThreadToEnd() {
-    el['messages-thread'].scrollTop = el['messages-thread'].scrollHeight;
+  /* To the latest message — if he was already there, or `force` (opening a
+     thread, sending one himself). Someone typing or reading no longer drags
+     him down from whatever he'd scrolled back to. */
+  function scrollThreadToEnd(force) {
+    var box = el['messages-thread'];
+    if (force || state.threadAtEnd !== false) box.scrollTop = box.scrollHeight;
   }
 
   function openMessages(id) {
     var contact = state.contacts[id];
     if (!contact) return;
+    clearToasts('t:' + id);
     state.messagesWith = id;
     state.groupOpen = null;
     state.lastThread = id;
@@ -1199,7 +1210,7 @@
           delete state.typing[id];
         }
         renderThread();
-        scrollThreadToEnd();
+        scrollThreadToEnd(true);
       })
       .catch(function () { if (state.thread && state.thread.id === id) state.thread.loading = false; });
     el['messages-input'].focus();
@@ -1299,7 +1310,7 @@
     if (!threadOpenFor(event.speaker)) return;
     state.thread.messages.push(event.message);
     renderThread();
-    scrollThreadToEnd();
+    scrollThreadToEnd(true);
   }
 
   function onTextRead(event) {
@@ -1472,6 +1483,7 @@
     remember('unread', JSON.stringify(state.unread));
     el['inbox-count'].hidden = !n;
     el['inbox-count'].textContent = n;
+    el.inbox.setAttribute('aria-label', n ? 'Messages, ' + n + ' unread' : 'Messages');
   }
 
 
@@ -1580,11 +1592,7 @@
     state.messagesWith = null;
     delete state.unread[groupKey(id)];
     delete state.pinged[groupKey(id)];
-    // Its notifications have done their job.
-    Array.prototype.forEach.call(el.toasts.querySelectorAll('.toast[data-group="' + id + '"]'), function (t) {
-      t.dataset.leaving = '1';
-      setTimeout(function () { t.remove(); }, 300);
-    });
+    clearToasts('g:' + id);       // its notifications have done their job
     updateInbox();
     el.messages.style.removeProperty('--contact-accent');
     stackPortraits(el['messages-avatar'], g.members);
@@ -1617,7 +1625,7 @@
           });
         });
         renderThread();
-        scrollThreadToEnd();
+        scrollThreadToEnd(true);
       })
       .catch(function () { if (state.thread && state.thread.id === id) state.thread.loading = false; });
     el['messages-input'].focus();
@@ -1686,6 +1694,7 @@
         var ping = m.from !== 'me' && pingsMe(m.text, true);
         if (groupOpenFor(id)) {
           state.thread.messages.push(m);
+          if (m.from === 'me') state.threadAtEnd = true;
           if (ping && ConsoleTones.ping) ConsoleTones.ping();
         } else if (m.from !== 'me') {
           state.unread[groupKey(id)] = (state.unread[groupKey(id)] || 0) + 1;
@@ -1719,17 +1728,14 @@
     line.className = 'toast__text';
     appendMentions(line, message.text, g.members, true);
     if (ping) card.dataset.ping = '1';
-    card.dataset.group = id;
     words.appendChild(name);
     words.appendChild(line);
     card.appendChild(av);
     card.appendChild(words);
-    var dismiss = function () { card.dataset.leaving = '1'; setTimeout(function () { card.remove(); }, 300); };
-    card.addEventListener('click', function () { dismiss(); openGroup(id); });
-    el.toasts.appendChild(card);
+    card.addEventListener('click', function () { dismissToast(card); openGroup(id); });
+    showToast(card, 'g:' + id, ping ? 12000 : 6500);
     if (ping && ConsoleTones.ping) ConsoleTones.ping();
     else if (ConsoleTones.message) ConsoleTones.message();
-    setTimeout(dismiss, ping ? 12000 : 6500);
   }
 
   /* New group: a name, and two or more of them. */
@@ -1941,14 +1947,34 @@
     words.appendChild(line);
     card.appendChild(av);
     card.appendChild(words);
-    var dismiss = function () {
-      card.dataset.leaving = '1';
-      setTimeout(function () { card.remove(); }, 300);
-    };
-    card.addEventListener('click', function () { dismiss(); openMessages(id); });
-    el.toasts.appendChild(card);
+    card.addEventListener('click', function () { dismissToast(card); openMessages(id); });
+    showToast(card, 't:' + id, 6500);
     if (ConsoleTones.message) ConsoleTones.message();
-    setTimeout(dismiss, 6500);
+  }
+
+  /* One toast per thread — a newer message replaces the older — and three at
+     most on screen, the oldest going first. */
+  function showToast(card, key, ms) {
+    card.dataset.thread = key;
+    Array.prototype.forEach.call(el.toasts.querySelectorAll('.toast'), function (t) {
+      if (t.dataset.thread === key) t.remove();
+    });
+    el.toasts.appendChild(card);
+    var live = el.toasts.querySelectorAll('.toast:not([data-leaving])');
+    for (var i = 0; i < live.length - 3; i++) dismissToast(live[i]);
+    setTimeout(function () { dismissToast(card); }, ms);
+  }
+
+  function dismissToast(card) {
+    if (!card.isConnected || card.dataset.leaving) return;
+    card.dataset.leaving = '1';
+    setTimeout(function () { card.remove(); }, 300);
+  }
+
+  function clearToasts(key) {
+    Array.prototype.forEach.call(el.toasts.querySelectorAll('.toast'), function (t) {
+      if (t.dataset.thread === key) dismissToast(t);
+    });
   }
 
   /* --- layout ----------------------------------------------------------------
@@ -1958,6 +1984,8 @@
      ------------------------------------------------------------------------ */
 
   var COMPACT_BELOW = 150;
+  // A narrow window: the directory goes to portraits, beside the stage.
+  var NARROW = window.matchMedia('(max-width: 820px)');
 
   function remember(key, value) { try { localStorage.setItem('console.' + key, value); } catch (e) {} }
   function recall(key) { try { return localStorage.getItem('console.' + key); } catch (e) { return null; } }
@@ -1965,11 +1993,22 @@
   function setRailWidth(px) {
     px = Math.max(76, Math.min(px, 420));
     document.documentElement.style.setProperty('--rail-w', px + 'px');
-    var compact = px < COMPACT_BELOW;
+    var compact = px < COMPACT_BELOW || NARROW.matches;
     if (document.documentElement.dataset.rail !== 'hidden') {
       document.documentElement.dataset.rail = compact ? 'compact' : 'open';
     }
     remember('railWidth', px);
+  }
+
+  /* The chat's width: dragged or remembered, but never so wide that the stage
+     beside it — the call, the map — is left with less than 360px. */
+  function setMessagesWidth(px, passing) {
+    var rail = document.documentElement.dataset.rail === 'hidden' ? 0
+      : parseInt(getComputedStyle(document.documentElement).getPropertyValue('--rail-w'), 10) || 270;
+    var most = Math.max(300, Math.min(720, window.innerWidth - rail - 360));
+    var width = Math.max(300, Math.min(px, most));
+    document.documentElement.style.setProperty('--msg-w', width + 'px');
+    if (!passing) remember('msgWidth', width);
   }
 
   function toggleRail() {
@@ -2000,6 +2039,17 @@
 
   /* The console's furniture makes small sounds: a tick as the pointer finds
      something to press, a click when it's pressed. */
+  function wireKeyboardButtons() {
+    document.addEventListener('keydown', function (e) {
+      var t = e.target;
+      if ((e.key === 'Enter' || e.key === ' ') && t && t.getAttribute && t.getAttribute('role') === 'button'
+          && t.tagName !== 'BUTTON') {
+        e.preventDefault();
+        t.click();
+      }
+    });
+  }
+
   function wireSounds() {
     document.addEventListener('pointerover', function (e) {
       var b = e.target.closest && e.target.closest('button:not(:disabled)');
@@ -2023,6 +2073,7 @@
       clearTimeout(timer);
       if (!node || !node.dataset.tip) { tip.hidden = true; return; }
       timer = setTimeout(function () {
+        if (!node.isConnected) return;      // re-rendered away meanwhile: it would measure as the corner
         tip.textContent = node.dataset.tip;
         tip.hidden = false;
         var r = node.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
@@ -2062,15 +2113,14 @@
     el['incoming-decline'].addEventListener('click', declineIncoming);
     setRailWidth(parseInt(recall('railWidth') || '270', 10));
     if (recall('railHidden') === '1') document.documentElement.dataset.rail = 'hidden';
-    var w = parseInt(recall('msgWidth') || '400', 10);
-    document.documentElement.style.setProperty('--msg-w', w + 'px');
+    setMessagesWidth(parseInt(recall('msgWidth') || '400', 10));
+    window.addEventListener('resize', function () { setMessagesWidth(parseInt(recall('msgWidth') || '400', 10), true); });
     el['rail-toggle'].addEventListener('click', toggleRail);
-    dragToResize(el['rail-resize'], function (x) { setRailWidth(x); });
-    dragToResize(el['messages-resize'], function (x) {
-      var width = Math.max(300, Math.min(window.innerWidth - x, 720));
-      document.documentElement.style.setProperty('--msg-w', width + 'px');
-      remember('msgWidth', width);
+    NARROW.addEventListener('change', function () {
+      if (document.documentElement.dataset.rail !== 'hidden') setRailWidth(parseInt(recall('railWidth') || '270', 10));
     });
+    dragToResize(el['rail-resize'], function (x) { setRailWidth(x); });
+    dragToResize(el['messages-resize'], function (x) { setMessagesWidth(window.innerWidth - x); });
     el.inbox.addEventListener('click', function () {
       var first = Object.keys(state.unread)[0];
       if (first && first.indexOf('g:') === 0) openGroup(first.slice(2));
@@ -2565,10 +2615,12 @@
 
     window.addEventListener('keydown', function (e) {
       if (document.documentElement.dataset.phase !== 'live') return;
+      if (e.defaultPrevented) return;         // a picker or a field already dealt with it
       var typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable);
-      if (!typing && window.GothamMap && (e.key === 'm' || e.key === 'M') && !e.metaKey && !e.ctrlKey) {
+      if (!typing && (e.key === 'm' || e.key === 'M') && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        if (GothamMap.isOpen()) GothamMap.close(); else GothamMap.open();
+        // The button, not GothamMap.open: the map is built on first open.
+        if (window.GothamMap && GothamMap.isOpen()) GothamMap.close(); else document.getElementById('map-open').click();
         return;
       }
       if (!typing && e.key === '/' && window.GothamMap && GothamMap.isOpen()) {
@@ -2577,6 +2629,12 @@
         return;
       }
       if (e.key === 'Escape') {
+        // The topmost thing first: a dialog, the personnel file, then the map;
+        // only then is it "stop talking".
+        var modal = document.querySelector('.modal:not([hidden])');
+        if (modal) { modal.hidden = true; return; }
+        if (!el.dossier.hidden) { el.dossier.hidden = true; return; }
+        if (typing) { e.target.blur(); return; }
         if (window.GothamMap && GothamMap.isOpen()) { GothamMap.close(); return; }
         interruptHim();
         return;
@@ -2807,6 +2865,7 @@
   wireSystem();
   wireLayout();
   wireSounds();
+  wireKeyboardButtons();
   wireTips();
   wireMentions();
   wireTapbacks();

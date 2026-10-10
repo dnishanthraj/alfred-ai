@@ -158,6 +158,13 @@
   ],
   "routine": [
     {
+      "from": 22,
+      "to": 1,
+      "doing": "out on patrol as Batgirl",
+      "status": "busy",
+      "chance": 0.3
+    },
+    {
       "from": 21,
       "to": 3,
       "doing": "at the clock tower, running comms",
@@ -240,7 +247,11 @@
     },
     "busy_text": 0.5,
     "callback": 0.8,
-    "callback_call": 0.5
+    "callback_call": 0.5,
+    "redial": 2.5,
+    "checks_in": 0.45,
+    "resurface_after": 6,
+    "takes_orders": 0.85
   },
   "search_aloud": false,
   "home": "The Clocktower",

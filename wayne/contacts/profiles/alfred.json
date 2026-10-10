@@ -281,7 +281,10 @@
     },
     "busy_text": 0.2,
     "callback": 1.0,
-    "callback_call": 0.8
+    "callback_call": 0.8,
+    "redial": 3.0,
+    "checks_in": 0.75,
+    "resurface_after": 4
   },
   "sees_calendar": true,
   "portrait": {

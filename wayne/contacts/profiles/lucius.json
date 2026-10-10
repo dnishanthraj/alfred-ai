@@ -223,6 +223,21 @@
       "chance": 0.3,
       "terminal": true,
       "where": "Wayne Tower"
+    },
+    {
+      "from": 9,
+      "to": 18,
+      "doing": "at the office",
+      "status": "busy",
+      "chance": 0.85,
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "where": "Wayne Tower"
     }
   ],
   "texting_pace": {
@@ -280,7 +295,10 @@
     },
     "busy_text": 0.7,
     "callback": 0.95,
-    "callback_call": 0.8
+    "callback_call": 0.8,
+    "redial": 2.0,
+    "checks_in": 0.3,
+    "resurface_after": 8
   },
   "home": "Home, Upper East Side",
   "interests": {

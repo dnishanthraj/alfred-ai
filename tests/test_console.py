@@ -28,7 +28,7 @@ def _console():
     console.voice = _Voice()
     console.clients = set()
     console.audio_clips = OrderedDict()
-    console.transcripts = {}
+    console._tasks = set()
     console.current_id = None
     console.recent_speech = deque(maxlen=12)
     console.turn_epoch = 0

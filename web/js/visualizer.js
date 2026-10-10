@@ -56,8 +56,17 @@
 
     global.addEventListener('resize', this._resize);
     this._resize();
-    requestAnimationFrame(this._frame);
+    this._raf = requestAnimationFrame(this._frame);
   }
+
+  /* Gone for good: no more frames, no more listening for the window. A seat's
+     canvas that's left the page does this itself — dropped seats used to draw
+     on, unseen, for as long as the console was open. */
+  Visualizer.prototype.destroy = function () {
+    this._dead = true;
+    cancelAnimationFrame(this._raf);
+    global.removeEventListener('resize', this._resize);
+  };
 
   Visualizer.prototype.setMode = function (mode) { this.mode = mode; };
   Visualizer.prototype.setLevel = function (level) { this.level = level; };
@@ -166,7 +175,12 @@
   };
 
   Visualizer.prototype._frame = function () {
-    requestAnimationFrame(this._frame);
+    if (this._dead) return;
+    if (!this.canvas.isConnected) { this.destroy(); return; }
+    this._raf = requestAnimationFrame(this._frame);
+    // Nothing to draw for while nobody can see it: the window's in the
+    // background, or the map is over the stage.
+    if (document.hidden || document.documentElement.dataset.map === 'open') { this.lastFrame = 0; return; }
 
     var now = performance.now();
     // Frames since the last one at 60 Hz; capped so a backgrounded tab does

@@ -256,7 +256,11 @@
     },
     "busy_text": 0.7,
     "callback": 0.95,
-    "callback_call": 0.6
+    "callback_call": 0.6,
+    "redial": 3.0,
+    "checks_in": 0.65,
+    "resurface_after": 3,
+    "takes_orders": 0.95
   },
   "home": "Home, Blüdhaven",
   "interests": {

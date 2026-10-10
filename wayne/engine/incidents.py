@@ -45,29 +45,45 @@ KINDS = [
 ]
 
 
-# Places that don't get scanner calls of their own.
-QUIET_PLACES = {"prison", "asylum", "statue", "lighthouse", "observatory", "garden", "water", "cemetery"}
+# Places that don't get scanner calls of their own: nobody calls the police
+# from inside Blackgate, or on Wayne Manor, or on the police.
+QUIET_PLACES = {"prison", "asylum", "statue", "lighthouse", "observatory", "garden", "water", "cemetery",
+                "manor", "police", "clock"}
+# A hospital is where the night's calls end up, not where they start.
+_CALM = {"hospital": 0.3}
+
+_spot_cache = None
 
 
 def _crime_by_area():
     data = places.gazetteer()
-    levels = {d["name"]: d.get("crime", 0.4) for d in data.get("districts", [])}
+    levels = {d["name"]: d.get("crime", 0.1) for d in data.get("districts", [])}
     levels.update(data.get("district_crime_extra", {}))
     return levels
 
 
 def _spots():
-    """Places a report can come from, with how rough their part of the city is."""
+    """
+    Places a report can come from, each with its weight: how rough its part
+    of the city is (squared and more: Crime Alley far outweighs the Upper East
+    Side), shared among the places there — a district with nine landmarks
+    doesn't get nine times the trouble of one with a single name on the map,
+    only three (a bigger district, a bit more).
+    """
+    global _spot_cache
+    if _spot_cache is not None:
+        return _spot_cache
     levels = _crime_by_area()
+    found = [p for p in places.gazetteer()["places"] if p.get("icon") not in QUIET_PLACES]
+    per_area = {}
+    for p in found:
+        per_area[p["area"]] = per_area.get(p["area"], 0) + 1
     spots = []
-    for p in places.gazetteer()["places"]:
-        if p.get("icon") in QUIET_PLACES:
-            continue        # nobody calls the police from inside Blackgate
-        area = "Blüdhaven" if p["area"] == "Blüdhaven" else p["area"]
-        level = levels.get(p["name"]) or levels.get(area)
-        if level is None:
-            level = max([v for k, v in levels.items() if k in (p["area"],)] or [0.4])
-        spots.append((p, level))
+    for p in found:
+        level = levels.get(p["name"]) or levels.get(p["area"]) or 0.1
+        weight = level ** 2.2 / per_area[p["area"]] ** 0.5 * _CALM.get(p.get("icon"), 1.0)
+        spots.append((p, level, weight))
+    _spot_cache = spots
     return spots
 
 
@@ -81,7 +97,8 @@ def at(t=None):
     """The reports open at time t, newest first."""
     t = t or time.time()
     spots = _spots()
-    weights = [level ** 2.2 for _, level in spots]
+    weights = [weight for _, _, weight in spots]
+    written = dispatches()          # read once, not once per report
     open_now = []
     for slot in range(int(t // SLOT) - LASTS[1] * 60 // SLOT, int(t // SLOT) + 1):
         seed = int(hashlib.sha1(f"gotham-scanner:{slot}".encode()).hexdigest()[:12], 16)
@@ -89,7 +106,7 @@ def at(t=None):
         start = slot * SLOT
         count = sum(1 for _ in range(4) if r.random() < _rate(start) / 4)
         for i in range(count):
-            place, level = r.choices(spots, weights=weights)[0]
+            place, level, _ = r.choices(spots, weights=weights)[0]
             kind, severity, _, home = r.choices(KINDS, weights=[
                 w * (level if s >= 3 else 1) * ((5 if place["area"] in home else 0.3) if home else 1)
                 for _, s, w, home in KINDS])[0]
@@ -103,7 +120,7 @@ def at(t=None):
                 "x": round(place["x"] + r.uniform(-0.5, 0.5), 2), "y": round(place["y"] + r.uniform(-0.5, 0.5), 2),
                 "at": int(began), "ends": int(ends), "status": _status((t - began) / (ends - began)),
             }
-            text = dispatches().get(report["id"])
+            text = written.get(report["id"])
             if text:
                 report["dispatch"] = text
             open_now.append(report)
@@ -156,8 +173,10 @@ def write_dispatch(report, model, options):
     """
     import ollama
     hour = time.strftime("%H:%M", time.localtime(report["at"]))
+    force = ("Blüdhaven PD dispatch, across the bay from Gotham" if report["area"] == "Blüdhaven"
+             else "GCPD dispatch in Gotham City")
     instruction = (
-        f"You are GCPD dispatch in Gotham City. At {hour} a call comes in: {report['kind'].lower()}, "
+        f"You are {force}. At {hour} a call comes in: {report['kind'].lower()}, "
         f"{report['place']} ({report['area']}), severity {report['severity']} of 4. Write the dispatch as it "
         "goes out over the radio — one or two terse sentences, in dispatch voice, with the specifics a "
         "caller would give: what was seen or heard, how many, descriptions, injuries, what's still going "

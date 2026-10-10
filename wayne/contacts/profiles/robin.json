@@ -249,9 +249,13 @@
     },
     "busy_text": 0.6,
     "callback": 0.85,
-    "callback_call": 0.3
+    "callback_call": 0.3,
+    "redial": 2.5,
+    "checks_in": 0.5,
+    "resurface_after": 5,
+    "takes_orders": 0.95
   },
-  "home": "Wayne Manor",
+  "home": "Houseboat, Gotham Marina",
   "interests": {
     "pastimes": [
       "coffee — strong, constant, a personality trait at this point",

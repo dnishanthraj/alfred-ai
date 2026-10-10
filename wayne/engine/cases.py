@@ -46,11 +46,23 @@ def _save(cases):
     atomic_write(_path(), json.dumps(kept[-200:], ensure_ascii=False))
 
 
+def known(case):
+    """
+    Whether he'd know about a case: he gave it, or whoever took it lets him see
+    where they are. Jason working something on his own is Jason's business.
+    """
+    if case.get("by") == "him":
+        return True
+    from ..contacts import directory
+    contact = directory().get(case.get("assignee"))
+    return contact is None or getattr(contact, "shares_location", True)
+
+
 def board(now=None):
-    """Open cases, and the ones closed in the last few hours, newest first."""
+    """Open cases he knows of, and the ones closed in the last few hours, newest first."""
     now = now or time.time()
-    return sorted((c for c in everything() if c["status"] != "closed"
-                   or now - c.get("closed_at", 0) < KEEP_CLOSED), key=lambda c: -c["opened_at"])
+    return sorted((c for c in everything() if known(c) and (c["status"] != "closed"
+                   or now - c.get("closed_at", 0) < KEEP_CLOSED)), key=lambda c: -c["opened_at"])
 
 
 def active(contact_id):
@@ -70,8 +82,11 @@ def for_report(report_id):
     return next((c for c in everything() if c["id"] == report_id), None)
 
 
-def assign(report, contact_id, by="him"):
-    """Put someone on a report. Replaces whoever had it. Returns the case."""
+def assign(report, contact_id, by="him", travel=0):
+    """
+    Put someone on a report. Replaces whoever had it. Returns the case.
+    `travel` is how many minutes it takes them to get there from wherever they are.
+    """
     now = time.time()
     with _lock:
         cases = everything()
@@ -82,28 +97,36 @@ def assign(report, contact_id, by="him"):
                     "dispatch": report.get("dispatch", ""), "opened_at": now, "log": []}
             cases.append(case)
         case.update({"assignee": contact_id, "by": by, "status": "assigned", "updated_at": now,
-                     "due": now + (35 + 12 * report["severity"]) * 60})
+                     "travel": round(travel, 1),
+                     "due": now + (travel + 35 + 12 * report["severity"]) * 60})
         case["log"].append({"at": now, "text": f"assigned to {contact_id} ({'by him' if by == 'him' else 'took it'})"})
         _save(cases)
     return case
 
 
-def advance(now=None):
-    """On scene a few minutes after taking it. Returns cases that have run their course."""
+def advance(now=None, arrived=None):
+    """
+    On scene once they've had time to get there (`arrived(case)` is told).
+    Returns cases that have run their course.
+    """
     now = now or time.time()
-    due = []
+    due, landed = [], []
     with _lock:
         cases = everything()
         changed = False
         for c in cases:
-            if c["status"] == "assigned" and now - c["updated_at"] > 9 * 60:
+            if c["status"] == "assigned" and now - c["updated_at"] > c.get("travel", 9) * 60:
                 c["status"], c["updated_at"] = "on scene", now
                 c["log"].append({"at": now, "text": "on scene"})
+                landed.append(c)
                 changed = True
             if c["status"] in ("assigned", "on scene") and now > c.get("due", now + 1):
                 due.append(c)
         if changed:
             _save(cases)
+    for c in landed:
+        if arrived:
+            arrived(c)
     return due
 
 

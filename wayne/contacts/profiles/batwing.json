@@ -227,7 +227,11 @@
     },
     "busy_text": 0.1,
     "callback": 0.2,
-    "callback_call": 0.2
+    "callback_call": 0.2,
+    "redial": 1.15,
+    "checks_in": 0.08,
+    "resurface_after": null,
+    "takes_orders": 0.15
   },
   "shares_status": false,
   "hidden_as": "offline",

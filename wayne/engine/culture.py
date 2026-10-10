@@ -37,23 +37,37 @@ ITEMS_PER_TOPIC = 3
 _lock = threading.Lock()
 
 # A conversation that's turned to the things people follow.
-# Words, not stems: "won't" and "lost someone" are not about the box office.
+# Words, not stems: "won't" and "lost someone" are not about the box office —
+# and in Gotham "watching the docks", "the matches on the body", "fights",
+# "released from Blackgate" and the console itself aren't either.
 _ABOUT_CULTURE = re.compile(
     r"(?i)\b(films?|movies?|cinema|box office|trailer|series|episodes?|streaming|telly|binge\w*|"
-    r"seen anything|watching|games?|gaming|playing|console|switch|ps5|xbox|songs?|albums?|charts?|"
-    r"concerts?|tour|gig|playlist|podcasts?|reading|novel|author|matches|fixtures?|race|grand prix|"
-    r"fights?|bout|league|cricket|boxing|f1|formula one|ballet|exhibition|gallery|auction|sotheby'?s|"
-    r"jazz|theatre|theater|premiere|released?|coming out|out now)\b")
+    r"seen anything|video ?games?|gaming|ps5|xbox|nintendo|songs?|albums?|charts?|"
+    r"concerts?|gig|playlist|podcasts?|novel|author|fixtures?|grand prix|"
+    r"league|cricket|boxing|f1|formula one|ballet|exhibition|gallery|sotheby'?s|"
+    r"jazz|theatre|theater|premiere|out now|new season|season finale)\b")
+# Words too ordinary in their lives to mean they're on about a hobby.
+_ORDINARY = {"there", "their", "about", "thing", "things", "where", "which", "while", "after", "night",
+             "nights", "board", "crime", "crimes", "manor", "working", "watching", "gotham", "family",
+             "people", "anything", "something", "around", "lately", "local", "latest", "news", "world",
+             "blüdhaven", "bludhaven", "metropolis"}
+
+
+def _words(text, least=5):
+    return set(re.findall(rf"[^\W\d_]{{{least},}}", (text or "").lower()))     # "blüdhaven", not "dhaven"
 
 
 def _their_words(contact):
-    """Words from what they're into and what they follow — Jason's 'motorcycles', Alfred's 'cricket'."""
+    """
+    Words from what they're into and follow — Jason's 'motorcycles', Dick's
+    'trapeze', Alfred's 'cricket' — less the ones too ordinary in their lives
+    to mean a hobby ("board", "night", "working").
+    """
     interests = contact.interests or {}
     words = set()
     for key in ("follows", "pastimes", "games", "watching", "music", "reading"):
         for item in interests.get(key, []):
-            words.update(w for w in re.findall(r"[a-z]{5,}", item.lower())
-                         if w not in {"there", "their", "about", "thing", "where", "which", "while", "after"})
+            words.update(_words(item) - _ORDINARY)
     return words
 
 
@@ -95,8 +109,7 @@ def about_culture(text, contact=None):
         return True
     if contact is None:
         return False
-    low = set(re.findall(r"[a-z]{5,}", (text or "").lower()))
-    return bool(low & _their_words(contact))
+    return bool(_words(text) & _their_words(contact))
 
 
 def topic_for(contact, text):
@@ -120,8 +133,12 @@ def note(contact, text):
     if not items:
         return ""
     # Only the few that bear on the question; a stack of headlines was recited.
-    words = set(re.findall(r"[a-z]{4,}", (text or "").lower()))
-    relevant = [i for i in items if words & set(re.findall(r"[a-z]{4,}", i.lower()))]
+    # Asked about films or games in general, the latest few; brought here only
+    # by a word of theirs, only what that word is actually about.
+    words = _words(text, 4) - _ORDINARY
+    relevant = [i for i in items if words & _words(i, 4)]
+    if not relevant and not _ABOUT_CULTURE.search(text or ""):
+        return ""
     items = (relevant or items)[:4]
     return ("What you've seen lately in the things you follow (real, current — use it the way "
             "you'd actually talk about it, with your own take; don't recite it, and say you "

@@ -2658,7 +2658,7 @@
    "angle": 0,
    "block": 2.6,
    "tall": 8,
-   "crime": 0.8
+   "crime": 0.35
   },
   {
    "name": "Coventry",
@@ -5497,9 +5497,9 @@
  "district_crime_extra": {
   "The Narrows": 0.95,
   "Blackgate Isle": 0.9,
-  "Paris Island": 0.6,
+  "Paris Island": 0.3,
   "Justice Island": 0.1,
-  "Arkham Island": 0.8
+  "Arkham Island": 0.35
  },
  "subway": [
   {

@@ -281,8 +281,9 @@ def _free(contact_id):
     from wayne.contacts import directory
     other = presence.of(directory().get(contact_id))
     later = (time.localtime().tm_hour + 12) % 24
-    other.set_plan([{"from": later, "to": later + 0.5, "doing": "errands", "status": "busy",
-                     "where": "Bristol", "with": []}])
+    errand = [{"from": later, "to": later + 0.5, "doing": "errands", "status": "busy", "where": "Bristol", "with": []}]
+    other.set_plan(errand, t=time.time() - 86400)   # last night planned too: no routine left over from it
+    other.set_plan(errand)
     return other
 
 
@@ -533,3 +534,44 @@ def test_asked_in_a_dm_to_post_in_the_group_it_goes_in_the_group(monkeypatch):
     wrong_thread = "you guys are literally just sitting there\nand randy, quit ghosting us!"
     assert groupchat.speaks_to_group(wrong_thread, chat, book, "nightwing")
     assert not groupchat.speaks_to_group("on it", chat, book, "nightwing")
+
+
+def test_last_nights_routine_outlives_todays_plan_being_written(private_data):
+    """At 00:30 Dick was on patrol; the moment his plan for the day was written, he was home and free."""
+    night = SimpleNamespace(id="nightwing", name="Dick", full_name="Dick Grayson", shares_status=True,
+                            shares_location=True, home="Home, Blüdhaven", texting_pace={},
+                            routine=({"from": 21, "to": 3, "doing": "on patrol", "status": "online", "drift": 0},))
+    state = presence.of(night)
+    half_past = time.mktime(time.strptime("2026-10-10 00:30", "%Y-%m-%d %H:%M"))
+    assert state.now(half_past)["doing"] == "on patrol"
+    state.set_plan([{"from": 9.0, "to": 12.0, "doing": "brunch", "status": "idle", "where": "Blüdhaven"}], t=half_past)
+    assert state.now(half_past)["doing"] == "on patrol"
+
+
+def test_what_they_said_theyre_doing_puts_them_somewhere_sensible(private_data):
+    lucius = SimpleNamespace(id="lucius", name="Lucius", full_name="Lucius Fox", routine=(), shares_status=True,
+                             shares_location=True, home="Home, Upper East Side", texting_pace={})
+    state = presence.of(lucius)
+    state.set_activity("in a board meeting at Wayne Tower", "busy", 60)
+    assert state.whereabouts()[0] == "Wayne Tower"
+    state.set_activity("going to sleep", "offline", 480)
+    assert state.whereabouts()[0] == "Home, Upper East Side"
+
+
+def test_nobody_is_on_the_golf_course_at_three_in_the_morning(private_data):
+    lucius = SimpleNamespace(id="lucius", name="Lucius", full_name="Lucius Fox", routine=(), shares_status=True,
+                             shares_location=True, home="Home, Upper East Side",
+                             texting_pace={"whim_rate": 1.0, "whims": [{"doing": "on the golf course", "minutes": 120}]})
+    state = presence.of(lucius)
+    small_hours = time.mktime(time.strptime("2026-10-10 03:10", "%Y-%m-%d %H:%M"))
+    assert state._whim(small_hours) is None
+
+
+def test_company_never_gives_away_someone_who_keeps_their_whereabouts_private(private_data):
+    from wayne.contacts import directory
+    dick = presence.of(directory().get("nightwing"))
+    dick.set_activity("grabbing food in Crime Alley", "busy", 60, where="Crime Alley", company=["redhood"])
+    jason = presence.of(directory().get("redhood"))
+    jason.set_activity("grabbing food in Crime Alley", "busy", 60, where="Crime Alley", company=["nightwing"])
+    assert dick.whereabouts()[1] == ["redhood"]         # they know who they're with
+    assert dick.public()["with"] == []                  # but Bruce's console doesn't say

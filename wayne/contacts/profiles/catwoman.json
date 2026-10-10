@@ -266,7 +266,10 @@
     },
     "busy_text": 0.3,
     "callback": 0.6,
-    "callback_call": 0.4
+    "callback_call": 0.4,
+    "redial": 2.0,
+    "checks_in": 0.35,
+    "resurface_after": 6
   },
   "shares_status": false,
   "interests": {
