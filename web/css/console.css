@@ -2269,3 +2269,15 @@ body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-in
 
 .toast__mail { display: grid; place-items: center; color: var(--primary); background: var(--surface-2); padding: 7px; }
 .toast__mail svg { width: 100%; height: 100%; display: block; }
+
+/* A call's card, docked in the side panel as its detail: the lists step aside till he goes back. */
+.gm-info.is-docked { position: static; width: auto; margin: 0; padding: 12px 14px 18px; box-shadow: none; border: 0;
+  border-left: 2px solid var(--accent); background: var(--surface); animation: none; }
+.gm-info.is-docked .gm-info__x { display: none; }
+.gm.has-detail .gm-side > [data-pane] { display: none !important; }
+.gm-info__back { display: flex; align-items: center; gap: 6px; margin: -2px 0 10px -4px; padding: 4px 6px; background: none;
+  border: 0; color: var(--text-faint); font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+  cursor: var(--cursor-pointer); }
+.gm-info__back:hover { color: var(--primary); }
+.gm-info__back svg { width: 13px; height: 13px; }
+.gm-info__back[hidden] { display: none; }

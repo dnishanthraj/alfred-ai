@@ -144,11 +144,12 @@ def book(rider, a, b, t=None):
             "pickup": deal["pickup"]}
 
 
-def lift(passenger, bruce_at, them_at, drop_at, t=None):
+def lift(passenger, bruce_at, them_at, drop_at, t=None, then=None):
     """
     He gives one of them a lift: it flies itself to him if it isn't with him, he
     flies to where they're waiting, comes down for them, and drops them at
-    drop_at — and he's there with the jet overhead. ({his trip}, {their trip}),
+    drop_at — then flies on to `then` if he's on his way somewhere himself (his
+    own case), or stays there with the jet overhead. ({his trip}, {their trip}),
     or None if it's mid-flight or too far off to call.
     """
     t = t or time.time()
@@ -170,12 +171,23 @@ def lift(passenger, bruce_at, them_at, drop_at, t=None):
         aboard = to_them["end"] + PICKUP * 60
         across = _flight(them_at, drop_at, aboard, "flying", [PILOT, passenger])
         across["end"] += DROP * 60
-        data["legs"] = kept + legs + [to_them, across, _home_after(drop_at, across["end"])]
+        flown = [to_them, across]
+        if then and math.dist(drop_at, then) > 0.3:
+            onward = _flight(drop_at, then, across["end"], "flying", [PILOT])
+            onward["end"] += DROP * 60
+            flown.append(onward)
+        data["legs"] = kept + legs + flown + [_home_after(flown[-1]["pts"][-1], flown[-1]["end"])]
         _save(data)
-    first = math.dist(*to_them["pts"]) / SPEED + PICKUP
-    total = first + math.dist(*across["pts"]) / SPEED + DROP
-    his = {"pts": to_them["pts"] + [across["pts"][-1]], "start": boarded, "end": across["end"], "by": "on the Batwing",
-           "pickup": boarded, "times": [0.0, round(first / total, 4), 1.0]}      # the stop at their roof, kept in time
+    # His trip through every roof — theirs, their drop, his own — each stop kept in time on the map.
+    spans = [math.dist(*to_them["pts"]) / SPEED + PICKUP, math.dist(*across["pts"]) / SPEED + DROP]
+    if len(flown) > 2:
+        spans.append(math.dist(*flown[2]["pts"]) / SPEED + DROP)
+    total, run, times = sum(spans), 0.0, [0.0]
+    for span in spans:
+        run += span
+        times.append(round(run / total, 4))
+    his = {"pts": to_them["pts"] + [f["pts"][-1] for f in flown[1:]], "start": boarded, "end": flown[-1]["end"],
+           "by": "on the Batwing", "pickup": boarded, "times": times}
     theirs = {"pts": across["pts"], "start": aboard, "end": across["end"], "by": "on the Batwing, with him",
               "pickup": aboard - PICKUP * 60}
     return his, theirs

@@ -226,3 +226,12 @@ def test_the_odds_as_they_stand_count_only_who_is_there_and_move_as_it_goes():
     late = outcomes.estimate(there, there["due"] - 30)
     truth = 1.0 if outcomes.decide(there)["ok"] else 0.0
     assert abs(late - truth) < abs(early - truth)                       # the longer they're in it, the clearer it is
+
+
+def test_a_lift_on_his_way_to_a_case_drops_them_then_carries_him_on():
+    t = _at(23)
+    home = jet.home()
+    me, tim, tims_case, mine = (home[0] + 10, home[1] + 10), (home[0] + 14, home[1] + 16), (40.0, 90.0), (60.0, 60.0)
+    his, theirs = jet.lift("robin", me, tim, tims_case, t, then=mine)
+    assert his["pts"][-1] == list(mine) and theirs["pts"][-1] == list(tims_case)    # Tim off at his, him on to his own
+    assert theirs["end"] < his["end"] and len(his["times"]) == len(his["pts"])

@@ -509,6 +509,14 @@ class Presence:
         otherwise wherever they were when they said it.
         """
         doing, where = activity.get("doing") or "", activity.get("where") or ""
+        if activity.get("follow"):
+            from ..contacts import directory
+            other = directory().get(activity["follow"])
+            if other is not None and other.id != self.contact.id:
+                them = _registry.get(other.id) or of(other)
+                theirs = them._state.get("activity") or {}
+                if theirs.get("follow") != self.contact.id:      # two following each other: each stays put
+                    return them._own_place(t) or where
         if places.is_patrol(doing):
             covering = patrols.sector(self.contact, where or doing, t)
             if covering:
@@ -988,7 +996,7 @@ class Presence:
             self._state["last_active"] = t or time.time()
             self.save()
 
-    def set_activity(self, doing, status, minutes, t=None, where="", company=(), xy=None):
+    def set_activity(self, doing, status, minutes, t=None, where="", company=(), xy=None, follow=None):
         with self._lock:
             t = t or time.time()
             status = status if status in STATUSES else BUSY
@@ -1000,6 +1008,9 @@ class Presence:
             if xy:
                 # Not the place's middle but a point by it: the corner a getaway was cut off at.
                 self._state["activity"]["xy"] = [round(xy[0], 2), round(xy[1], 2)]
+            if follow:
+                # Gone to meet one of them: wherever they are, that's where this one's headed — and then is.
+                self._state["activity"]["follow"] = follow
             self.save()
         if where and not getattr(self.contact, "shares_status", True):
             self.seen_at(where, "they told you", t)

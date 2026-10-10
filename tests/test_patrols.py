@@ -106,3 +106,22 @@ def test_alfred_sees_everything_on_the_console(private_data, monkeypatch):
     view = alfred._batcomputer("what's going on tonight")
     assert "Where everyone is" in view and "Bruce: at" in view and "Batwing" in view
     assert "scanner" in view.lower()
+
+
+def test_going_to_meet_one_of_them_puts_them_where_that_one_is(private_data):
+    tim = SimpleNamespace(id="robin", name="Tim", full_name="Tim Drake", shares_status=True, shares_location=True,
+                          home="Wayne Manor", texting_pace={}, beat=(), routine=())
+    cass = SimpleNamespace(id="orphan", name="Cass", full_name="Cassandra Cain", shares_status=True,
+                           shares_location=True, home="Home, Burnside", texting_pace={}, beat=(), routine=())
+    presence.of(cass).set_activity("at the gym", presence.BUSY, 120, where="Dooley's Gym")
+    presence.of(tim).set_activity("on the way to meet Cass", presence.BUSY, 90, follow="orphan")
+    import wayne.contacts as contacts
+    book = {"robin": tim, "orphan": cass}
+    original = contacts.directory
+    contacts.directory = lambda: type("B", (), {"get": staticmethod(book.get), "__iter__": lambda self: iter(book.values())})()
+    try:
+        assert presence.of(tim)._own_place(time.time()) == "Dooley's Gym"
+        presence.of(cass).set_activity("at the Bijou", presence.BUSY, 120, where="The Bijou")
+        assert presence.of(tim)._own_place(time.time()) == "The Bijou"          # where she goes, he goes
+    finally:
+        contacts.directory = original

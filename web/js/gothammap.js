@@ -1303,10 +1303,44 @@
     return canvas.toDataURL();
   }
 
-  function showInfo(title, sub, body, note, imageUrl, tint) {
+  // A call's card lives in the side panel — the crime system's — as its detail, leaving the map
+  // clear; with the panel folded away (or no room for it), it floats over the map as the rest do.
+  var infoHome = null;
+  function dockInfo(on) {
+    var info = $('.gm-info'), side = $('.gm-side');
+    if (!infoHome) infoHome = info.parentNode;
+    var docked = !!on && !root.classList.contains('is-wide') && !root.classList.contains('is-cramped');
+    if (docked && info.parentNode !== side) side.insertBefore(info, side.querySelector('.gm-tabs').nextSibling);
+    else if (!docked && info.parentNode !== infoHome) infoHome.insertBefore(info, infoHome.querySelector('.gm-legend'));
+    info.classList.toggle('is-docked', docked);
+    $('.gm-info__back').hidden = !docked;
+    root.classList.toggle('has-detail', docked);
+    if (docked) side.scrollTop = 0;
+    // Room for a call's card: a narrow panel opens out while it's up, and goes back after.
+    if (docked && side.offsetWidth < 320 && root.dataset.narrow === undefined) {
+      root.dataset.narrow = root.style.getPropertyValue('--gm-side') || '';
+      root.style.setProperty('--gm-side', '320px');
+      map.resize();
+    } else if (!docked && root.dataset.narrow !== undefined) {
+      if (root.dataset.narrow) root.style.setProperty('--gm-side', root.dataset.narrow);
+      else root.style.removeProperty('--gm-side');
+      delete root.dataset.narrow;
+      map.resize();
+    }
+  }
+  function closeInfo() {
+    $('.gm-info').hidden = true;
+    openReport = null;
+    jetOpen = false;
+    dockInfo(false);
+    $('.gm-info').hidden = true;
+  }
+
+  function showInfo(title, sub, body, note, imageUrl, tint, forCall) {
     var card = $('.gm-info');
     openReport = null;
     jetOpen = false;
+    if (!forCall) dockInfo(false);         // a place's card floats; a call's stays where it is, docked
     card.querySelector('.gm-info__log').hidden = true;
     card.querySelector('.gm-info__assign').hidden = true;
     var go = card.querySelector('.gm-info__go');
@@ -1517,8 +1551,9 @@
              (report.done ? (report.suspect ? 'Suspect: ' + report.suspect + '. ' : report.gang ? 'Looks like ' + report.gang + '. ' : '') +
                             (report.crew >= 3 ? 'About ' + report.crew + ' of them. ' : '') : '') +
              (report.dispatch ? 'Dispatch: \u201c' + report.dispatch + '\u201d' : 'Dispatch is still coming through.'),
-             '', canvas.toDataURL(), SEVERITY[report.severity]);
+             '', canvas.toDataURL(), SEVERITY[report.severity], true);
     openReport = report.id;          // after showInfo, which clears it for any other card
+    dockInfo(true);
     caseProgress(report);
     loadOdds(report);
     reportLog(report);
@@ -2256,13 +2291,18 @@
         if (where && where.error) btn.setAttribute('data-tip', where.error);
       }).catch(function () {}).then(function () { btn.disabled = false; });
     });
-    $('.gm-info__x').addEventListener('click', function () { $('.gm-info').hidden = true; openReport = null; });
+    $('.gm-info__x').addEventListener('click', closeInfo);
+    $('.gm-info__back').addEventListener('click', closeInfo);
     root.querySelectorAll('.gm-tab').forEach(function (t) {
-      t.addEventListener('click', function () { showTab(t.dataset.tab); });
+      t.addEventListener('click', function () {
+        if (root.classList.contains('has-detail')) closeInfo();     // a tab is back to the lists
+        showTab(t.dataset.tab);
+      });
     });
     // The side panel folds away for more map; remembered.
     function side(hidden) {
       root.classList.toggle('is-wide', hidden);
+      if (!$('.gm-info').hidden && openReport) dockInfo(!hidden);
       // Folding the drawer of a squeezed map isn't a preference; folding the panel is.
       if (!root.classList.contains('is-cramped')) remember('gotham-map-side-hidden', hidden);
     }
@@ -2283,6 +2323,7 @@
         e.preventDefault();
         grip.setPointerCapture(e.pointerId);
         start = { x: e.clientX, w: $('.gm-side').offsetWidth };
+        delete root.dataset.narrow;
         grip.classList.add('is-dragging');
         root.classList.add('is-resizing');
       });
@@ -2457,7 +2498,7 @@
     // Escape on the map: a card first, then whoever's picked — and only then the map.
     escape: function () {
       if (!root || root.hidden) return false;
-      if (!$('.gm-info').hidden) { $('.gm-info').hidden = true; openReport = null; return true; }
+      if (!$('.gm-info').hidden) { closeInfo(); return true; }
       if (selected) { deselect(); return true; }
       return false;
     },

@@ -1784,7 +1784,10 @@ class Console(GroupChats):
             if not trip:
                 return {"error": "Nowhere they need to be"}
             drop, name = tuple(trip["pts"][-1]), trip.get("to") or going
-        flights = await asyncio.to_thread(jet.lift, contact_id, mine, them, drop)
+        # On his way to a case of his own: drop them, then on to his — he stays in the jet.
+        own = cases.active("bruce")
+        onward = (own["x"], own["y"]) if own and own["id"] != (case or {}).get("id") else None
+        flights = await asyncio.to_thread(jet.lift, contact_id, mine, them, drop, None, onward)
         if flights is None:
             return {"error": "The Batwing's too far off, or mid-flight"}
         his, theirs = flights
@@ -1798,7 +1801,11 @@ class Console(GroupChats):
             whereabouts.set_activity(f"getting a lift from him in the Batwing, to {name}", presence.BUSY, 60,
                                      where=place, xy=drop)
         whereabouts.set_trip(place, {**theirs, "left": now})
-        batman.ferry(name, drop, his, now)
+        if onward:
+            batman.ferry(own["place"], onward, his, now)
+            cases.retime(own["id"], "bruce", (his["end"] - now) / 60)
+        else:
+            batman.ferry(name, drop, his, now)
         log.info("bruce giving %s a lift to %s", contact_id, name)
         await self._presence_changed(contact)
         await self.broadcast({"type": "bruce", "bruce": batman.state()})
@@ -2198,10 +2205,13 @@ class Console(GroupChats):
                     continue
                 whereabouts = presence.of(contact)
                 whereabouts.clear_activity()
-                whereabouts.put("case_rest", now + random.uniform(45, 120) * 60)
                 if member in result["hurt"]:
                     whereabouts.put("hurt", {"how": result["hurt"][member], "until": now + 36 * 3600,
                                              "on": f"the {closed['kind'].lower()} at {closed['place']}"})
+                    whereabouts.put("case_rest", now + random.uniform(90, 180) * 60)     # home, and patched up
+                else:
+                    # Done here: what next is theirs — back someone up, take the next call, or a breather.
+                    await self._after_case(contact, closed, now)
                 await self._presence_changed(contact)
             self._remember_case(closed, result)
             await self.broadcast({"type": "cases"})
@@ -2225,6 +2235,43 @@ class Console(GroupChats):
                                             "case_closed")
         finally:
             self._closing.discard(case["id"])
+
+    async def _after_case(self, contact, closed, now):
+        """
+        A case over, one of them free again where it ended: what they do next is
+        theirs. Him on something close by — they'd go to him; anyone else of theirs
+        in the thick of it nearby, worse if it's gone wrong — backup; another call
+        round the corner — they take it; otherwise a breather, and back to the night.
+        """
+        from ..engine import cases, incidents
+        here = (closed["x"], closed["y"])
+        drive = (contact.initiative or {}).get("self_dispatch", 1.0)
+        choices = []
+        for c in cases.board(now):
+            if c["status"] == "closed" or c["id"] == closed["id"] or contact.id in cases.team(c):
+                continue
+            far = math.dist(here, (c["x"], c["y"]))
+            if far > 7:
+                continue
+            weight = 0.25 + (0.35 if "bruce" in cases.team(c) else 0) + (0.4 if cases.phase(c, now)[0] == "gone wrong" else 0)
+            weight += 0.1 * max(0, c["severity"] - 2) - 0.03 * far
+            if contact.id == "redhood" and "bruce" in cases.team(c):
+                weight *= 0.5                         # Jason will back him up — he just won't hurry
+            choices.append((weight, c["id"], "backup"))
+        taken = {c["id"] for c in cases.everything()}
+        for r in incidents.at(now):
+            if r["id"] in taken or r["severity"] < 2 or r["status"] == "resolved" or r.get("done"):
+                continue
+            far = math.dist(here, (r["x"], r["y"]))
+            if far <= 5:
+                choices.append((0.12 * r["severity"] - 0.02 * far, r["id"], "next"))
+        best = max(choices, default=None)
+        if best and random.random() < min(0.9, best[0] * drive):
+            presence.of(contact).put("case_rest", 0)
+            log.info("%s, done at %s, going straight to %s (%s)", contact.id, closed["place"], best[1], best[2])
+            await self.assign_case(best[1], contact.id, by="self")
+            return
+        presence.of(contact).put("case_rest", now + random.uniform(10, 30) * 60)
 
     def _remember_case(self, case, result):
         """

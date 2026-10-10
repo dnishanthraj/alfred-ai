@@ -85,7 +85,9 @@ def afterthought(session, exchanges, by="text"):
         '"contact": {"by": "text" or "call", "in_minutes": number or null if it is "when done", '
         '"about": "the subject — e.g. what they found at the docks; never a time like when done"} '
         'or null, "worried": "what about him worries them, in a few words" or null, '
-        '"pickup": true if he is coming to pick them up and they agreed, else false'
+        '"pickup": true if he is coming to pick them up and they agreed, else false, '
+        '"joining": "the first name of one of the family they are now heading off to meet up with or back up, '
+        'if they said so" or null'
         + (', "case_closed": "how it ended, in a few words" or null' if case else '') + '}')
     try:
         reply = model.ask(contact.model, [{"role": "user", "content": instruction}],
@@ -120,6 +122,14 @@ def apply(session, found):
         state.set_activity(doing, status, minutes,
                            where="" if where.strip().lower().strip(" .") in _NOTHING else where,
                            company=_people(found.get("with"), session.contact))
+    joining = found.get("joining")
+    if isinstance(joining, str) and joining.strip().lower().strip(" .") not in _NOTHING:
+        from ..contacts import directory
+        other = directory().find(joining.strip())
+        if other is not None and other.id != session.contact.id and getattr(other, "shares_location", True):
+            where, _ = presence.of(other).whereabouts()
+            state.set_activity(f"on the way to meet {other.name}", presence.BUSY, 90, where=where or "",
+                               company=[other.id], follow=other.id)
     reach = found.get("contact")
     if isinstance(reach, dict) and isinstance(reach.get("about"), str) and reach["about"].strip():
         minutes = _number(reach.get("in_minutes"), None)
