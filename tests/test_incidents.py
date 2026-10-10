@@ -125,8 +125,9 @@ def test_a_gang_crime_names_the_crew_whose_streets_they_are():
     reports = [r for r in _reports(range(0, 24, 2)) if r.get("gang")]
     assert reports
     for r in reports:
-        assert r["kind"] in incidents._GANG_KINDS
-        assert all(crew in incidents.GANGS[r["area"]] for crew in r["gang"].split(" and "))
+        came_in_as = (r.get("was") or [r["kind"]])[0]        # a drive-by that became a chase is still theirs
+        assert came_in_as in incidents._GANG_KINDS
+        assert all(crew in incidents.GANGS[r.get("origin_area", r["area"])] for crew in r["gang"].split(" and "))
 
 
 def test_nobody_in_the_family_has_a_call_come_from_their_home():

@@ -505,7 +505,7 @@ def _as_it_stands(report, t, cased):
     if here != (report["x"], report["y"]):
         name, area = _nearest_place(*here)
         out.update(x=round(here[0], 2), y=round(here[1], 2), origin=report["place"], place=name or report["place"],
-                   area=area or report["area"])
+                   area=area or report["area"], origin_area=report["area"])
     return out
 
 
