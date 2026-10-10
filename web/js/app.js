@@ -1429,7 +1429,11 @@
     var where = $('hovercard-where');
     var company = (p['with'] || []).map(function (cid) { return (state.contacts[cid] || {}).name; })
       .filter(Boolean);
-    where.textContent = p.where ? p.where + (company.length ? ' · with ' + company.join(', ') : '') : '';
+    // On the way somewhere is a state of its own: where to, how, how long — and with nobody yet.
+    var route = p.route && p.route.end * 1000 > Date.now() ? p.route : null;
+    where.textContent = !p.where ? '' : route
+      ? '→ ' + p.where + (route.by ? ' · ' + route.by : '') + ' · ' + Math.max(1, Math.round((route.end * 1000 - Date.now()) / 60000)) + ' min'
+      : p.where + (company.length ? ' · with ' + company.join(', ') : '');
     where.hidden = !p.where;
     var r = anchor.getBoundingClientRect();
     card.hidden = false;
@@ -3051,10 +3055,16 @@
         return;
       }
       if (!PTT_CODES[e.code] || state.spaceDown) return;
-      // Never while typing — the composer, a text, the personnel file — or
-      // Space in a message opened the mic and cut the contact off.
+      // Never while typing — a text, the personnel file, a search — or Space in
+      // a message opened the mic and cut the contact off. But the call's own
+      // box, empty, is the mic: it's focused the moment a call connects, and
+      // every press went into it instead. And a box that's been put away (the
+      // Codex closed over its search) still holds focus without being typed in.
       var t = e.target;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      var inBox = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+      if (inBox && t === el.input && !t.value.trim()) inBox = false;
+      if (inBox && !t.offsetParent) inBox = false;
+      if (inBox) return;
       if (state.mode !== 'ptt' || !state.connectedId) return;
       e.preventDefault();
       if (state.muted) {

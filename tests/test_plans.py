@@ -1,7 +1,6 @@
 """Their week, and the plans he makes with them: read, answered, kept — and turned up to."""
 import datetime
 import json
-import time
 from types import SimpleNamespace
 
 import pytest

@@ -432,7 +432,34 @@ class Presence:
         t = t or time.time()
         leader, group = together(self, t)
         place = (self if leader is self else leader)._own_place(t)
-        return place, [p.contact.id for p in group if p is not self]
+        # Together once they're both there: whoever's still on the way to the
+        # place isn't with anyone yet. Dick said Tim was over for Mario Kart
+        # while Tim had twenty minutes of driving left.
+        if self._travelling(place, t):
+            return place, []
+        return place, [p.contact.id for p in group if p is not self and not p._travelling(place, t)]
+
+    def _travelling(self, place, t):
+        """On their way to `place` at t, as the journey was last worked out."""
+        trip = self._state.get("trip")
+        return bool(trip and trip.get("to") == place and len(trip.get("pts") or []) > 1
+                    and trip.get("start", 0) <= t < trip.get("end", 0))
+
+    def coming(self, t=None):
+        """Those on their way to join them, with the minutes they've got to go: [(name, minutes)]."""
+        from ..contacts import directory
+        t = t or time.time()
+        leader, group = together(self, t)
+        place = (self if leader is self else leader)._own_place(t)
+        out = []
+        for p in group:
+            if p is self:
+                continue
+            p.trip(place, places.resolve(place), t)            # their journey, worked out as of now
+            if p._travelling(place, t):
+                found = directory().get(p.contact.id)
+                out.append((found.name if found else p.contact.id, max(1, round((p._state["trip"]["end"] - t) / 60))))
+        return out
 
     def _situation(self, t):
         """
@@ -534,13 +561,15 @@ class Presence:
         shown = {"status": state["status"], "doing": state["doing"],
                  "last_active": state["last_active"] or None, "line": self.line(t)}
         if getattr(self.contact, "shares_location", True):
-            shown["where"], company = self.whereabouts(t)
+            where, company = self.whereabouts(t)
             shown["with"] = sharing(company)
-            shown["spot"] = places.resolve(shown["where"])
-            trip = self.trip(shown["where"], shown["spot"], t)
+            shown["spot"] = places.resolve(where)
+            shown["where"] = self.label(where)
+            trip = self.trip(where, shown["spot"], t)
             if trip:
+                here = travel.position(trip, t or time.time())
                 shown["route"] = {"pts": trip["pts"], "start": trip["start"], "end": trip["end"], "from": trip.get("from", ""),
-                                  "by": trip.get("by", "")}
+                                  "by": travel.crossing(*here) or trip.get("by", "")}
         return shown
 
     # --- getting about -----------------------------------------------------
@@ -591,8 +620,12 @@ class Presence:
                 self.save()
                 return None
             moving = bool(trip and trip.get("pts") and len(trip["pts"]) > 1 and trip.get("start", 0) <= left_at < trip["end"])
+            lead = None
             if moving:
                 origin = travel.position(trip, left_at)        # turned round on the way somewhere else
+                ashore = travel.landfall(trip, left_at)        # on a ferry or a bridge: across it first
+                if ashore:
+                    lead, origin, crossed = ashore
             else:
                 came = places.resolve(before or "")
                 origin = (came["x"], came["y"]) if came else None
@@ -606,6 +639,10 @@ class Presence:
             how = getattr(self.contact, "gets_about", "drive") or "drive"
             pts, minutes = travel.route(origin, here, None if moving else before, spot["name"], patrol=suited,
                                         mode=how)
+            if lead:
+                # The rest of the crossing, then the new way from where it lands.
+                minutes += (crossed - left_at) / 60
+                pts = lead + pts[1:]
             means = ("over the rooftops" if suited and len(pts) <= 12 else "on the bike" if suited
                      else "on foot" if len(pts) == 2 else "on the subway" if how == "subway" and len(pts) < 12 else "driving")
             trip = {"to": where, "from": "" if moving else (before or ""), "pts": pts, "start": left_at,
@@ -647,14 +684,24 @@ class Presence:
         doing = (block.get("doing") or "").strip()
         where, company = self.whereabouts(t)
         book = directory()
+        trip = self.trip(where, places.resolve(where), t) if where else None
+        if trip and not company:
+            # On the way: who they're going to meet there.
+            company = [p.contact.id for p in together(self, t)[1] if p is not self]
         names = [book.get(c).name for c in company if book.get(c)]
         # The line they set, which he can see — "didn't you read my status?"
         status = self.line(t)
         said = f' Your status line, which he can see, says "{status}".' if status else ""
         place = self._spoken_place(where)
-        trip = self.trip(where, places.resolve(where), t) if where else None
+        on_the_way = [] if trip else self.coming(t)
         if trip:
             line = self._en_route(trip, place, doing, t)
+        elif doing and on_the_way:
+            # Mario Kart with Tim doesn't start until Tim's there.
+            who = " and ".join(n for n, _ in on_the_way)
+            soonest = min(m for _, m in on_the_way)
+            line = (f"Right now you're at {place}, waiting on {who} — about {soonest} minute{'s' if soonest != 1 else ''} "
+                    f"out — for: {doing}. It hasn't started; they aren't there yet.")
         elif doing:
             how_long = describe_until(block.get("until", 0), t) if firm else ""
             line = (f"Right now you're {doing}"
@@ -665,13 +712,16 @@ class Presence:
         if names:
             company_line = "You're meeting" if trip else "You're with"
             line += f" {company_line} {' and '.join(names)}."
+        if on_the_way and not doing:
+            line += " On their way to you, not there yet: " + ", ".join(
+                f"{n} (about {m} minute{'s' if m != 1 else ''} out)" for n, m in on_the_way) + "."
         spot = places.resolve(where) if where and not trip else None
         nearby = places.around(spot["x"], spot["y"], but=spot["name"]) if spot else []
         if nearby:
             line += f" Close by: {', '.join(nearby)}."
         if state["status"] == OFFLINE:
             line += " Your phone wasn't in your hand; he's reached you anyway."
-        elif state["status"] == BUSY and doing:
+        elif state["status"] == BUSY and doing and not on_the_way:
             line += " You're in the middle of it."
         return (line + said).strip()
 
@@ -681,6 +731,7 @@ class Presence:
         gone = max(1, round((t - trip["start"]) / 60))
         by = trip.get("by") or ""
         x, y = travel.position(trip, t)
+        by = travel.crossing(x, y) or by
         passing = places.near(x, y)
         origin = self._spoken_place(trip.get("from") or "")
         through = {"on the subway": "under", "over the rooftops": "over the roofs", "on foot": "walking through"}.get(by, "through")
@@ -693,10 +744,29 @@ class Presence:
             line += f" When you get there: {doing}."
         return line
 
+    def _whose_home(self, where):
+        """The contact whose home `where` is, if it's someone else's — 'Home, Blüdhaven' in Tim's day is Dick's."""
+        if not where or where == (getattr(self.contact, "home", "") or "") or not re.match(r"(?i)\s*home\b", where):
+            return None
+        from ..contacts import directory
+        return next((c for c in directory() if c.id != self.contact.id and (getattr(c, "home", "") or "") == where), None)
+
+    def label(self, where):
+        """Where they are as the page shows it: someone else's home by whose it is — 'Dick's place, Blüdhaven'."""
+        other = self._whose_home(where)
+        if other is None:
+            return where or ""
+        rest = where.split(",", 1)[1].strip() if "," in where else ""
+        return f"{other.name}'s place" + (f", {rest}" if rest else "")
+
     def _spoken_place(self, where):
-        """'Home, Blüdhaven' as they'd think of it — home; anywhere else, by its name."""
+        """'Home, Blüdhaven' as they'd think of it — home if it's theirs, Dick's place if it's his; anywhere else, by its name."""
         if not where:
             return ""
+        other = self._whose_home(where)
+        if other is not None:
+            rest = where.split(",", 1)[1].strip() if "," in where else ""
+            return f"{other.name}'s place" + (f" in {rest}" if rest else "")
         home = getattr(self.contact, "home", "") or ""
         if where == home or re.match(r"(?i)\s*home\b", where):
             rest = where.split(",", 1)[1].strip() if "," in where else (where if where != "Home" else "")

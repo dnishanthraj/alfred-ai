@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import logging.handlers
+import math
 import random
 import re
 import threading
@@ -1598,7 +1599,7 @@ class Console(GroupChats):
                 return {"declined": True}
         current = cases.active(contact_id)
         if current and current["id"] != report_id:
-            cases.drop(current["id"])          # off the last one, on to this
+            cases.leave(current["id"], contact_id)      # off the last one, on to this
         # From wherever they are, by the roads, as long as the roads take — and the
         # map shows them on their way there, arriving when the case does.
         whereabouts = presence.of(contact)
@@ -1627,12 +1628,22 @@ class Console(GroupChats):
         return case
 
     async def _case_tick(self, now):
-        """Patrols take what's on their beat; cases reach the scene, and run their course."""
+        """
+        Patrols take what's near them; cases reach the scene, and run their course.
+
+        Anyone out on patrol is expected to pick up a serious call close by —
+        not the instant it comes over the scanner, but within a few minutes, the
+        worse it is and the nearer, the sooner. A case gone bad, or the worst
+        kind, pulls in whoever's near as backup. Jason goes for the violent ones
+        and the crews; nobody tells Randy what's his.
+        """
         from ..engine import cases, incidents, places
-        busy = {c["assignee"] for c in cases.board() if c["status"] != "closed"}
+        openly = [c for c in cases.everything() if c["status"] != "closed"]
+        busy = {cid for c in openly for cid in cases.team(c)}
         taken = {c["id"] for c in cases.everything()}
         open_ = [r for r in incidents.at(now) if r["id"] not in taken and r["severity"] >= 2
                  and r["status"] in ("reported", "units responding", "backup requested")]
+        violent = ("shoot", "stab", "machete", "gang", "turf", "drive-by", "robbery", "hostage", "assault", "attack")
         for cid in cases.FIELD:
             contact = self.directory.get(cid)
             if contact is None or cid in busy or cid in self._members():
@@ -1640,13 +1651,32 @@ class Console(GroupChats):
             whereabouts = presence.of(contact)
             if not places.is_patrol(whereabouts.now()["doing"]) or now < (whereabouts.get("case_rest") or 0):
                 continue
+            spot = places.resolve(whereabouts.whereabouts(now)[0] or "")
             areas = {(places.resolve(b) or {}).get("area") for b in contact.beat}
-            mine = [r for r in open_ if r["area"] in areas]
-            # Now and then, not every half-minute: a patrol takes a call off the
-            # scanner a few times a night, with a breather after each.
-            if mine and random.random() < 0.01:
-                whereabouts.put("case_rest", now + random.uniform(45, 120) * 60)
-                await self.assign_case(mine[0]["id"], cid, by="self")
+
+            def near(x, y, spot=spot):
+                return math.dist((spot["x"], spot["y"]), (x, y)) if spot else 99.0
+
+            choices = []
+            for r in open_:
+                far = near(r["x"], r["y"])
+                if r["area"] not in areas and far > 6:
+                    continue
+                if cid == "redhood" and not any(v in r["kind"].lower() for v in violent):
+                    continue        # Jason doesn't do break-ins
+                # A tick is half a minute: the worst on their doorstep in a minute or two, a
+                # minor one across the district maybe never.
+                choices.append((0.05 * r["severity"] * (1.4 if far < 2.5 else 1.0 if far < 6 else 0.5), r, "take"))
+            for c in openly:
+                kind, _how = cases.phase(c, now)
+                if (kind == "gone wrong" or c["severity"] >= 4) and near(c["x"], c["y"]) <= 8:
+                    choices.append((0.12 if kind == "gone wrong" else 0.05, c, "join"))
+            if not choices:
+                continue
+            odds, what, _how = max(choices, key=lambda ch: ch[0])
+            if random.random() < odds * (contact.initiative or {}).get("self_dispatch", 1.0):
+                whereabouts.put("case_rest", now + random.uniform(25, 70) * 60)
+                await self.assign_case(what["id"], cid, by="self")
                 busy.add(cid)
         # A case gone bad: whoever's in it may call for help — a text, or for the
         # worst of them, a ring — once, and as themselves. Jason never does.
@@ -1674,19 +1704,20 @@ class Console(GroupChats):
                 self._closing.add(case["id"])
                 self._spawn(self._close_case(case))
 
-    def _on_scene(self, case):
+    def _on_scene(self, case, who=None):
         """
         They've got there: now they're working it, where it is. Whether he
         hears that they've arrived is theirs — Tim and Barbara say so, Cass
         might send a word, Jason doesn't — and never mid-call, where he'd hear it anyway.
         """
-        contact = self.directory.get(case["assignee"])
+        contact = self.directory.get(who or case["assignee"])
+        mine = (case.get("members") or {}).get(who or case["assignee"]) or {"by": case.get("by")}
         if contact is not None:
             presence.of(contact).set_activity(f"working the {case['kind'].lower()} at {case['place']}",
                                               presence.BUSY, 90, where=case["place"])
             self._spawn(self._presence_changed(contact))
             odds = (contact.initiative or {}).get("case_updates", 0.4)
-            if case.get("by") == "him" and contact.id not in self._members() and random.random() < odds:
+            if mine.get("by") == "him" and contact.id not in self._members() and random.random() < odds:
                 self._spawn(self._send_unprompted(contact, f"the {case['kind'].lower()} at {case['place']}",
                                                   "case_arrived"))
 
@@ -2395,7 +2426,8 @@ async def map_incidents():
     for r in incidents.at():
         case = by_id.get(r["id"])
         if case:
-            r = {**r, "assignee": case["assignee"], "case": case["status"], "outcome": case.get("outcome", "")}
+            r = {**r, "assignee": case["assignee"], "team": cases.team(case), "case": case["status"],
+                 "outcome": case.get("outcome", "")}
         reports.append(r)
     return JSONResponse({"incidents": reports})
 

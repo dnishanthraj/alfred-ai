@@ -7,13 +7,19 @@ someone on patrol nearby takes it themselves. From then on it's theirs: they
 head there (the map follows), it's part of what they know when he talks to
 them, and they may well tell him about it — that they've got it, how it went.
 
+More than one of them can work a case: he can put a second on it, someone on
+patrol nearby joins in, and a case gone wrong pulls the family in as backup.
+Each comes from wherever they are and is on scene when they get there; the
+first on it leads, and writes up how it ended.
+
 A case closes the way a real one does: they say it's handled, in a call or a
 text (the pass after every conversation listens for that), or it runs its
 course and they close it themselves. Either way it gets a line of how it
 ended, in their words, and it stays on the board for a while after.
 
 Only the people who'd work a scene take cases: Dick, Tim, Barbara, Cass,
-Jason, Randy — not Alfred, not Lucius, not Selina.
+Jason, Randy — not Alfred, not Lucius, not Selina. Jason and Randy can be
+asked; they mostly do their own thing.
 """
 import json
 import re
@@ -47,16 +53,21 @@ def _save(cases):
     atomic_write(_path(), json.dumps(kept[-200:], ensure_ascii=False))
 
 
+def team(case):
+    """Everyone on a case, the lead first."""
+    return case.get("team") or ([case["assignee"]] if case.get("assignee") else [])
+
+
 def known(case):
     """
-    Whether he'd know about a case: he gave it, or whoever took it lets him see
-    where they are. Jason working something on his own is Jason's business.
+    Whether he'd know about a case: he gave it to one of them, or someone on it
+    lets him see where they are. Jason working something on his own is Jason's business.
     """
-    if case.get("by") == "him":
+    if case.get("by") == "him" or any(m.get("by") == "him" for m in (case.get("members") or {}).values()):
         return True
     from ..contacts import directory
-    contact = directory().get(case.get("assignee"))
-    return contact is None or getattr(contact, "shares_location", True)
+    book = directory()
+    return any(book.get(cid) is None or getattr(book.get(cid), "shares_location", True) for cid in team(case))
 
 
 def board(now=None):
@@ -68,13 +79,13 @@ def board(now=None):
 
 def active(contact_id):
     """The case they're on right now, or None."""
-    return next((c for c in everything() if c["assignee"] == contact_id and c["status"] != "closed"), None)
+    return next((c for c in everything() if contact_id in team(c) and c["status"] != "closed"), None)
 
 
 def recent(contact_id, now=None):
     """The last case they closed, if it was tonight."""
     now = now or time.time()
-    closed = [c for c in everything() if c["assignee"] == contact_id and c["status"] == "closed"
+    closed = [c for c in everything() if contact_id in team(c) and c["status"] == "closed"
               and now - c.get("closed_at", 0) < KEEP_CLOSED]
     return max(closed, key=lambda c: c["closed_at"]) if closed else None
 
@@ -85,31 +96,66 @@ def for_report(report_id):
 
 def assign(report, contact_id, by="him", travel=0):
     """
-    Put someone on a report. Replaces whoever had it. Returns the case.
-    `travel` is how many minutes it takes them to get there from wherever they are.
+    Put someone on a report — the first on it leads; anyone after joins them.
+    Returns the case. `travel` is how many minutes it takes them to get there
+    from wherever they are.
     """
     now = time.time()
     with _lock:
         cases = everything()
         case = next((c for c in cases if c["id"] == report["id"]), None)
+        if case is not None and case["status"] == "closed":
+            return case
         if case is None:
             case = {"id": report["id"], "kind": report["kind"], "severity": report["severity"],
                     "place": report["place"], "area": report["area"], "x": report["x"], "y": report["y"],
                     "dispatch": report.get("dispatch", ""), "suspect": report.get("suspect", ""),
-                    "opened_at": now, "log": []}
+                    "opened_at": now, "log": [], "team": [], "members": {}}
             cases.append(case)
-        case.update({"assignee": contact_id, "by": by, "status": "assigned", "updated_at": now,
-                     "travel": round(travel, 1),
-                     "due": now + (travel + 35 + 12 * report["severity"]) * 60})
-        case["log"].append({"at": now, "text": f"assigned to {contact_id} ({'by him' if by == 'him' else 'took it'})"})
+        case.setdefault("team", team(case))
+        case.setdefault("members", {})
+        if contact_id in case["team"]:
+            return case
+        first = not case["team"]
+        case["team"].append(contact_id)
+        case["members"][contact_id] = {"by": by, "travel": round(travel, 1), "joined": now, "status": "assigned"}
+        if first:
+            case.update({"assignee": contact_id, "by": by, "status": "assigned", "updated_at": now,
+                         "travel": round(travel, 1), "due": now + (travel + 35 + 12 * report["severity"]) * 60})
+        else:
+            # A second pair of hands gets it done sooner, and no later than they can get there.
+            case["due"] = max(now + (travel + 15) * 60, case.get("due", now) - 8 * 60)
+        case["log"].append({"at": now, "text": f"{'assigned to' if first else 'joined by'} {contact_id} "
+                                               f"({'by him' if by == 'him' else 'took it'})"})
         _save(cases)
     return case
 
 
+def leave(case_id, contact_id):
+    """They've moved on to something else: off this case — and the case gone with them if they were all it had."""
+    with _lock:
+        cases = everything()
+        case = next((c for c in cases if c["id"] == case_id), None)
+        if case is None:
+            return
+        members = team(case)
+        if contact_id not in members:
+            return
+        rest = [m for m in members if m != contact_id]
+        if not rest and case["status"] != "closed":
+            cases = [c for c in cases if c["id"] != case_id]
+        else:
+            case["team"] = rest
+            (case.get("members") or {}).pop(contact_id, None)
+            case["assignee"] = rest[0] if rest else case.get("assignee")
+        _save(cases)
+
+
 def advance(now=None, arrived=None):
     """
-    On scene once they've had time to get there (`arrived(case)` is told).
-    Returns cases that have run their course.
+    Each of them on scene once they've had time to get there (`arrived(case,
+    who)` is told); the case is on scene with the first. Returns cases that
+    have run their course.
     """
     now = now or time.time()
     due, landed = [], []
@@ -117,18 +163,27 @@ def advance(now=None, arrived=None):
         cases = everything()
         changed = False
         for c in cases:
-            if c["status"] == "assigned" and now - c["updated_at"] > c.get("travel", 9) * 60:
-                c["status"], c["updated_at"] = "on scene", now
-                c["log"].append({"at": now, "text": "on scene"})
-                landed.append(c)
-                changed = True
+            if c["status"] == "closed":
+                continue
+            members = c.get("members") or {c["assignee"]: {"joined": c["updated_at"], "travel": c.get("travel", 9),
+                                                            "status": "on scene" if c["status"] == "on scene" else "assigned"}}
+            for cid, m in members.items():
+                if m.get("status") == "assigned" and now - m.get("joined", now) > m.get("travel", 9) * 60:
+                    m["status"] = "on scene"
+                    c["log"].append({"at": now, "text": f"{cid} on scene"})
+                    landed.append((c, cid))
+                    changed = True
+                    if c["status"] == "assigned":
+                        c["status"], c["updated_at"] = "on scene", now
+            if "members" in c:
+                c["members"] = members
             if c["status"] in ("assigned", "on scene") and now > c.get("due", now + 1):
                 due.append(c)
         if changed:
             _save(cases)
-    for c in landed:
+    for c, cid in landed:
         if arrived:
-            arrived(c)
+            arrived(c, cid)
     return due
 
 
@@ -222,12 +277,20 @@ def brief(contact_id, now=None):
     now = now or time.time()
     case = active(contact_id)
     if case:
-        minutes = int((now - case["opened_at"]) / 60)
-        who = "He put you on it" if case["by"] == "him" else "You took it yourself"
+        mine = (case.get("members") or {}).get(contact_id) or {"by": case.get("by"), "joined": case["opened_at"]}
+        minutes = int((now - mine.get("joined", case["opened_at"])) / 60)
+        who = "He put you on it" if mine.get("by") == "him" else "You took it yourself"
         _, how = phase(case, now)
+        if mine.get("status") == "assigned" and case["status"] == "on scene":
+            left = max(1, round((mine["joined"] + mine.get("travel", 9) * 60 - now) / 60))
+            how = f"on your way to join them, about {left} minute{'s' if left != 1 else ''} out"
+        from ..contacts import directory
+        book = directory()
+        others = [book.get(c).name if book.get(c) else c for c in team(case) if c != contact_id]
         return (f"You're working a case: {case['kind'].lower()} at {case['place']} ({case['area']})"
                 + (f" — dispatch said: \"{case['dispatch']}\"" if case.get("dispatch") else "")
-                + f". {who} {minutes} minutes ago. Right now you're {how}. It's yours to talk about, "
+                + f". {who} {minutes} minutes ago" + (f", with {' and '.join(others)} on it too" if others else "")
+                + f". Right now you're {how}. It's yours to talk about, "
                 "your way — what you've found, what you think, how it's going.")
     done = recent(contact_id, now)
     if done:
@@ -240,7 +303,7 @@ def board_note(names, now=None):
     """The case board, for whoever watches it (Alfred, Barbara)."""
     lines = []
     for c in board(now)[:6]:
-        who = names.get(c["assignee"], c["assignee"])
+        who = " and ".join(names.get(cid, cid) for cid in team(c))
         state = f"closed — {c.get('outcome', '')}" if c["status"] == "closed" else c["status"]
         lines.append(f"{c['kind'].lower()} at {c['place']}: {who}, {state}")
     return ("The case board: " + "; ".join(lines) + ".") if lines else ""

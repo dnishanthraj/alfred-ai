@@ -1268,11 +1268,14 @@
       }).forEach(function (c) {
         var b = document.createElement('button');
         b.type = 'button';
-        b.className = 'gm-assign' + (report.assignee === c.id ? ' is-on' : '');
+        var onIt = (report.team || (report.assignee ? [report.assignee] : [])).indexOf(c.id) !== -1;
+        b.className = 'gm-assign' + (onIt ? ' is-on' : '');
+        b.disabled = onIt;
         b.style.setProperty('--accent', c.accent);
         var p = c.presence || {};
         var state = p.status === 'offline' ? 'asleep or out of reach' : p.doing || p.status || '';
-        b.setAttribute('data-tip', 'Put ' + c.name + ' on it' + (state ? ' — ' + state : ''));
+        b.setAttribute('data-tip', onIt ? c.name + '\u2019s on it' : (report.assignee ? 'Send ' + c.name + ' too' : 'Put ' + c.name + ' on it')
+                                   + (state && !onIt ? ' — ' + state : ''));
         b.dataset.status = p.status || '';
         var face = document.createElement('span');
         opts.portrait(face, c);
@@ -1356,22 +1359,35 @@
     var li = document.createElement('li');
     li.className = 'gm-list__item';
     li.style.setProperty('--sev', SEVERITY[r.severity]);
-    var who = r.assignee && opts.contacts()[r.assignee];
-    li.innerHTML = '<i class="gm-list__sev"></i><span class="gm-list__text"><span class="gm-list__head"><b></b>' +
-                   '<time></time></span><small></small><span class="gm-list__status"></span></span>';
+    var book = opts.contacts();
+    var crew = (r.team || (r.assignee ? [r.assignee] : [])).map(function (id) { return book[id]; }).filter(Boolean);
+    var who = crew[0];
+    // The time in a column of its own at the right, the face (if any) under it:
+    // inside the text it sat wherever the text ended, a face's width apart.
+    li.innerHTML = '<i class="gm-list__sev"></i><span class="gm-list__text"><span class="gm-list__head"><b></b></span>' +
+                   '<small></small><span class="gm-list__status"></span></span><span class="gm-list__aside"><time></time></span>';
     li.querySelector('b').textContent = r.kind;
     li.querySelector('time').textContent = clock(r.at);
     var toll = tollText(r.toll);
     li.querySelector('small').textContent = r.place + (r.area && r.area !== r.place ? ', ' + r.area : '') + (toll ? ' · ' + toll : '');
     var status = li.querySelector('.gm-list__status');
-    status.textContent = who ? who.name + ' · ' + (r.case === 'closed' ? 'closed' : r.case) : r.status;
+    status.textContent = who ? crew.map(function (c) { return c.name; }).join(' + ') + ' · ' +
+                               (r.case === 'closed' ? 'closed' : r.case) : r.status;
     status.dataset.s = who ? 'case' : r.status.replace(/ /g, '-');
-    if (withWho && who) {
-      var face = document.createElement('span');
-      face.className = 'gm-list__face';
-      face.style.setProperty('--accent', who.accent);
-      opts.portrait(face, who);
-      li.appendChild(face);
+    if (withWho && crew.length) {
+      // Everyone on it, overlapping like a hand of cards, the lead on top.
+      var faces = document.createElement('span');
+      faces.className = 'gm-list__faces';
+      crew.slice(0, 4).forEach(function (c, i) {
+        var face = document.createElement('span');
+        face.className = 'gm-list__face';
+        face.style.setProperty('--accent', c.accent);
+        face.style.zIndex = String(10 - i);
+        face.dataset.tip = c.name;
+        opts.portrait(face, c);
+        faces.appendChild(face);
+      });
+      li.querySelector('.gm-list__aside').appendChild(faces);
     }
     li.tabIndex = 0;
     li.setAttribute('role', 'button');
@@ -1516,6 +1532,15 @@
     root.classList.toggle('is-night', n > 0.5);
   }
 
+  // The bat on the clouds, as Arkham drew it: swept horns, pointed ears, the
+  // trailing edge in two scallops to a point.
+  var ARKHAM_BAT = '<svg viewBox="140 570 1520 660" aria-hidden="true"><path d="M147 935C160 860 260 720 380 650' +
+    'C440 615 490 595 531 580C495 612 480 650 492 690C510 740 570 775 650 795C710 808 770 814 810 815L837 662' +
+    'L871 738L931 738L963 662L990 815C1030 814 1090 808 1150 795C1230 775 1290 740 1308 690C1320 650 1305 612 1269 580' +
+    'C1310 595 1360 615 1420 650C1540 720 1640 860 1653 935C1560 905 1400 905 1330 955C1300 980 1290 1020 1290 1055' +
+    'C1230 1015 1150 1010 1080 1035C1000 1065 940 1130 900 1220C860 1130 800 1065 720 1035C650 1010 570 1015 510 1055' +
+    'C510 1020 500 980 470 955C400 905 240 905 147 935Z"/></svg>';
+
   var signal = null;
   function batSignal() {
     var night = nightness(new Date()) > 0.6;          // lit once the dusk is well on, as the sky goes
@@ -1524,7 +1549,7 @@
     if (night && !signal) {
       var el = document.createElement('div');
       el.className = 'gm-signal';
-      el.innerHTML = '<span class="gm-signal__beam"></span><span class="gm-signal__bat"></span>';
+      el.innerHTML = '<span class="gm-signal__beam"></span><span class="gm-signal__bat">' + ARKHAM_BAT + '</span>';
       el.setAttribute('data-tip', 'The Signal — GCPD Central');
       signal = new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat(ll(gcpd.x, gcpd.y)).addTo(map);
     } else if (!night && signal) {

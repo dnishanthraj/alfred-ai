@@ -1909,10 +1909,18 @@ class ContactSession:
             if not other.shares_location:
                 dark.append(other.name)
                 continue
-            state, (where, company) = presence.of(other).now(), presence.of(other).whereabouts()
+            them = presence.of(other)
+            state, (where, company) = them.now(), them.whereabouts()
             with_ = [book.get(c).name for c in presence.sharing(company) if book.get(c)]
+            journey = them.trip(where, places.resolve(where), time.time()) if where else None
+            if journey:
+                # On the way is its own state: where to, and how long — not there, with nobody yet.
+                left = max(1, round((journey["end"] - time.time()) / 60))
+                lines.append(f"{other.name}: on the way to {them.label(where)}, {journey.get('by') or 'travelling'}, "
+                             f"about {left} min out")
+                continue
             lines.append(f"{other.name}: {state['status']}" + (f", {state['doing']}" if state["doing"] else "")
-                         + (f" — {where}" if where else "") + (f", with {' and '.join(with_)}" if with_ else ""))
+                         + (f" — {them.label(where)}" if where else "") + (f", with {' and '.join(with_)}" if with_ else ""))
         from . import cases, incidents
         scanner = incidents.scanner_note()
         board = cases.board_note({c.id: c.name for c in book})

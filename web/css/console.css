@@ -1650,6 +1650,9 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
   white-space: nowrap; min-width: 0; }
 .gm-list__head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .gm-list__head time { margin-left: auto; flex: none; font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+.gm-list__aside { align-self: stretch; flex: none; display: flex; flex-direction: column; align-items: flex-end;
+  justify-content: space-between; gap: 6px; padding-top: 1px; }
+.gm-list__aside time { font-family: var(--mono); font-size: 10px; line-height: 1; color: var(--text-faint); }
 .gm-list__text small { font-size: 10.5px; line-height: 1.35; color: var(--text-dim); display: -webkit-box;
   -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 /* Where it's got to: a chip in the status's own colour. */
@@ -1661,6 +1664,9 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm-list__status[data-s="backup-requested"] { color: #ff6b5f; border-color: rgba(255, 107, 95, 0.4); }
 .gm-list__status[data-s="contained"], .gm-list__status[data-s="resolved"] { color: #58c08a; border-color: rgba(88, 192, 138, 0.3); }
 .gm-list__status[data-s="case"] { color: var(--text); border-color: rgba(143, 211, 255, 0.35); }
+.gm-list__faces { display: flex; flex-direction: row-reverse; justify-content: flex-start; }
+.gm-list__faces .gm-list__face { position: relative; margin-left: -7px; box-shadow: 0 0 0 2px var(--surface, #0a0f18); }
+.gm-list__faces .gm-list__face:last-child { margin-left: 0; }
 .gm-list__face { width: 22px; height: 22px; flex: none; border-radius: 50%; border: 1px solid var(--accent);
   background-color: var(--surface-2); background-size: cover; }
 .gm-list__empty { padding: 14px; font-size: 12px; color: var(--text-faint); }
@@ -1738,10 +1744,11 @@ html[data-seats="4"] .seat__line { min-height: 2.9em; font-size: 14px; }
 .gm-signal__beam { position: absolute; left: 50%; bottom: 0; width: 46px; height: 140px; transform: translateX(-50%);
   background: linear-gradient(to top, rgba(255, 236, 170, 0.55), rgba(255, 236, 170, 0.05));
   clip-path: polygon(46% 100%, 54% 100%, 100% 0, 0 0); filter: blur(1.5px); animation: gm-beam 6s ease-in-out infinite; }
-.gm-signal__bat { position: absolute; left: 50%; top: -6px; width: 56px; height: 26px; transform: translateX(-50%);
-  border-radius: 50%; background: radial-gradient(ellipse at center, rgba(255, 236, 170, 0.75), rgba(255, 236, 170, 0) 70%); }
-.gm-signal__bat::after { content: ""; position: absolute; inset: 7px 13px; background: #050608;
-  clip-path: polygon(0 40%, 18% 20%, 30% 45%, 42% 10%, 46% 30%, 50% 22%, 54% 30%, 58% 10%, 70% 45%, 82% 20%, 100% 40%, 80% 75%, 62% 60%, 50% 95%, 38% 60%, 20% 75%); }
+.gm-signal__bat { position: absolute; left: 50%; top: -10px; width: 66px; height: 32px; transform: translateX(-50%);
+  border-radius: 50%; background: radial-gradient(ellipse at center, rgba(255, 236, 170, 0.85) 0%, rgba(255, 236, 170, 0.55) 38%,
+  rgba(255, 236, 170, 0) 72%); }
+.gm-signal__bat svg { position: absolute; left: 50%; top: 50%; width: 40px; height: 17px; transform: translate(-50%, -48%);
+  fill: #050608; opacity: 0.92; }
 @keyframes gm-beam { 0%, 100% { opacity: 0.85; } 50% { opacity: 0.6; } }
 
 /* What came of putting someone on a case, under the faces. */
@@ -1976,15 +1983,17 @@ input[type="text"], input[type="search"], input[type="password"], input:not([typ
 }
 
 /* --- the conversations he has open: a tab each, along the top of the panel --- */
-.messages__tabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--hairline); overflow-x: auto;
+/* Flush to the top of the panel, edge to edge: tabs, not a strip with tabs in it. */
+.messages__tabs { display: flex; gap: 0; padding: 0; border-bottom: 1px solid var(--hairline); overflow-x: auto;
   scrollbar-width: none; flex: none; }
 .messages__tabs[hidden] { display: none; }
 .messages__tabs::-webkit-scrollbar { display: none; }
-.messages__tab { position: relative; display: flex; align-items: center; gap: 6px; padding: 6px 6px 7px 8px; min-width: 92px;
-  border: 1px solid transparent; border-bottom: 0; color: var(--text-dim); cursor: var(--cursor-pointer); flex: 1 1 0;
+.messages__tab { position: relative; display: flex; align-items: center; gap: 6px; padding: 9px 8px 9px 12px; min-width: 92px;
+  border: 0; border-right: 1px solid var(--hairline); color: var(--text-dim); cursor: var(--cursor-pointer); flex: 1 1 0;
   transition: color 0.2s var(--ease), background 0.2s var(--ease); }
 .messages__tab:hover { color: var(--text); background: var(--hairline); }
-.messages__tab.is-on { color: var(--text); background: var(--surface-2); border-color: var(--hairline-2);
+.messages__tab:last-child { border-right: 0; }
+.messages__tab.is-on { color: var(--text); background: var(--surface-2);
   box-shadow: inset 0 2px 0 var(--contact-accent, var(--primary)); }
 .messages__tab-face { width: 18px; height: 18px; flex: none; border-radius: 50%; border: 1px solid var(--accent, var(--hairline-2));
   background-color: var(--surface-2); background-size: cover; display: grid; place-items: center; font-family: var(--mono);

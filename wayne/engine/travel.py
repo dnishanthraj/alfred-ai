@@ -88,13 +88,40 @@ def _widest_water(graph, a, b, step=0.25):
     return widest
 
 
+def _ashore(graph, a, b, step=0.2):
+    """
+    (the water at the start, the widest water after it) on the straight line a→b:
+    from a houseboat or a pier there's a few steps over the water to the quay
+    first; after that, a walk to the car crosses none.
+    """
+    n = max(2, int(math.dist(a, b) / step))
+    first, widest, run, landed = 0.0, 0.0, 0.0, False
+    for k in range(n + 1):
+        x, y = a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n
+        if _on_land(graph, x, y):
+            if not landed:
+                first, landed = run, True
+            run = 0.0
+        else:
+            run += math.dist(a, b) / n
+            if landed:
+                widest = max(widest, run)
+    return (first if landed else run), widest
+
+
 def _nearest(graph, x, y):
-    best, found = None, None
-    for i, (nx, ny) in enumerate(graph["nodes"]):
-        d = (nx - x) ** 2 + (ny - y) ** 2
-        if best is None or d < best:
-            best, found = d, i
-    return found
+    """
+    The junction to start from: the nearest one reachable over land — never the
+    one across the water that happens to be closer. Tim's houseboat set him off
+    from a road on the far side of the marina basin, straight across it.
+    """
+    nodes = graph["nodes"]
+    order = sorted(range(len(nodes)), key=lambda i: (nodes[i][0] - x) ** 2 + (nodes[i][1] - y) ** 2)
+    for i in order[:60]:
+        first, after = _ashore(graph, (x, y), nodes[i])
+        if first <= 1.2 and after <= 0.25:
+            return i
+    return order[0] if order else None
 
 
 def _thin(pts, gap=0.12):
@@ -225,6 +252,72 @@ def route(a, b, name_a=None, name_b=None, patrol=False, mode="drive"):
         return [list(p) for p in pts], max(1.0, min(minutes / PATROL, 75.0))
     pts, minutes = _route(a, b, name_a or "", name_b or "")
     return [list(p) for p in pts], max(1.0, min(minutes + SETTING_OFF, 75.0))
+
+
+def _dist_to_line(p, line):
+    best = None
+    for (ax, ay), (bx, by) in zip(line, line[1:], strict=False):
+        dx, dy = bx - ax, by - ay
+        f = 0.0 if dx == dy == 0 else max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / (dx * dx + dy * dy)))
+        d = math.dist(p, (ax + dx * f, ay + dy * f))
+        best = d if best is None else min(best, d)
+    return best if best is not None else 1e9
+
+
+def over_water(x, y):
+    """True when (x, y) is out on the water — a ferry's deck or a bridge's."""
+    return not _on_land(_load(), x, y)
+
+
+def crossing(x, y):
+    """
+    What someone out on the water is crossing on: "over the Pioneers Bridge",
+    "on the Blüdhaven Ferry" — or "" on dry land. A car on a bridge is driving;
+    out in the bay it's on the ferry, and the card should say so.
+    """
+    if not over_water(x, y):
+        return ""
+    from . import places
+    data = places.gazetteer()
+    bridge = min(((_dist_to_line((x, y), b.get("line") or []), b.get("name") or "") for b in data.get("bridges", [])
+                  if len(b.get("line") or []) > 1), default=(1e9, ""))
+    if bridge[0] < 0.6 and bridge[1]:
+        return f"over the {bridge[1]}"
+    ferry = min(((_dist_to_line((x, y), f.get("stops") or []), f.get("name") or "") for f in data.get("ferries", [])
+                 if len(f.get("stops") or []) > 1), default=(1e9, ""))
+    if ferry[1] and ferry[0] < 6:
+        return f"on the {ferry[1]}"
+    return "out on the water"
+
+
+def landfall(trip, t):
+    """
+    Someone on a ferry or a bridge when their plans change can't step off: the
+    crossing is finished first. ([points from where they are to dry land], the
+    point, the time they'd reach it) — or None when they're on dry land already.
+    """
+    pts = trip.get("pts") or []
+    if len(pts) < 2 or t >= trip["end"]:
+        return None
+    here = position(trip, t)
+    if not over_water(*here):
+        return None
+    legs = [math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
+    total = sum(legs) or 1.0
+    pace = (trip["end"] - trip["start"]) / total
+    gone = (t - trip["start"]) / (trip["end"] - trip["start"]) * total
+    walked, lead = 0.0, [list(here)]
+    for i, leg in enumerate(legs):
+        if walked + leg <= gone:
+            walked += leg
+            continue
+        nxt = pts[i + 1]
+        lead.append(list(nxt))
+        at = trip["start"] + (walked + leg) * pace
+        if not over_water(*nxt):
+            return lead, tuple(nxt), at
+        walked += leg
+    return lead, tuple(pts[-1]), trip["end"]
 
 
 def position(trip, t):
