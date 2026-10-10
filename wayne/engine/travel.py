@@ -22,7 +22,9 @@ SPEED = {"highway": 7.0, "bridge": 6.0, "primary": 4.5, "secondary": 4.0, "avenu
 FERRY, FERRY_WAIT = 2.2, 6.0          # a ferry's pace, and the wait for one
 ON_FOOT = 0.6                         # the last stretch, from the road to the door
 SETTING_OFF = 2.0                     # keys, stairs, the car: minutes before anyone's moving
-PATROL = 1.35                         # on patrol they cut across the roofs: quicker than the traffic
+PATROL = 1.35                         # on a bike, on patrol: quicker than the traffic
+ROOFTOPS = 3.4                        # grapple, run, glide: ~30 km/h across the roofs, straight-ish
+GLIDE = 2.5                           # the most open water a glide will take; wider, it's the bike and a bridge
 
 _lock = threading.Lock()
 _graph = None
@@ -48,8 +50,38 @@ def _load():
             minutes = math.dist(nodes[a], nodes[b]) / FERRY + FERRY_WAIT
             adj[a].append((b, minutes, []))
             adj[b].append((a, minutes, []))
-        _graph = {"nodes": nodes, "adj": adj, "places": data.get("places", {})}
+        land = data.get("land")
+        if land:
+            import base64
+            raw = base64.b64decode(land["bits"])
+            land["mask"] = raw
+        _graph = {"nodes": nodes, "adj": adj, "places": data.get("places", {}), "land": land}
         return _graph
+
+
+def _on_land(graph, x, y):
+    land = graph.get("land")
+    if not land:
+        return True
+    i, j = round((x - land["x0"]) / land["step"]), round((y - land["y0"]) / land["step"])
+    if not (0 <= i < land["nx"] and 0 <= j < land["ny"]):
+        return False
+    k = j * land["nx"] + i
+    return bool(land["mask"][k >> 3] & (0x80 >> (k & 7)))
+
+
+def _widest_water(graph, a, b, step=0.25):
+    """The longest stretch of open water on the straight line from a to b."""
+    n = max(2, int(math.dist(a, b) / step))
+    widest = run = 0.0
+    for k in range(n + 1):
+        x, y = a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n
+        if _on_land(graph, x, y):
+            run = 0.0
+        else:
+            run += math.dist(a, b) / n
+            widest = max(widest, run)
+    return widest
 
 
 def _nearest(graph, x, y):
@@ -110,13 +142,28 @@ def route(a, b, name_a=None, name_b=None, patrol=False):
     """
     ([(x, y), ...], minutes) from a to b by the quickest way — `name_a` and
     `name_b` the places they are, if they're places, for the right junction.
-    On patrol it's quicker, and nobody has to find the car first.
+    In the suit (`patrol`) they don't keep to the roads: grapple, run and glide
+    straight across the roofs at a runner's pace, a river glided over — unless
+    there's more open water in the way than a glide will carry, when it's the
+    bike, over a bridge. Nobody in the suit has to find the car first.
     """
     a = (round(a[0], 2), round(a[1], 2))
     b = (round(b[0], 2), round(b[1], 2))
+    if patrol:
+        graph = _load()
+        if _widest_water(graph, a, b) <= GLIDE:
+            # Over the roofs: a line that bends a little, as a route over buildings does.
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            length = math.hypot(dx, dy) or 1
+            sway = 0.08 * length * (1 if (int(a[0] * 13 + b[1] * 7) % 2) else -1)
+            mid = ((a[0] + b[0]) / 2 - dy / length * sway, (a[1] + b[1]) / 2 + dx / length * sway)
+            pts = [((1 - t) ** 2 * a[0] + 2 * (1 - t) * t * mid[0] + t * t * b[0],
+                    (1 - t) ** 2 * a[1] + 2 * (1 - t) * t * mid[1] + t * t * b[1]) for t in [k / 10 for k in range(11)]]
+            return [[round(x, 2), round(y, 2)] for x, y in pts], max(1.0, min(length / ROOFTOPS, 75.0))
+        pts, minutes = _route(a, b, name_a or "", name_b or "")
+        return [list(p) for p in pts], max(1.0, min(minutes / PATROL, 75.0))
     pts, minutes = _route(a, b, name_a or "", name_b or "")
-    minutes = minutes / PATROL if patrol else minutes + SETTING_OFF
-    return [list(p) for p in pts], max(1.0, min(minutes, 75.0))
+    return [list(p) for p in pts], max(1.0, min(minutes + SETTING_OFF, 75.0))
 
 
 def position(trip, t):

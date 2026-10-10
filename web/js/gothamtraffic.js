@@ -2,27 +2,34 @@
    Gotham's traffic: what moves on the map, and when.
 
    The subway under the streets and the trains on their lines, stopping at
-   every station; ferries between their piers; ships in from the sea and the
-   tugs that bring them alongside; planes landing and taking off; the police,
-   news, medevac, tour and company helicopters; sailboats off the marina; the
-   harbour launch; the lighthouse at night.
+   every station; ferries between their piers; ships in from the sea, berthing
+   off the pier heads with a tug alongside; planes landing and taking off; the
+   police, news, medevac, tour and company helicopters; Stagg's airship; sail-
+   boats off the marina; the harbour launch; the lighthouse at night.
 
    Everything here is worked out from the clock, not stored: a train is where
-   its timetable puts it, so every frame agrees with the last, and a page
-   opened at the same moment sees the same city. The timetable follows the
-   hour — trains every few minutes at the rush, a handful in the small hours,
-   no flights after one in the morning.
-
-   Map time runs fast — a crossing that takes a quarter of an hour takes a
-   minute here — so the city looks busy at a glance, as it is.
+   its timetable puts it, so every frame agrees with the last. And it all runs
+   at its real speed — Gotham is a big city, and a container ship crossing the
+   harbour takes the half hour it would. The timetables follow the hour:
+   trains every few minutes at the rush, a handful in the small hours, no
+   flights after one in the morning.
    ========================================================================== */
 (function () {
   'use strict';
 
   var K = 0.0013475;                // degrees in a layout unit (~150 m), as in gothammap.js
-  // Speeds in layout units a second of map time: the subway end to end in a
-  // minute and a half, a ferry crossing in under a minute, the trains quicker.
-  var METRO = 0.75 * K, TRAIN = 1.15 * K, FERRY = 0.6 * K;
+  // Real speeds, in layout units a second: a unit is 150 m.
+  var METRO = 0.055 * K;            // the subway, ~30 km/h with its stops
+  var TRAIN = 0.11 * K;             // the railways, ~60 km/h
+  var FERRY = 0.05 * K;             // ~15 knots
+  var SHIP = 0.034 * K;             // ~10 knots in the harbour
+  var SAIL = 0.017 * K;             // ~5 knots
+  var LAUNCH = 0.07 * K;            // the harbour patrol
+  var CHOPPER = 0.37 * K;           // ~200 km/h cruising
+  var CIRCLING = 0.25 * K;          // circling over something
+  var AIRSHIP = 0.1 * K;            // ~55 km/h
+  var APPROACH = 0.48 * K;          // ~260 km/h on final
+
   var subway = [], rails = [], ferries = [], lanes = [], runways = [], taxi = null;
   var spots = {};
 
@@ -53,7 +60,7 @@
   /* --- timetables ------------------------------------------------------------ */
 
   // A run from one end to the other: moving between stops, easing in and out
-  // of each, standing at each for `dwell` seconds. Times in map seconds.
+  // of each, standing at each for `dwell` seconds.
   function timetable(len, stops, speed, dwell) {
     var marks = (stops || []).filter(function (u) { return u > 0.002 && u < 0.998; }).sort(function (a, b) { return a - b; });
     marks = [0].concat(marks, [1]);
@@ -94,9 +101,9 @@
     return bands[key];
   }
 
-  // Departures every `head` seconds of map time; at quieter hours only every
-  // nth runs (`every[band]`, 0 for none) — decided by when each one left, so a
-  // train already out doesn't vanish when the hour turns.
+  // Departures every `head` seconds; at quieter hours only every nth runs
+  // (`every[band]`, 0 for none) — decided by when each one left, so a train
+  // already out doesn't vanish when the hour turns.
   function departures(s, head, total, every, fn) {
     var first = Math.ceil((s - total) / head), last = Math.floor(s / head);
     for (var k = first; k <= last; k++) {
@@ -107,37 +114,59 @@
   }
 
   function hash(k) { var x = Math.sin(k * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
-
   function point(p, props) { return { type: 'Feature', geometry: { type: 'Point', coordinates: p }, properties: props }; }
-
   function ll(x, y) { return [(x - 55) * K, (65 - y) * K]; }
-
   function towards(a, b, f) { return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]; }
-
   function heading(a, b) { return Math.atan2(b[0] - a[0], b[1] - a[1]) * 180 / Math.PI; }
+  function dist(a, b) { return Math.hypot(b[0] - a[0], b[1] - a[1]); }
+
+  // A circuit through waypoints, flown at `speed` along a smooth curve through
+  // them (Catmull-Rom) — banking round, not turning on a ruled corner.
+  var curves = {};
+  function smoothLoop(points) {
+    var key = points.map(function (p) { return p[0].toFixed(5) + ',' + p[1].toFixed(5); }).join(';');
+    if (curves[key]) return curves[key];
+    var out = [], n = points.length;
+    for (var i = 0; i < n; i++) {
+      var p0 = points[(i - 1 + n) % n], p1 = points[i], p2 = points[(i + 1) % n], p3 = points[(i + 2) % n];
+      for (var k = 0; k < 8; k++) {
+        var t = k / 8, t2 = t * t, t3 = t2 * t;
+        out.push([0.5 * (2 * p1[0] + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3),
+                  0.5 * (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)]);
+      }
+    }
+    out.push(out[0]);
+    curves[key] = line(out);
+    return curves[key];
+  }
+  function circuit(points, speed, s, offset) {
+    var loop = smoothLoop(points);
+    var along = (((s + (offset || 0)) * speed) % loop.len + loop.len) % loop.len;
+    return at(loop, along / loop.len);
+  }
 
   /* --- what's on the map ------------------------------------------------------ */
 
   function init(fc, places) {
-    subway = []; rails = []; ferries = []; lanes = []; runways = []; spots = {};
+    subway = []; rails = []; ferries = []; lanes = []; runways = []; spots = {}; taxi = null;
     fc.features.forEach(function (f) {
       var p = f.properties;
       if (p.l === 'subway') {
         var r = line(longest(f.geometry));
         r.n = p.n; r.col = p.col;
-        r.tt = timetable(r.len, p.st, METRO, 2.2);
+        r.tt = timetable(r.len, p.st, METRO, 25);
         subway.push(r);
       } else if (p.l === 'railroute') {
         var q = line(longest(f.geometry));
         q.n = p.n; q.tun = p.tun || []; q.st = p.st || [];
-        q.tt = timetable(q.len, q.st.map(function (s) { return s[1]; }), TRAIN, 3);
+        q.tt = timetable(q.len, q.st.map(function (s) { return s[1]; }), TRAIN, 45);
         q.names = [q.st.length ? q.st[0][0] : '', q.st.length ? q.st[q.st.length - 1][0] : ''];
         rails.push(q);
       } else if (p.l === 'ferry') {
         var c = longest(f.geometry), fr = line(c);
         fr.n = p.n;
         fr.loop = Math.hypot(c[0][0] - c[c.length - 1][0], c[0][1] - c[c.length - 1][1]) < 2 * K;
-        fr.tt = timetable(fr.len, p.st, FERRY, 5);
+        fr.tt = timetable(fr.len, p.st, FERRY, 300);
         ferries.push(fr);
         if (p.n === 'Harbor Water Taxi') taxi = fr;
       } else if (p.l === 'lane') {
@@ -155,18 +184,16 @@
 
   function trains(s, out) {
     subway.forEach(function (r, n) {
-      var T = r.tt.T;
       [0, 1].forEach(function (back) {
-        departures(s + n * 7.3 + back * 11.1, 22, T, [5, 3, 2, 1], function (tau) {
+        departures(s + n * 61 + back * 97, 180, r.tt.T, [5, 3, 2, 1], function (tau) {
           var pr = progress(r.tt, tau), u = back ? 1 - pr.u : pr.u, here = at(r, u);
           out.push(point(here.p, { m: 'metro', col: r.col, r: back ? here.r + 180 : here.r, n: r.n + ' · subway' }));
         });
       });
     });
     rails.forEach(function (r, n) {
-      var T = r.tt.T;
       [0, 1].forEach(function (back) {
-        departures(s + n * 13.7 + back * 19.3, 40, T, [0, 3, 2, 1], function (tau) {
+        departures(s + n * 233 + back * 311, 600, r.tt.T, [0, 3, 2, 1], function (tau) {
           var pr = progress(r.tt, tau), u = back ? 1 - pr.u : pr.u, here = at(r, u);
           var under = r.tun.some(function (span) { return u > span[0] && u < span[1]; });
           var to = r.names[back ? 0 : 1];
@@ -178,44 +205,44 @@
   }
 
   function boats(s, hour, out) {
-    var day = hour >= 6 && hour < 24;
     ferries.forEach(function (fr, n) {
-      if (!day && fr.n !== 'Blackgate Ferry') return;
+      if (hour < 6 && fr.n !== 'Blackgate Ferry') return;            // the ferries sleep; the prison's doesn't
       if (fr.n === 'Harbor Water Taxi' && (hour < 8 || hour >= 22)) return;
-      var T = fr.tt.T, cycle = fr.loop ? T : 2 * T, boatsOn = band(hour) === 3 ? 2 : 1;
-      for (var b = 0; b < boatsOn; b++) {
-        var tau = ((s + n * 37 + b * cycle / boatsOn) % cycle + cycle) % cycle, back = !fr.loop && tau > T;
+      var T = fr.tt.T, cycle = fr.loop ? T : 2 * T, many = band(hour) === 3 && fr.len > 20 * K ? 2 : 1;
+      for (var b = 0; b < many; b++) {
+        var tau = ((s + n * 397 + b * cycle / many) % cycle + cycle) % cycle, back = !fr.loop && tau > T;
         var pr = progress(fr.tt, back ? tau - T : tau), u = back ? 1 - pr.u : pr.u, here = at(fr, u);
         out.push(point(here.p, { m: 'ferry', r: back ? here.r + 180 : here.r, n: fr.n }));
       }
     });
     lanes.forEach(function (ln, n) {
-      var cycle = 600;
-      [0, 300].forEach(function (offset) {
-        var tau = ((s + n * 97 + offset) % cycle + cycle) % cycle, u, dir, phase;
-        if (tau < 220) { phase = tau / 220; u = 1 - Math.pow(1 - phase, 2); dir = 0; }            // in, slowing
-        else if (tau < 340) { u = 1; dir = 0; }                                                       // alongside
-        else if (tau < 560) { phase = (tau - 340) / 220; u = 1 - phase * phase; dir = 1; }            // out, gathering way
-        else return;                                                                                   // over the horizon
-        var here = at(ln, u), r = dir ? here.r + 180 : here.r;
-        out.push(point(here.p, { m: 'ship', r: r, n: 'Container ship · ' + (dir ? 'outbound from ' : 'bound for ') + ln.n }));
-        if (u > 0.82) {
-          var side = (r + 90) * Math.PI / 180, off = 0.22 * K;
-          out.push(point([here.p[0] + Math.sin(side) * off, here.p[1] + Math.cos(side) * off],
-                         { m: 'tug', r: r, n: 'Tug' }));
+      // In from the sea, alongside for an hour, out again; then a gap before the next.
+      var sail = ln.len / SHIP, dock = 3600, cycle = 2 * sail + dock + 2400;
+      [0, cycle / 2].forEach(function (offset) {
+        var tau = ((s + n * 1777 + offset) % cycle + cycle) % cycle, u, out_;
+        if (tau < sail) { var f = tau / sail; u = f < 0.9 ? f / 0.9 * 0.93 : 0.93 + 0.07 * (1 - Math.pow(1 - (f - 0.9) / 0.1, 2)); out_ = false; }
+        else if (tau < sail + dock) { u = 1; out_ = false; }
+        else if (tau < 2 * sail + dock) { var g = (tau - sail - dock) / sail; u = 1 - (g < 0.1 ? 0.07 * g * g / 0.01 : 0.07 + (g - 0.1) / 0.9 * 0.93); out_ = true; }
+        else return;
+        var here = at(ln, Math.max(0, Math.min(1, u))), r = out_ ? here.r + 180 : here.r;
+        out.push(point(here.p, { m: 'ship', r: r, n: 'Container ship · ' + (out_ ? 'outbound from ' : u >= 1 ? 'berthed at ' : 'bound for ') + ln.n }));
+        if (u > 0.9) {
+          var side = (r + 90) * Math.PI / 180, off = 0.25 * K;
+          out.push(point([here.p[0] + Math.sin(side) * off, here.p[1] + Math.cos(side) * off], { m: 'tug', r: r, n: 'Tug' }));
         }
       });
     });
     if (taxi) {
       // The harbour launch on its rounds, never quite to a timetable.
-      var lap = 260, tau = (s % (2 * lap) + 2 * lap) % (2 * lap), u = tau < lap ? tau / lap : 2 - tau / lap;
-      var here = at(taxi, 0.06 + 0.88 * u);
+      var lap = taxi.len / LAUNCH, tau = (s % (2 * lap) + 2 * lap) % (2 * lap), u = tau < lap ? tau / lap : 2 - tau / lap;
+      var here = at(taxi, 0.04 + 0.92 * u);
       out.push(point(here.p, { m: 'patrol', r: tau < lap ? here.r : here.r + 180, n: 'GCPD Harbor Patrol' }));
     }
     if (hour >= 8 && hour < 19) {
       // Sailboats off the marina, tacking about in the river.
       [[12.2, 96.5, 1.1], [12.0, 102.2, 1.3], [11.6, 107.8, 1.0], [13.0, 99.4, 0.8], [12.4, 105.0, 0.9]].forEach(function (c, i) {
-        var period = 90 + i * 17, a = (s / period) * 2 * Math.PI + i * 1.7;
+        var around = 2 * Math.PI * Math.sqrt((c[2] * c[2] * 1.25) / 2) * K, period = around / SAIL;
+        var a = (s / period) * 2 * Math.PI + i * 1.7;
         var p = ll(c[0] + Math.cos(a) * c[2] * 0.5, c[1] + Math.sin(a) * c[2]);
         var r = heading(p, ll(c[0] + Math.cos(a + 0.05) * c[2] * 0.5, c[1] + Math.sin(a + 0.05) * c[2]));
         out.push(point(p, { m: 'sail', r: r, n: 'Sailboat' }));
@@ -227,44 +254,43 @@
     if (runways.length < 2) return;
     var b = band(hour);
     if (!b) return;                                                 // no flights in the small hours
-    var every = [0, 130, 70, 45][b];
+    var every = [0, 420, 200, 120][b];
     // Arrivals on the second runway, in from over the harbour; departures off the first, out to sea.
     var land = runways[1], dep = runways[0];
-    var lux = (land[1][0] - land[0][0]), luy = (land[1][1] - land[0][1]);
-    var ln = Math.hypot(lux, luy); lux /= ln; luy /= ln;
-    var dux = (dep[1][0] - dep[0][0]), duy = (dep[1][1] - dep[0][1]);
-    var dn = Math.hypot(dux, duy); dux /= dn; duy /= dn;
+    var lux = land[1][0] - land[0][0], luy = land[1][1] - land[0][1], ln = Math.hypot(lux, luy);
+    lux /= ln; luy /= ln;
+    var dux = dep[1][0] - dep[0][0], duy = dep[1][1] - dep[0][1], dn = Math.hypot(dux, duy);
+    dux /= dn; duy /= dn;
     function shadowed(p, alt, r, label) {
       if (alt > 0.02) out.push(point([p[0] + 0.8 * alt * K, p[1] - 0.8 * alt * K], { m: 'plane-shadow', r: r, s: alt }));
       out.push(point(p, { m: 'plane', r: r, s: alt, n: label }));
     }
     // An arrival: down the approach, touchdown, the roll-out, off onto a taxiway.
+    var approach = 28 * K / APPROACH, rollout = 34;
     var a = ((s % every) + every) % every, flight = 100 + Math.floor(s / every) % 800;
-    if (a < 30) {
+    if (a < approach + rollout) {
       var start = [land[0][0] - lux * 28 * K, land[0][1] - luy * 28 * K], r = heading(land[0], land[1]);
-      if (a < 18) shadowed(towards(start, [land[0][0] + lux * 0.12 * ln, land[0][1] + luy * 0.12 * ln], a / 18), 1 - a / 18, r,
-                           'Flight GA ' + flight + ' · arriving');
-      else if (a < 27) {
-        var f = (a - 18) / 9;
-        shadowed([land[0][0] + lux * ln * (0.12 + 0.5 * (1 - Math.pow(1 - f, 2))), land[0][1] + luy * ln * (0.12 + 0.5 * (1 - Math.pow(1 - f, 2)))],
-                 0, r, 'Flight GA ' + flight + ' · landed');
+      var touch = [land[0][0] + lux * 0.12 * ln, land[0][1] + luy * 0.12 * ln];
+      if (a < approach) shadowed(towards(start, touch, a / approach), 1 - a / approach, r, 'Flight GA ' + flight + ' · arriving');
+      else {
+        var f = (a - approach) / rollout, u = 0.12 + 0.5 * (1 - Math.pow(1 - f, 2));
+        shadowed([land[0][0] + lux * ln * u, land[0][1] + luy * ln * u], 0, r, 'Flight GA ' + flight + ' · landed');
       }
     }
-    // A departure: lined up, the roll, rotation, the climb and the turn out to sea.
+    // A departure: lined up, the roll, rotation, the climb and the long turn out to sea.
     var d = (((s + every / 2) % every) + every) % every, out_ = 300 + Math.floor((s + every / 2) / every) % 600;
-    if (d < 32) {
+    if (d < 130) {
       var r2 = heading(dep[0], dep[1]);
-      if (d < 3) shadowed([dep[0][0] + dux * dn * 0.04, dep[0][1] + duy * dn * 0.04], 0, r2, 'Flight GA ' + out_ + ' · holding');
-      else if (d < 12) {
-        var g = (d - 3) / 9, u = 0.04 + 0.58 * g * g;
-        shadowed([dep[0][0] + dux * dn * u, dep[0][1] + duy * dn * u], 0, r2, 'Flight GA ' + out_ + ' · departing');
+      if (d < 20) shadowed([dep[0][0] + dux * dn * 0.04, dep[0][1] + duy * dn * 0.04], 0, r2, 'Flight GA ' + out_ + ' · holding');
+      else if (d < 55) {
+        var g = (d - 20) / 35, ug = 0.04 + 0.58 * g * g;
+        shadowed([dep[0][0] + dux * dn * ug, dep[0][1] + duy * dn * ug], 0, r2, 'Flight GA ' + out_ + ' · departing');
       } else {
-        var c = (d - 12) / 20, lift = [dep[0][0] + dux * dn * 0.62, dep[0][1] + duy * dn * 0.62];
-        // Straight out, then a long right turn to the south.
-        var turn = Math.max(0, c - 0.35) / 0.65, ang = Math.atan2(dux, duy) + turn * 1.3;
-        var dist = c * 34 * K;
-        var p = [lift[0] + Math.sin(Math.atan2(dux, duy) + turn * 0.65) * dist, lift[1] + Math.cos(Math.atan2(dux, duy) + turn * 0.65) * dist];
-        shadowed(p, Math.min(1, c * 1.4), ang * 180 / Math.PI, 'Flight GA ' + out_ + ' · climbing out');
+        var c = (d - 55) / 75, lift = [dep[0][0] + dux * dn * 0.62, dep[0][1] + duy * dn * 0.62];
+        var turn = Math.max(0, c - 0.35) / 0.65, base = Math.atan2(dux, duy);
+        var far = c * 75 * 0.4 * K;
+        var p = [lift[0] + Math.sin(base + turn * 0.65) * far, lift[1] + Math.cos(base + turn * 0.65) * far];
+        shadowed(p, Math.min(1, c * 1.4), (base + turn * 1.3) * 180 / Math.PI, 'Flight GA ' + out_ + ' · climbing out');
       }
     }
   }
@@ -273,43 +299,73 @@
     var open = (reports || []).filter(function (r) { return r.status !== 'resolved'; })
       .sort(function (a, b) { return b.severity - a.severity || b.at - a.at; });
     var night = hour >= 20 || hour < 5;
-    function orbit(c, rad, speed, phase) {
-      var a = s * speed + phase;
+    function orbit(c, rad, phase) {
+      var a = s * (CIRCLING / rad) + phase;
       return { p: [c[0] + Math.cos(a) * rad, c[1] + Math.sin(a) * rad], r: -a * 180 / Math.PI };
     }
-    // GCPD Air: over the worst thing on the scanner — or, at night, over Crime Alley anyway.
-    var worst = open[0] && open[0].severity >= 3 ? ll(open[0].x, open[0].y) : (night ? spots['Crime Alley'] : null);
+    function light(p, c) { out.push(point(towards(c || p, p, 0.3), { m: 'light' })); }
+    // GCPD Air: over the worst thing on the scanner; at night, a patrol over the rough districts.
+    var worst = open[0] && open[0].severity >= 3 ? ll(open[0].x, open[0].y) : null;
     if (worst) {
-      var o = orbit(worst, 0.0011, 0.45, 0);
-      out.push(point([worst[0] + (o.p[0] - worst[0]) * 0.3, worst[1] + (o.p[1] - worst[1]) * 0.3], { m: 'light' }));
-      out.push(point(o.p, { m: 'heli', r: o.r, n: 'GCPD Air Support' }));
+      var o = orbit(worst, 0.0011, 0);
+      light(o.p, worst);
+      out.push(point(o.p, { m: 'heli', r: o.r, n: 'GCPD Air Support · over ' + open[0].kind.toLowerCase() }));
+    } else if (night) {
+      var beat = ['Crime Alley', 'The Bowery', 'Burnley', 'The Narrows', 'Tricorner', 'Chinatown', 'Old Gotham']
+        .map(function (n) { return spots[n]; }).filter(Boolean);
+      if (beat.length > 2) {
+        var pat = circuit(beat, CHOPPER * 0.6, s, 0);
+        out.push(point(towards(pat.p, pat.p, 0), { m: 'light' }));
+        out.push(point(pat.p, { m: 'heli', r: pat.r, n: 'GCPD Air Support · patrol' }));
+      }
     }
-    // GBC News: the next story along, or the game at the Knightsdome.
-    if (hour >= 7 && hour < 23) {
-      var story = open[1] && open[1].severity >= 2 ? ll(open[1].x, open[1].y)
-        : (hour >= 18 && hour < 22 ? spots['Knightsdome'] : null);
-      if (story) { var nw = orbit(story, 0.0017, 0.3, 2); out.push(point(nw.p, { m: 'heli-news', r: nw.r, n: 'GBC News chopper' })); }
+    // GBC News: the next story along, or the traffic at the rush, or the game.
+    if (hour >= 6 && hour < 23) {
+      var story = open[1] && open[1].severity >= 2 ? ll(open[1].x, open[1].y) : null;
+      if (story) { var nw = orbit(story, 0.0017, 2); out.push(point(nw.p, { m: 'heli-news', r: nw.r, n: 'GBC News · on the story' })); }
+      else if (band(hour) === 3) {
+        var roads = ['Union Station', 'Gotham Harbor Bridge', 'Pioneers Bridge', 'Robert Kane Memorial Bridge', 'Knightsdome']
+          .map(function (n) { return spots[n]; }).filter(Boolean);
+        if (roads.length > 2) { var tw = circuit(roads, CHOPPER * 0.5, s, 900); out.push(point(tw.p, { m: 'heli-news', r: tw.r, n: 'GBC News · traffic watch' })); }
+      } else if (hour >= 18 && hour < 22 && spots['Knightsdome']) {
+        var g = orbit(spots['Knightsdome'], 0.0017, 1); out.push(point(g.p, { m: 'heli-news', r: g.r, n: 'GBC News · at the game' }));
+      }
     }
-    // Medevac: in from wherever, down on a hospital's roof, gone again.
-    var hospitals = [spots['Gotham General Hospital'], spots['Mercy Hospital']].filter(Boolean);
-    var from = [spots['The Narrows'], spots['Burnley'], spots['Tricorner'], spots['Ironworks'], spots['Burnside'], spots['Coventry']].filter(Boolean);
+    // Medevac: in from wherever, down on a hospital's roof for a while, home again.
+    var hospitals = [spots['Gotham General Hospital'], spots['Mercy Hospital'], spots['Elliot Memorial Hospital']].filter(Boolean);
+    var from = [spots['The Narrows'], spots['Burnley'], spots['Tricorner'], spots['Ironworks'], spots['Burnside'],
+                spots['Coventry'], spots['Kane Heights'], spots['Bristol']].filter(Boolean);
     if (hospitals.length && from.length) {
-      var cyc = 150, k = Math.floor(s / cyc), m = s - k * cyc;
+      var cyc = 1500, k = Math.floor(s / cyc), m = s - k * cyc;
       var to = hospitals[k % hospitals.length], src = from[Math.floor(hash(k) * from.length)];
-      if (m < 40) out.push(point(towards(src, to, m / 40), { m: 'heli-med', r: heading(src, to), n: 'Medevac · inbound' }));
-      else if (m < 56) out.push(point(to, { m: 'heli-med', r: heading(src, to), n: 'Medevac · on the pad' }));
+      var fly = dist(src, to) / CHOPPER;
+      if (m < fly) out.push(point(towards(src, to, m / fly), { m: 'heli-med', r: heading(src, to), n: 'Medevac · inbound' }));
+      else if (m < fly + 420) out.push(point(to, { m: 'heli-med', r: heading(src, to), n: 'Medevac · on the pad' }));
     }
-    // A tour round the Statue of Justice, by day.
+    // A tour round the Statue of Justice and up the harbour, by day.
     if (hour >= 10 && hour < 18 && spots['Statue of Justice']) {
-      var tour = orbit(spots['Statue of Justice'], 2.2 * K, 0.1, 1);
+      var tour = orbit(spots['Statue of Justice'], 2.2 * K, 1);
       out.push(point(tour.p, { m: 'heli-civ', r: tour.r - 90, n: 'Harbour tour' }));
     }
-    // Wayne Enterprises: the tower roof to the airport and back.
+    // Wayne Enterprises: the tower roof to the hangar and back.
     if (hour >= 8 && hour < 20 && spots['Wayne Tower'] && spots['Hangar 9']) {
-      var leg = 320, w = ((s % leg) + leg) % leg, outbound = Math.floor(s / leg) % 2 === 0;
+      var leg = 1800, w = ((s % leg) + leg) % leg, outbound = Math.floor(s / leg) % 2 === 0;
       var A = outbound ? spots['Wayne Tower'] : spots['Hangar 9'], B = outbound ? spots['Hangar 9'] : spots['Wayne Tower'];
-      if (w < 46) out.push(point(towards(A, B, w / 46), { m: 'heli-civ', r: heading(A, B), n: 'Wayne Enterprises' }));
+      var hop = dist(A, B) / CHOPPER;
+      if (w < hop) out.push(point(towards(A, B, w / hop), { m: 'heli-civ', r: heading(A, B), n: 'Wayne Enterprises' }));
     }
+  }
+
+  // Stagg's airship: a slow circuit of the city as an advertisement, then an hour at its mast.
+  function airship(s, out) {
+    var mast = spots['Stagg Enterprises'];
+    if (!mast) return;
+    var route = [mast, spots['New Town'], spots['Upper East Side'], spots['Fashion District'], spots['Diamond District'],
+                 spots['Old Gotham'], spots['Chinatown'], spots['Coventry'], spots['Robinson Park']].filter(Boolean);
+    var flying = smoothLoop(route).len / AIRSHIP, cycle = flying + 3600, tau = ((s % cycle) + cycle) % cycle;
+    var here = tau < flying ? circuit(route, AIRSHIP, tau, 0) : { p: mast, r: 30 };
+    out.push(point([here.p[0] + 1.4 * K, here.p[1] - 1.4 * K], { m: 'airship-shadow', r: here.r }));
+    out.push(point(here.p, { m: 'airship', r: here.r, n: 'Stagg Enterprises airship' + (tau < flying ? '' : ' · moored') }));
   }
 
   // The lighthouse at Cape Carmine, its beam turning over the water at night.
@@ -334,6 +390,7 @@
     boats(s, hour, out);
     planes(s, hour, out);
     choppers(s, hour, reports, out);
+    airship(s, out);
     beam(s, hour, out);
     return out;
   }

@@ -246,6 +246,22 @@
     ctx.fillStyle = '#ff3b3b'; ctx.beginPath(); ctx.arc(-12.6, 4, 0.9, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#58c08a'; ctx.beginPath(); ctx.arc(12.6, 4, 0.9, 0, Math.PI * 2); ctx.fill();
   }
+  function airshipSprite(shadow) {
+    return function (ctx) {
+      ctx.beginPath(); ctx.ellipse(0, 0, 5.2, 19, 0, 0, Math.PI * 2);
+      if (shadow) { ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'; ctx.fill(); return; }
+      var g = ctx.createLinearGradient(-5, 0, 5, 0);
+      g.addColorStop(0, '#9fb6c8'); g.addColorStop(0.5, '#e6f1f8'); g.addColorStop(1, '#8aa2b5');
+      ctx.fillStyle = g; ctx.strokeStyle = 'rgba(2, 5, 10, 0.85)'; ctx.lineWidth = 1; ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(2, 5, 10, 0.25)';
+      [-10, -4, 2, 8].forEach(function (y) { ctx.beginPath(); ctx.moveTo(-4.6, y); ctx.lineTo(4.6, y); ctx.stroke(); });
+      ctx.fillStyle = '#2a3a4a'; ctx.fillRect(-1.6, 2, 3.2, 6);
+      ctx.fillStyle = '#c9a23a'; ctx.fillRect(-4.8, -2, 9.6, 2.2);          // the STAGG band
+      ctx.fillStyle = '#ff3b3b'; ctx.beginPath(); ctx.arc(0, -18, 1, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#9fb6c8';
+      ctx.beginPath(); ctx.moveTo(0, 14); ctx.lineTo(-5, 21); ctx.lineTo(5, 21); ctx.closePath(); ctx.fill();
+    };
+  }
   function livery(body, beacon) {
     return function (ctx) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
@@ -435,18 +451,6 @@
         { id: 'patrol', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'patrol'], minzoom: 11.6,
           layout: { 'icon-image': 'gm-launch', 'icon-size': z([11.6, 0.6, 16, 1.2]), 'icon-rotate': ['get', 'r'],
                     'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
-        // Underground: the subway's tunnels under the street grid, its trains as light
-        // passing beneath — seen between the roads, never riding over the roofs.
-        { id: 'subway', type: 'line', source: 'city', filter: is('subway'), minzoom: 11.9,
-          layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: { 'line-color': ['get', 'col'], 'line-width': z([11.6, 1, 14, 2.4, 17, 5]), 'line-dasharray': [1.6, 1.2],
-                   'line-opacity': z([11.6, 0, 12.4, 0.42]) } },
-        { id: 'metro-glow', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'metro'], minzoom: 11.6,
-          paint: { 'circle-radius': z([11.6, 4, 15, 10, 18, 22]), 'circle-color': ['get', 'col'], 'circle-opacity': 0.4,
-                   'circle-blur': 1, 'circle-pitch-alignment': 'map' } },
-        { id: 'metro', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'metro'], minzoom: 11.6,
-          paint: { 'circle-radius': z([11.6, 1.6, 15, 3.4, 18, 7]), 'circle-color': '#e8f6ff', 'circle-opacity': 0.8,
-                   'circle-blur': 0.4, 'circle-pitch-alignment': 'map' } },
         { id: 'coast', type: 'line', source: 'city', filter: is('land'),
           paint: { 'line-color': C.edge, 'line-width': z([10, 0.8, 14, 1.6, 17, 3]), 'line-opacity': 0.75 } },
         // Roads, quietest first. Widths grow with the zoom, as on any good map.
@@ -528,6 +532,7 @@
               '~house', '#1b2733',
               // The works' own: acid in the vats, a lit sign, brick stacks, garages, a copper roof gone green.
               '~vat', '#5fd08a', '~sign', '#ffd27f', '~stack', '#4a3430', '~garage', '#22313d', '~copper', '#3f8f7a',
+              '~rock', '#2a323b', '~pier', '#1b3a52',
               ['interpolate', ['linear'], ['get', 'h'], 0, '#081521', 25, '#0b2133', 60, '#10334d', 120, '#184d73', 240, '#2f78ad']],
             'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 12.6, 0, 13.8, ['get', 'h']],
             'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 12.6, 0, 13.8, ['get', 'b']],
@@ -544,6 +549,22 @@
         // Their trunks, only close enough to see under the crowns.
         { id: 'trunks', type: 'fill-extrusion', source: 'trees', minzoom: 15, filter: ['==', ['get', 'p'], 0],
           paint: { 'fill-extrusion-color': '#13261f', 'fill-extrusion-height': ['get', 'top'], 'fill-extrusion-opacity': 1 } },
+        // The subway as a transit map: clean coloured lines on a dark casing, its trains
+        // riding them as dots — over the city at a distance, fading as the buildings rise,
+        // so up close there's only the stations' entrances, never light between the roofs.
+        { id: 'subway-casing', type: 'line', source: 'city', filter: is('subway'), minzoom: 10.8, maxzoom: 14.6,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': C.void, 'line-width': z([10.8, 2.6, 13, 5.4, 14, 6.6]),
+                   'line-opacity': ['interpolate', ['linear'], ['zoom'], 13.4, 0.9, 14.4, 0] } },
+        { id: 'subway', type: 'line', source: 'city', filter: is('subway'), minzoom: 10.8, maxzoom: 14.6,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': ['get', 'col'], 'line-width': z([10.8, 1.3, 13, 2.8, 14, 3.4]),
+                   'line-opacity': ['interpolate', ['linear'], ['zoom'], 13.4, 0.95, 14.4, 0] } },
+        { id: 'metro', type: 'circle', source: 'movers', filter: ['==', ['get', 'm'], 'metro'], minzoom: 11, maxzoom: 14.6,
+          paint: { 'circle-radius': z([11, 2, 13, 3.4, 14, 4]), 'circle-color': '#f4faff',
+                   'circle-stroke-color': ['get', 'col'], 'circle-stroke-width': z([11, 1, 14, 1.8]),
+                   'circle-opacity': ['interpolate', ['linear'], ['zoom'], 13.4, 1, 14.4, 0],
+                   'circle-stroke-opacity': ['interpolate', ['linear'], ['zoom'], 13.4, 1, 14.4, 0] } },
         // Aircraft: the shadow on the ground, falling further off as it climbs, then the plane.
         { id: 'plane-shadow', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'plane-shadow'], minzoom: 10.5,
           layout: { 'icon-image': 'gm-plane-shadow', 'icon-size': z([10.5, 0.5, 15, 1.1, 18, 2.6]), 'icon-rotate': ['get', 'r'],
@@ -609,11 +630,18 @@
           layout: { 'icon-image': ['concat', 'gm-', ['get', 'm']], 'icon-size': z([11, 0.7, 15, 1.1, 18, 1.5]),
                     'icon-rotate': ['get', 'r'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true,
                     'icon-ignore-placement': true } },
+        { id: 'airship-shadow', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'airship-shadow'], minzoom: 10.5,
+          layout: { 'icon-image': 'gm-airship-shadow', 'icon-size': z([10.5, 0.7, 15, 1.6, 18, 4]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        { id: 'airship', type: 'symbol', source: 'movers', filter: ['==', ['get', 'm'], 'airship'], minzoom: 10.5,
+          layout: { 'icon-image': 'gm-airship', 'icon-size': z([10.5, 0.8, 15, 1.8, 18, 4.4]), 'icon-rotate': ['get', 'r'],
+                    'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
         { id: 'beam', type: 'fill', source: 'movers', filter: ['==', ['get', 'm'], 'beam'],
           paint: { 'fill-color': '#fff1c4', 'fill-opacity': ['get', 'o'] } },
-        { id: 'station', type: 'circle', source: 'city', filter: is('station'), minzoom: 12.6,
-          paint: { 'circle-radius': z([12.6, 2, 15, 4, 18, 6]), 'circle-color': C.void,
-                   'circle-stroke-color': ['get', 'col'], 'circle-stroke-width': z([12.6, 1, 15, 2]) } },
+        // Stations as roundels: white, ringed in their line's colour — the entrances, at any zoom.
+        { id: 'station', type: 'circle', source: 'city', filter: is('station'), minzoom: 11.4,
+          paint: { 'circle-radius': z([11.4, 2.4, 14, 4, 17, 6.5]), 'circle-color': '#f4faff',
+                   'circle-stroke-color': ['get', 'col'], 'circle-stroke-width': z([11.4, 1.2, 15, 2.4]) } },
         { id: 'railstation', type: 'circle', source: 'city', filter: is('railstation'), minzoom: 11.8,
           paint: { 'circle-radius': z([11.8, 2.4, 15, 5, 18, 7]), 'circle-color': '#e8f6ff',
                    'circle-stroke-color': '#02050a', 'circle-stroke-width': z([11.8, 1, 15, 2]) } },
@@ -621,7 +649,7 @@
           layout: { 'text-field': ['get', 'n'], 'text-font': ['Noto Sans Medium'], 'text-size': 10.5, 'text-offset': [0, 1.2],
                     'text-anchor': 'top', 'text-optional': true },
           paint: { 'text-color': '#e8f6ff', 'text-halo-color': C.void, 'text-halo-width': 1.5 } },
-        { id: 'station-label', type: 'symbol', source: 'city', filter: is('station'), minzoom: 14.6,
+        { id: 'station-label', type: 'symbol', source: 'city', filter: is('station'), minzoom: 12.8,
           layout: { 'text-field': ['get', 'n'], 'text-font': ['Noto Sans Regular'], 'text-size': 10, 'text-offset': [0, 1.1],
                     'text-anchor': 'top', 'text-optional': true },
           paint: { 'text-color': ['get', 'col'], 'text-halo-color': C.void, 'text-halo-width': 1.4 } },
@@ -631,6 +659,20 @@
           minzoom: 11.4, layout: { 'line-cap': 'round' },
           paint: { 'line-color': '#e8f6ff', 'line-width': z([11.4, 0.6, 15, 1.6, 18, 3]), 'line-opacity': 0.55,
                    'line-dasharray': [0.1, 6] } },
+        // The rest of the city's traffic: headlights one way, tail lights the other, on every avenue.
+        { id: 'traffic-avenue', type: 'line', source: 'city', filter: ['any', road('avenue'), road('secondary')],
+          minzoom: 13.2, layout: { 'line-cap': 'round' },
+          paint: { 'line-color': '#ffd9a8', 'line-width': z([13.2, 0.5, 16, 1.4, 18, 2.4]), 'line-opacity': 0.42,
+                   'line-dasharray': [0.1, 7], 'line-offset': z([13.2, 0.4, 16, 1.6, 18, 4]) } },
+        { id: 'traffic-tail', type: 'line', source: 'city', filter: ['any', road('avenue'), road('secondary'), road('primary')],
+          minzoom: 13.2, layout: { 'line-cap': 'round' },
+          paint: { 'line-color': '#ff5a4f', 'line-width': z([13.2, 0.5, 16, 1.3, 18, 2.2]), 'line-opacity': 0.38,
+                   'line-dasharray': [0.1, 8], 'line-offset': z([13.2, -0.4, 16, -1.6, 18, -4]) } },
+        // The subway lines' names along them, as a transit map has them.
+        { id: 'subway-label', type: 'symbol', source: 'city', filter: is('subway'), minzoom: 11.6, maxzoom: 14.2,
+          layout: { 'symbol-placement': 'line', 'text-field': ['upcase', ['get', 'n']], 'text-font': ['Noto Sans Medium'],
+                    'text-size': z([11.6, 9, 13.5, 11]), 'text-letter-spacing': 0.2, 'symbol-spacing': 520, 'text-max-angle': 25 },
+          paint: { 'text-color': ['get', 'col'], 'text-halo-color': C.void, 'text-halo-width': 1.8 } },
         { id: 'water-label', type: 'symbol', source: 'city', filter: is('water_label'),
           layout: { 'text-field': ['get', 'n'], 'text-font': ['Noto Sans Italic'],
                     'text-size': ['interpolate', ['linear'], ['zoom'], 10, ['case', ['has', 's'], 9, 11], 12, ['case', ['has', 's'], 9, 13.5],
@@ -724,7 +766,7 @@
 
   /* --- hovering: the console's own tooltip, never the map's ----------------- */
 
-  var HOVERABLE = ['incident', 'plane', 'chopper', 'heli', 'train-car', 'ship', 'boat', 'tug', 'sail', 'patrol', 'metro',
+  var HOVERABLE = ['incident', 'airship', 'plane', 'chopper', 'heli', 'train-car', 'ship', 'boat', 'tug', 'sail', 'patrol', 'metro',
                    'landmark', 'spot', 'venue', 'station', 'railstation', 'parked', 'district-label', 'quarter-label', 'road-label',
                    'primary', 'highway', 'avenue', 'secondary', 'subway', 'ferry', 'shipping', 'pitch', 'golf', 'lot', 'park', 'water',
                    'marsh', 'trail-stop', 'district'];
@@ -780,12 +822,12 @@
         hoverId = district.id;
         map.setFeatureState({ source: 'city', id: hoverId }, { hover: true });
       }
-      if (!top) { hover.hidden = true; map.getCanvas().style.cursor = dropping ? 'crosshair' : ''; return; }
+      if (!top) { hover.hidden = true; map.getCanvas().style.cursor = dropping ? 'var(--cursor-target)' : ''; return; }
       hover.textContent = describe(top);
       hover.hidden = false;
       hover.style.left = (e.point.x + 14) + 'px';
       hover.style.top = (e.point.y + 14) + 'px';
-      map.getCanvas().style.cursor = dropping ? 'crosshair' : (top.properties.l === 'place' ? 'pointer' : '');
+      map.getCanvas().style.cursor = dropping ? 'var(--cursor-target)' : (top.properties.l === 'place' || top.properties.m ? 'var(--cursor-pointer)' : '');
     }
     map.getCanvas().addEventListener('mouseleave', function () { hover.hidden = true; });
     ['landmark', 'spot', 'district-label', 'quarter-label'].forEach(function (layer) {
@@ -1292,7 +1334,14 @@
     });
     if (zoom >= 11.4) {
       var step = Math.floor(now / 110) % TRAFFIC.length;
-      if (step !== lastStep) { lastStep = step; map.setPaintProperty('traffic', 'line-dasharray', TRAFFIC[step]); }
+      if (step !== lastStep) {
+        lastStep = step;
+        map.setPaintProperty('traffic', 'line-dasharray', TRAFFIC[step]);
+        if (zoom >= 13.2) {
+          map.setPaintProperty('traffic-avenue', 'line-dasharray', TRAFFIC[(step * 3) % TRAFFIC.length]);
+          map.setPaintProperty('traffic-tail', 'line-dasharray', TRAFFIC[(TRAFFIC.length - step) % TRAFFIC.length]);
+        }
+      }
     }
     if (layerShown('crime') && reports.length) {
       var pulse = (now % 1800) / 1800, drift = (now % 5200) / 5200;
@@ -1301,7 +1350,9 @@
       map.setPaintProperty('smoke', 'circle-radius', 18 + drift * 34);
       map.setPaintProperty('smoke', 'circle-opacity', 0.38 * (1 - drift * 0.7));
     }
-    if (layerShown('life') && zoom >= 12.6) map.setPaintProperty('venue-glow', 'circle-opacity', 0.26 + 0.1 * Math.sin(now / 900));
+    if (layerShown('life') && zoom >= 12.6) {
+      map.setPaintProperty('venue-glow', 'circle-opacity', (0.1 + 0.18 * night) + (0.04 + 0.06 * night) * Math.sin(now / 900));
+    }
     if (layerShown('transit') || layerShown('crime')) movers();
     moveTravellers();
   }
@@ -1317,6 +1368,38 @@
     if (!frame && ready && root && !root.hidden && !document.hidden) frame = requestAnimationFrame(animate);
   }
   document.addEventListener('visibilitychange', startAnimating);
+
+  /* --- day and night: the same dark console, the city lit up after dusk --- */
+
+  var night = 1;
+  function nightness(date) {
+    var h = date.getHours() + date.getMinutes() / 60;
+    if (h >= 20 || h < 5.5) return 1;
+    if (h >= 8 && h < 17.5) return 0;
+    return h < 8 ? 1 - (h - 5.5) / 2.5 : (h - 17.5) / 2.5;
+  }
+  function mix(a, b, f) {
+    var pa = [1, 3, 5].map(function (i) { return parseInt(a.substr(i, 2), 16); });
+    var pb = [1, 3, 5].map(function (i) { return parseInt(b.substr(i, 2), 16); });
+    return '#' + pa.map(function (v, i) { return Math.round(v + (pb[i] - v) * f).toString(16).padStart(2, '0'); }).join('');
+  }
+  function lighting() {
+    if (!ready) return;
+    night = nightness(new Date());
+    var n = night;
+    // The ground a shade lighter by day; the glow of roads, coast and traffic up after dark.
+    map.setPaintProperty('void', 'background-color', mix('#06101a', C.void, n));
+    map.setPaintProperty('land', 'fill-color', ['match', ['get', 'k'], 'mainland', mix('#112131', C.mainland, n),
+                                                mix('#13253a', C.land, n)]);
+    map.setPaintProperty('coast-glow', 'line-opacity', 0.07 + 0.08 * n);
+    map.setPaintProperty('primary-glow', 'line-opacity', 0.18 + 0.2 * n);
+    map.setPaintProperty('highway-glow', 'line-opacity', 0.16 + 0.18 * n);
+    map.setPaintProperty('traffic', 'line-opacity', 0.32 + 0.28 * n);
+    map.setPaintProperty('traffic-avenue', 'line-opacity', 0.18 + 0.28 * n);
+    map.setPaintProperty('traffic-tail', 'line-opacity', 0.15 + 0.28 * n);
+    map.setLight({ anchor: 'viewport', intensity: 0.32 + 0.18 * (1 - n), color: mix('#cfe6ff', '#9fc8ff', n) });
+    root.classList.toggle('is-night', n > 0.5);
+  }
 
   var signal = null;
   function batSignal() {
@@ -1505,9 +1588,9 @@
     places: ['landmark', 'quarter-label', 'spot'],
     streets: ['street', 'avenue', 'road-label'],
     buildings: ['buildings', 'footprint', 'trees', 'trunks'],
-    transit: ['subway', 'station', 'station-label', 'ferry', 'shipping', 'train-car', 'metro', 'metro-glow', 'boat', 'ship', 'tug',
+    transit: ['subway', 'subway-casing', 'subway-label', 'station', 'station-label', 'ferry', 'shipping', 'train-car', 'metro', 'boat', 'ship', 'tug',
               'sail', 'patrol', 'rail', 'rail-bed', 'railbridge', 'railbridge-truss', 'railstation', 'railstation-label',
-              'plane', 'plane-shadow', 'parked', 'chopper', 'beam'],
+              'plane', 'plane-shadow', 'parked', 'chopper', 'beam', 'airship', 'airship-shadow'],
     crime: ['incident', 'incident-pulse', 'smoke', 'case-ring', 'heli', 'heli-light', 'heli-spot'],
     life: ['venue', 'venue-glow'],
     safety: ['safety'],
@@ -1654,6 +1737,8 @@
         map.addImage('gm-heli-news', sprite(30, livery('#e8f3fb', '#ffffff')), { pixelRatio: 2 });
         map.addImage('gm-heli-med', sprite(30, livery('#f2f2f2', '#ff3b3b')), { pixelRatio: 2 });
         map.addImage('gm-heli-civ', sprite(30, livery('#16324e', '#ffd27f')), { pixelRatio: 2 });
+        map.addImage('gm-airship', sprite(46, airshipSprite(false)), { pixelRatio: 2 });
+        map.addImage('gm-airship-shadow', sprite(46, airshipSprite(true)), { pixelRatio: 2 });
         ready = true;
         loadCity();
         ['places', 'streets', 'buildings', 'transit', 'crime', 'life', 'trails', 'people', 'pins'].forEach(function (name) {
@@ -1664,7 +1749,8 @@
         loadIncidents();
         setInterval(loadIncidents, 60000);
         batSignal();
-        setInterval(batSignal, 300000);
+        lighting();
+        setInterval(function () { batSignal(); lighting(); }, 300000);
         startAnimating();
         loadPins();
         if (!root.hidden) { map.resize(); if (!fitted) { fit(); fitted = true; } placePeople(); }

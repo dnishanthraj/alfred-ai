@@ -21,7 +21,10 @@ from ..memory.store import atomic_write, read_text
 from . import places
 
 SLOT = 10 * 60          # new reports are drawn ten minutes at a time
-LASTS = (25, 95)        # minutes a report stays open
+LONGEST = 250           # minutes the worst report can stay open, at the worst hour in the busiest district
+# How long GCPD takes to clear a report, in minutes, by how serious it is: a
+# break-in is a car and a notebook; a hostage-taking needs backup and hours.
+CLEARS = {1: (10, 30), 2: (20, 50), 3: (40, 100), 4: (70, 180)}
 
 # (what was reported, how serious 1–4, how often relative to the rest, where it
 # belongs — its signature districts, five times likelier there, rare elsewhere)
@@ -100,7 +103,7 @@ def at(t=None):
     weights = [weight for _, _, weight in spots]
     written = dispatches()          # read once, not once per report
     open_now = []
-    for slot in range(int(t // SLOT) - LASTS[1] * 60 // SLOT, int(t // SLOT) + 1):
+    for slot in range(int(t // SLOT) - LONGEST * 60 // SLOT, int(t // SLOT) + 1):
         seed = int(hashlib.sha1(f"gotham-scanner:{slot}".encode()).hexdigest()[:12], 16)
         r = random.Random(seed)
         start = slot * SLOT
@@ -111,14 +114,20 @@ def at(t=None):
                 w * (level if s >= 3 else 1) * ((5 if place["area"] in home else 0.3) if home else 1)
                 for _, s, w, home in KINDS])[0]
             began = start + r.uniform(0, SLOT)
-            ends = began + r.uniform(*LASTS) * 60 * (1 + 0.3 * (severity - 1))
+            # Cleared faster by day, with more cars out; slower where the district
+            # is already stretched; the serious ones go to backup first.
+            hour = time.localtime(began).tm_hour
+            shift = 0.7 if 7 <= hour < 19 else 1.15
+            stretched = 1 + 0.4 * max(0.0, level - 0.5)
+            ends = began + r.uniform(*CLEARS[severity]) * 60 * shift * stretched
+            backup = severity >= 4 or (severity == 3 and r.random() < 0.6)
             if not began <= t < ends:
                 continue
             report = {
                 "id": f"{slot}-{i}", "kind": kind, "severity": severity,
                 "place": place["name"], "area": place["area"],
                 "x": round(place["x"] + r.uniform(-0.5, 0.5), 2), "y": round(place["y"] + r.uniform(-0.5, 0.5), 2),
-                "at": int(began), "ends": int(ends), "status": _status((t - began) / (ends - began)),
+                "at": int(began), "ends": int(ends), "status": _status((t - began) / (ends - began), backup),
             }
             text = written.get(report["id"])
             if text:
@@ -127,12 +136,17 @@ def at(t=None):
     return sorted(open_now, key=lambda i: -i["at"])
 
 
-def _status(progress):
-    """Where a report has got to: called in, answered, held, over."""
+def _status(progress, backup=False):
+    """
+    Where a report has got to: called in, a car on its way, backup called for
+    when it's more than one car can handle, contained, cleared.
+    """
     if progress < 0.12:
         return "reported"
-    if progress < 0.62:
+    if progress < (0.38 if backup else 0.62):
         return "units responding"
+    if backup and progress < 0.66:
+        return "backup requested"
     if progress < 0.9:
         return "contained"
     return "resolved"

@@ -4428,6 +4428,14 @@
     43.5
    ],
    "rotate": 18
+  },
+  {
+   "name": "Miller Harbor",
+   "at": [
+    58.0,
+    118.6
+   ],
+   "rotate": -12
   }
  ],
  "places": [
@@ -5317,8 +5325,8 @@
   },
   {
    "name": "Cape Carmine Lighthouse",
-   "x": 86.6,
-   "y": 30.2,
+   "x": 86.37,
+   "y": 30.39,
    "area": "Robinsville",
    "kind": "landmark",
    "icon": "lighthouse",
@@ -5788,8 +5796,8 @@
   },
   {
    "name": "Blackgate Causeway Gate",
-   "x": 66.89,
-   "y": 117.35,
+   "x": 66.84,
+   "y": 117.65,
    "area": "Blackgate Isle",
    "kind": "spot",
    "icon": "prison",
@@ -6000,8 +6008,8 @@
   },
   {
    "name": "Port Adams Container Terminal",
-   "x": 6.55,
-   "y": 92.0,
+   "x": 6.32,
+   "y": 92.19,
    "area": "Ironworks",
    "kind": "landmark",
    "icon": "dock",
@@ -7008,8 +7016,8 @@
   },
   {
    "name": "Kane Heights Galleria",
-   "x": 4.6,
-   "y": 58.1,
+   "x": 4.89,
+   "y": 56.48,
    "area": "Kane Heights",
    "kind": "landmark",
    "icon": "market",
@@ -7038,6 +7046,38 @@
    "bio": "The GCPD's helicopters, on the East End waterfront: two birds, a searchlight crew and a waiting list for night shifts.",
    "note": "Their spotlight finds me about as often as I let it.",
    "canon": "invented"
+  },
+  {
+   "name": "Gotham Stadium",
+   "x": -3.0,
+   "y": 72.5,
+   "area": "Gotham County",
+   "kind": "landmark",
+   "icon": "stadium",
+   "match": [
+    "gotham stadium",
+    "rogues stadium",
+    "the stadium"
+   ],
+   "bio": "The Gotham Rogues' open-air bowl out on the mainland flats by the expressway: sixty thousand seats, light towers you can see from the bridges, and concerts all summer once the season's over.",
+   "note": "Wayne Enterprises paid for the light towers. The Rogues haven't won anything under them.",
+   "canon": "The Dark Knight Rises (2012) (the Gotham Rogues)"
+  },
+  {
+   "name": "Stagg Enterprises",
+   "x": 46.24,
+   "y": 28.29,
+   "area": "Otisburg",
+   "kind": "landmark",
+   "icon": "tower",
+   "match": [
+    "stagg enterprises",
+    "stagg tower",
+    "stagg"
+   ],
+   "bio": "Simon Stagg's company — chemicals, aviation, defence contracts — run from a glass tower in Otisburg with a mooring mast on its roof for the airship he flies over the city as an advertisement.",
+   "note": "Stagg sells to whoever's buying. The airship's the only thing about him that's out in the open.",
+   "canon": "Batman: Arkham Knight (2015)"
   }
  ],
  "regions": [
@@ -7270,8 +7310,8 @@
    "name": "Blüdhaven Ferry",
    "stops": [
     [
-     75.92,
-     27.95
+     68.83,
+     22.06
     ],
     [
      117.96,

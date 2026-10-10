@@ -7,6 +7,24 @@ Versioning is informal pre-1.0 — breaking changes can land in a minor bump.
 
 ### Added
 
+- **The map, polished for lore and sense.** Everything moves at its real speed
+  — a container ship takes the half hour it would to cross the harbour, the
+  subway runs at its thirty kilometres an hour, helicopters at two hundred — on
+  timetables by the hour. The subway is a transit map now (solid lines, white
+  roundels, names along the lines) that fades as the buildings rise. Jetties
+  stand in parallel rows along straight quays; ferries and ships keep clear of
+  every pier and islet, ships berthing off the pier heads; cranes stand on
+  cleared sites with their jibs over nothing. Arkham has its gate (not a ring
+  wall), lawns and offshore rocks; Blackgate is a prison island; the Devil's
+  Teeth, Gull Islets and Sentinel Rocks are shaped as they're named; Miller
+  Harbor is on the chart. Gotham Stadium is an open bowl on the mainland flats;
+  Stagg Enterprises has its mooring mast and its airship. Helicopters fly
+  patrols, traffic watch and medevac runs on curving paths; the city is busier
+  (traffic on every avenue) and brighter after dusk. GCPD clears reports day
+  and night — the serious ones through backup. In the suit, the family travel
+  over the roofs (a river glided, the bay taken by bike); a themed cursor,
+  selection and scrollbars throughout.
+
 - **A city that moves.** The subway runs under the streets — light passing
   beneath the grid, easing into every station — and the surface trains run on
   their lines, dipping into the tunnel under Robinson Park and over their

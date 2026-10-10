@@ -539,8 +539,10 @@ class Presence:
                 self._state["trip"] = {"to": where, "pts": [list(here)], "start": t, "end": t}
                 self.save()
                 return None
-            pts, minutes = travel.route(origin, here, None if moving else trip.get("to"), spot["name"],
-                                        patrol=places.is_patrol(self.now(t).get("doing")))
+            doing = (self.now(t).get("doing") or "").lower()
+            # In the suit — patrolling, or heading to a case — it's the roofs, not the roads.
+            suited = places.is_patrol(doing) or ("on the way to the" in doing and bool(getattr(self.contact, "beat", None)))
+            pts, minutes = travel.route(origin, here, None if moving else trip.get("to"), spot["name"], patrol=suited)
             trip = {"to": where, "from": "" if moving else trip.get("to", ""), "pts": pts, "start": t,
                     "end": t + minutes * 60}
             self._state["trip"] = trip

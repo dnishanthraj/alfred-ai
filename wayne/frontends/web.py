@@ -1529,8 +1529,8 @@ class Console(GroupChats):
         # map shows them on their way there, arriving when the case does.
         whereabouts = presence.of(contact)
         here = places.resolve(whereabouts.whereabouts()[0])
-        minutes = (travel.route((here["x"], here["y"]), (report["x"], report["y"]), here["name"], report["place"])[1]
-                   if here else 12.0)
+        minutes = (travel.route((here["x"], here["y"]), (report["x"], report["y"]), here["name"], report["place"],
+                                patrol=bool(getattr(contact, "beat", None)))[1] if here else 12.0)
         case = cases.assign(report, contact_id, by=by, travel=minutes)
         whereabouts.set_activity(f"on the way to the {report['kind'].lower()} at {report['place']}",
                                  presence.BUSY, max(90, int(minutes) + 60), where=report["place"])
@@ -1555,7 +1555,7 @@ class Console(GroupChats):
         busy = {c["assignee"] for c in cases.board() if c["status"] != "closed"}
         taken = {c["id"] for c in cases.everything()}
         open_ = [r for r in incidents.at(now) if r["id"] not in taken and r["severity"] >= 2
-                 and r["status"] in ("reported", "units responding")]
+                 and r["status"] in ("reported", "units responding", "backup requested")]
         for cid in cases.FIELD:
             contact = self.directory.get(cid)
             if contact is None or cid in busy or cid in self._members():
