@@ -1361,6 +1361,10 @@ class ContactSession:
         comms = self._comms_note(group)
         if comms:
             context.append(comms)
+        elif not groupchat.outside(self.contact.id):
+            placed = self._group_whereabouts(group)
+            if placed:
+                context.append(placed)
         heard = " ".join(m["text"] for m in (unread or [])[-4:]) or (opening or "")
         for line in (gazette.note(self.contact, heard), gazette.who(heard)):
             if line:
@@ -1472,6 +1476,35 @@ class ContactSession:
         text = guards.strip_forbidden_address(delivery.clean(text), self.contact.forbidden_address)
         return text.strip()
 
+    def _group_whereabouts(self, group):
+        """
+        Where the others in the chat are right now, as the family's location app has
+        it — so nobody's told to do something somewhere they aren't. Only those
+        who share where they are.
+        """
+        from ..contacts import directory
+        book = directory()
+        now = time.time()
+        lines = []
+        for m in group.members:
+            other = book.get(m)
+            if other is None or m == self.contact.id or not getattr(other, "shares_location", True):
+                continue
+            them = presence.of(other)
+            where, _ = them.whereabouts(now)
+            if not where:
+                continue
+            journey = them.trip(where, them.spot(where, now), now)
+            if journey:
+                left = max(1, round((journey["end"] - now) / 60))
+                lines.append(f"{other.name}: on the way to {them.label(where)}, {left} min out")
+            else:
+                doing = them.now(now).get("doing") or ""
+                lines.append(f"{other.name}: {them.label(where)}" + (f", {doing}" if doing else ""))
+        if not lines:
+            return ""
+        return "Where they are right now (the family's location app): " + "; ".join(lines) + "."
+
     def _comms_note(self, group):
         """
         On a case's comms channel: what the op is, who's on it — and where he is.
@@ -1488,8 +1521,16 @@ class ContactSession:
             return ""
         book = directory()
         crew = cases.team(case)
-        others = [book.get(m).name for m in crew if m != self.contact.id and book.get(m)]
         now = time.time()
+
+        def status(m):
+            # Where each of them actually is: there, or still on the way — never assumed there.
+            mine = (case.get("members") or {}).get(m) or {}
+            if mine.get("status") == "on scene":
+                return "there"
+            left = max(1, round((mine.get("joined", now) + mine.get("travel", 9) * 60 - now) / 60))
+            return f"not there yet — on the way, about {left} min out"
+        others = [f"{book.get(m).name} ({status(m)})" for m in crew if m != self.contact.id and book.get(m)]
         if self.contact.id not in crew:
             # In his ear from the screens — Alfred in the cave, Barbara at the clock tower — not on the scene.
             how = cases.phase_of_him(case, now)
@@ -1520,7 +1561,8 @@ class ContactSession:
             him = (f"{operator_name()} isn't on this one: he's {where}, reading this channel on his phone — not on "
                    "the scene, not on his way, not in danger. Nothing you say treats him as there.")
         return (f"This is the comms channel for the {case['kind'].lower()} at {case['place']} ({case['area']}) — "
-                f"on it with you: {', '.join(others) or 'nobody else yet'}. {state} {him}")
+                f"on it with you: {', '.join(others) or 'nobody else yet'}. {state} {him} Talk to each of them as "
+                "where they are: someone still on the way can't see the scene or do anything at it yet.")
 
     def reach_out(self, about, why="impulse"):
         """

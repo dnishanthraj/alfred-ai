@@ -212,3 +212,17 @@ def test_a_rogue_who_gets_away_comes_back_worse_and_a_capture_ends_the_run():
     assert any("The Joker" in line for line in arcs.lines(t))
     arcs.record({**case, "id": "t-arc-2"}, {"ok": True, "how": "caught", "caught": "The Joker"}, t + 3600)
     assert arcs.heat("The Joker", t + 3600) == 0.0 and arcs.streak("The Joker") == 0
+
+
+def test_the_odds_as_they_stand_count_only_who_is_there_and_move_as_it_goes():
+    now = time.time()
+    case = {"id": "t-odds", "kind": "Armed robbery", "severity": 3, "suspect": "", "crew": 3, "status": "assigned",
+            "team": ["nightwing"], "began": now - 60, "opened_at": now - 60, "updated_at": now - 60, "due": now + 1800,
+            "members": {"nightwing": {"joined": now - 60, "travel": 10, "status": "assigned"}}}
+    assert outcomes.estimate(case, now) is None                         # nobody there yet: nothing as it stands
+    assert outcomes.estimate(case, now, projected=True) > 0             # the odds on paper
+    there = {**case, "status": "on scene", "members": {"nightwing": {"joined": now - 700, "travel": 1, "status": "on scene"}}}
+    early = outcomes.estimate(there, now)
+    late = outcomes.estimate(there, there["due"] - 30)
+    truth = 1.0 if outcomes.decide(there)["ok"] else 0.0
+    assert abs(late - truth) < abs(early - truth)                       # the longer they're in it, the clearer it is

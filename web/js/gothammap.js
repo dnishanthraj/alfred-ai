@@ -1416,17 +1416,22 @@
         var w = o['with'][id];
         if (!best || w.odds > best.odds) best = { id: id, odds: w.odds, eta: w.eta };
       });
+      // As it stands counts only whoever's there; before anyone is, it's the odds on paper.
       var shown = o.current !== null && o.current !== undefined ? o.current : null;
+      var paper = o.projected !== null && o.projected !== undefined ? o.projected : null;
       var book = everyone();
       var bestName = best ? (best.id === 'bruce' ? 'you' : (book[best.id] || {}).name || best.id) : '';
       box.innerHTML = (chips.length ? '<div class="gm-chips">' + chips.join('') + '</div>' : '') +
         '<div class="gm-odds"><div class="gm-odds__num"></div><div class="gm-odds__text"><b></b><small></small></div></div>' +
         '<div class="gm-odds__bar"><i></i></div>';
-      var p = shown !== null ? shown : (best ? best.odds : 0);
+      var p = shown !== null ? shown : paper !== null ? paper : (best ? best.odds : 0);
       box.dataset.level = p >= 0.6 ? 'good' : p >= 0.35 ? 'fair' : 'poor';
       box.querySelector('.gm-odds__num').textContent = Math.round(p * 100) + '%';
       box.querySelector('b').textContent = verdict(p);
-      box.querySelector('small').textContent = shown !== null ? 'as it stands, with who\u2019s on it'
+      box.querySelector('small').textContent = shown !== null
+        ? 'as it stands, with who\u2019s there' + (paper !== null && Math.abs(paper - shown) >= 0.05
+                                                   ? ' · ' + Math.round(paper * 100) + '% once everyone\u2019s there' : '')
+        : paper !== null ? 'projected — once they\u2019re there'
         : best ? 'nobody on it — best with ' + bestName + ', ' + Math.max(1, Math.round(best.eta)) + ' min out' : 'nobody free to send';
       box.querySelector('i').style.width = Math.round(p * 100) + '%';
       box.hidden = false;

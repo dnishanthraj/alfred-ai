@@ -192,6 +192,8 @@ class Console(GroupChats):
         self._closing = set()        # cases being wound up, so the tick doesn't start another
         self._writing_lines = False
         self._typing_now = set()
+        self._mail_seen = set()       # breakouts already queued for mail
+        self._mail_next = 0.0         # when the model may next write him something
         self._init_groups()
         self.migrated = migrate_legacy(config.DEFAULT_CONTACT)
 
@@ -1542,6 +1544,7 @@ class Console(GroupChats):
         await self._keep_up()
         await self._write_day_plans()
         await self._write_gazette()
+        await self._write_mail()
         await self._write_dispatches()
         if not self.clients:
             return      # nobody at the console to hear about it
@@ -2005,9 +2008,13 @@ class Console(GroupChats):
             from ..engine import outcomes
             names = {c.id: c.name for c in self.directory} | {"bruce": "Bruce"}
             parts = outcomes.roles(cases.team(case), case["kind"], names)
+            on_way = [names.get(m, m) for m, v in (case.get("members") or {}).items()
+                      if v.get("status") != "on scene" and m != speaker.id]
             self._spawn(self._post_as(group, speaker, opening=(
                 f"you're on comms for the {case['kind'].lower()} at {case['place']} — right now you're {how}. "
-                f"Each of you is on what you're best at ({parts}). A quick line to the team, the way people talk on "
+                + (f"{' and '.join(on_way)} {'is' if len(on_way) == 1 else 'are'} still on the way, not there yet. "
+                   if on_way else "")
+                + f"Each of you is on what you're best at ({parts}). A quick line to the team, the way people talk on "
                 "comms mid-op, from different ends of the same scene: where you are, what you see, a call, a warning, "
                 "the clever move — short, no greetings")))
 
@@ -2177,8 +2184,11 @@ class Console(GroupChats):
             if "bruce" in cases.team(closed):
                 from ..engine import batman
                 batman.off_case(closed["id"])
-            from ..engine import arcs
+            from ..engine import arcs, inbox
             back = arcs.record(closed, result)        # one of them got away: they'll be back, worse
+            inbox.queue({"kind": "case", "id": closed["id"], "how": result.get("how", ""), "caught": result.get("caught", ""),
+                         "suspect": closed.get("suspect", ""), "place": closed["place"], "what": closed["kind"].lower(),
+                         "severity": closed.get("severity", 2), "chase": bool(closed.get("chase"))})
             if back:
                 log.info("%s will be back: %s at %s", back["suspect"], back["kind"], back["place"])
             now = time.time()
@@ -2267,6 +2277,38 @@ class Console(GroupChats):
                 # Nothing came back (offline, rate-limited): try someone else
                 # next time rather than hammering the same searches.
                 culture.mark_tried(contact)
+        finally:
+            self._writing_lines = False
+
+    async def _write_mail(self):
+        """
+        His mail: the night report at six and the morning briefing whenever they're
+        due (put together, not written), then — while the model's loaded and idle —
+        one more piece of whatever life would send him.
+        """
+        from ..engine import inbox, incidents
+        now = time.time()
+        for made in (inbox.write_night_report(now), inbox.write_briefing(now)):
+            if made:
+                await self.broadcast({"type": "mail", "message": made, "unread": inbox.unread()})
+        for r in incidents.at(now):
+            if r["kind"] == "Breakout" and r["id"] not in self._mail_seen:
+                self._mail_seen.add(r["id"])
+                inbox.queue({"kind": "breakout", "rogue": r.get("suspect", ""), "how": f"broke out of {r['place']}",
+                             "id": r["id"]})
+        if (self._writing_lines or not self.clients or self.current_id or self._texters or self.turn_lock.locked()
+                or now < self._mail_next):
+            return
+        writer = self.directory.get("alfred") or next(iter(self.directory), None)
+        if writer is None or not await asyncio.to_thread(_model_loaded, writer.model):
+            return
+        self._writing_lines = True
+        try:
+            made = await asyncio.to_thread(inbox.write_one, writer.model, writer.options, now)
+            self._mail_next = now + random.uniform(4, 12) * 60
+            if made:
+                log.info("mail: %s", made.get("kind"))
+                await self.broadcast({"type": "mail", "message": made, "unread": inbox.unread()})
         finally:
             self._writing_lines = False
 
@@ -2866,6 +2908,7 @@ async def session_info():
         "operator_frame": codex.frames().get(codex.frame_key("bruce")) or {},
         "contacts": [_contact_payload(c) for c in console.directory],
         "mutes": mutes(),
+        "mail_unread": _mail_unread(),
         "current": console.current_id,
         "default": config.DEFAULT_CONTACT,
         # Gotham, for the little map on a status card.
@@ -2875,6 +2918,11 @@ async def session_info():
                 "version": f"{(WEB_DIR / 'map' / 'gotham.geojson').stat().st_mtime:.0f}"
                 if (WEB_DIR / "map" / "gotham.geojson").exists() else "0"},
     })
+
+
+def _mail_unread():
+    from ..engine import inbox
+    return inbox.unread()
 
 
 def _mutes_path():
@@ -3033,6 +3081,28 @@ async def assign_case(request: Request):
     return JSONResponse(result if ("texted" in result or "declined" in result) else {"case": result})
 
 
+@app.get("/api/mail")
+async def get_mail(folder: str = "inbox"):
+    """His mail, a folder at a time, newest first — and how much is unread."""
+    from ..engine import inbox
+    return JSONResponse({"mail": inbox.mail(folder if folder in inbox.FOLDERS else "inbox"), "unread": inbox.unread(),
+                         "counts": {f: sum(1 for m in inbox.mail(f) if not m.get("read")) for f in inbox.FOLDERS}})
+
+
+@app.post("/api/mail/{message_id}")
+async def file_mail(message_id: str, request: Request):
+    """Read, filed, binned: a message moved to a folder or marked."""
+    from ..engine import inbox
+    body = await request.json()
+    if body.get("delete"):
+        inbox.delete(message_id)
+        return JSONResponse({"ok": True, "unread": inbox.unread()})
+    found = inbox.update(message_id, **{k: body[k] for k in ("folder", "read") if k in body})
+    if found is None:
+        return JSONResponse({"error": "no such message"}, status_code=404)
+    return JSONResponse({"message": found, "unread": inbox.unread()})
+
+
 @app.get("/api/map/odds/{report_id}")
 async def report_odds(report_id: str):
     """
@@ -3054,6 +3124,7 @@ async def report_odds(report_id: str):
         base.update({"kind": report["kind"], "severity": report["severity"], "crew": report.get("crew", base.get("crew", 1))})
         busy = {m for c in cases.everything() if c["status"] != "closed" for m in cases.team(c)}
         out = {"current": outcomes.estimate(base, now) if cases.team(base) else None,
+               "projected": outcomes.estimate(base, now, projected=True) if cases.team(base) else None,
                "threat": outcomes.threat(base), "with": {}}
         goal = (report["x"], report["y"])
         free = [m for m in cases.FIELD if m not in busy and console.directory.get(m)]
@@ -3075,7 +3146,8 @@ async def report_odds(report_id: str):
                      "members": {**(base.get("members") or {}), member: {"joined": now, "travel": eta, "status": "assigned"}}}
             if report.get("moving") and report.get("route"):
                 trial["chase"] = {"start": 0} if incidents.intercept(report, here, member, now) else None
-            out["with"][member] = {"odds": outcomes.estimate(trial, now), "eta": round(eta, 1), "by": route.get("by", "")}
+            out["with"][member] = {"odds": outcomes.estimate(trial, now, projected=True), "eta": round(eta, 1),
+                                   "by": route.get("by", "")}
         return out
     found = await asyncio.to_thread(work)
     if found is None:

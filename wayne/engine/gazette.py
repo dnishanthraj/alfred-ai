@@ -219,18 +219,29 @@ def _words(text):
     return {w for w in re.findall(r"[a-z']{4,}", (text or "").lower())}
 
 
+# How much of the news each of them takes in: Alfred and Barbara read it all, Lucius the business pages
+# first; Tim most of it; Dick and Randy skim; Selina the society pages; Jason rarely; Cass almost never.
+READS = {"alfred": 1.0, "batgirl": 0.95, "lucius": 0.95, "robin": 0.85, "nightwing": 0.55, "batwing": 0.5,
+         "catwoman": 0.45, "redhood": 0.3, "orphan": 0.15}
+
+
 def note(contact, prompt="", now=None):
     """
     A few of this morning's items for their prompt — what's on what they were
-    asked about first, then whatever they'd have seen — or ''.
+    asked about first, then whatever they'd have seen — or '' on a day they
+    didn't look at the news. How much they take in is theirs (READS).
     """
     items = today(datetime.date.fromtimestamp(now) if now else None)
     if not items:
         return ""
+    reads = READS.get(contact.id, 0.6)
+    day = datetime.date.fromtimestamp(now).isoformat() if now else datetime.date.today().isoformat()
+    if _draw(contact.id, "paper", day) > reads and not _words(prompt) & _words(" ".join(i["headline"] for i in items)):
+        return ""              # didn't see the news today — unless he's talking about it, when they'd have heard
     asked = _words(prompt)
     ranked = sorted(range(len(items)), key=lambda k: (-len(asked & _words(items[k]["headline"] + " " + items[k]["dek"])),
                                                       _draw(contact.id, datetime.date.today().isoformat(), k)))
-    shown = [items[k] for k in ranked[:3]]
+    shown = [items[k] for k in ranked[:3 if reads >= 0.8 else 2 if reads >= 0.5 else 1]]
     lines = "; ".join(f"{i['outlet']}{', ' + i['by'] if i['by'] and i['by'] != i['outlet'] else ''}: "
                       f"“{i['headline']}” — {i['dek']}" for i in shown)
     return ("Gotham this morning, as the papers and GBS have it — yours to bring up if you would, the way "

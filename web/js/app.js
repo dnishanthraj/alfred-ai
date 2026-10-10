@@ -2310,6 +2310,30 @@
     if (ConsoleTones.message) ConsoleTones.message();
   }
 
+  /* Mail in: a card with who it's from and what about; clicking it opens the mail. */
+  function notifyMail(m) {
+    var card = document.createElement('div');
+    card.className = 'toast toast--mail';
+    var icon = document.createElement('span');
+    icon.className = 'bubble__avatar toast__mail';
+    icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" ' +
+                     'stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/></svg>';
+    var words = document.createElement('div');
+    var who = document.createElement('span');
+    who.className = 'toast__name';
+    who.textContent = m.from + (m.folder === 'secure' ? ' · secure' : '');
+    var line = document.createElement('span');
+    line.className = 'toast__text';
+    line.textContent = m.subject;
+    words.appendChild(who);
+    words.appendChild(line);
+    card.appendChild(icon);
+    card.appendChild(words);
+    card.addEventListener('click', function () { dismissToast(card); if (window.Mail) Mail.open(m.folder); });
+    showToast(card, 'mail:' + m.id, 6500);
+    if (ConsoleTones.message) ConsoleTones.message();
+  }
+
   /* One toast per thread — a newer message replaces the older — and three at
      most on screen, the oldest going first. */
   function showToast(card, key, ms) {
@@ -2833,6 +2857,13 @@
         setBruce(event.bruce);
         break;
 
+      case 'mail':
+        // Something in his mail: the count, a card for it (not spam), and the folder if it's open.
+        setMailCount(event.unread || 0);
+        if (window.Mail) Mail.refresh();
+        if (event.message && event.message.folder !== 'spam' && !(window.Mail && Mail.isOpen())) notifyMail(event.message);
+        break;
+
       case 'room':
         // Who's on someone else's phone, on speaker: their voices through the room, their seat says so.
         state.room = event['with'] || {};
@@ -3199,6 +3230,11 @@
         if (Codex.isOpen()) Codex.close(); else Codex.open();
         return;
       }
+      if (!typing && (e.key === 'e' || e.key === 'E') && !e.metaKey && !e.ctrlKey && !e.altKey && window.Mail) {
+        e.preventDefault();
+        if (Mail.isOpen()) Mail.close(); else Mail.open();
+        return;
+      }
       if (!typing && (e.key === 'm' || e.key === 'M') && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         // The button, not GothamMap.open: the map is built on first open.
@@ -3449,10 +3485,33 @@
       toggled: function (open) {
         $('codex-open').classList.toggle('is-on', open);
         if (open && window.GothamMap && GothamMap.isOpen()) GothamMap.close();
+        if (open && window.Mail && Mail.isOpen()) Mail.close();
         renderCallbar();
       }
     });
     $('codex-open').addEventListener('click', function () { if (Codex.isOpen()) Codex.close(); else Codex.open(); });
+  }
+
+  /* Mail: one of the stage's screens, like the Codex and the map — opening it puts them away. */
+  function setMailCount(n) {
+    var count = $('mail-count');
+    if (!count) return;
+    count.textContent = n > 9 ? '9+' : String(n || '');
+    count.hidden = !n;
+  }
+  function initMail() {
+    if (!window.Mail) return;
+    Mail.init({
+      root: $('mail'),
+      unread: setMailCount,
+      toggled: function (open) {
+        $('mail-open').classList.toggle('is-on', open);
+        if (open && window.GothamMap && GothamMap.isOpen()) GothamMap.close();
+        if (open && window.Codex && Codex.isOpen()) Codex.close();
+        renderCallbar();
+      }
+    });
+    $('mail-open').addEventListener('click', function () { if (Mail.isOpen()) Mail.close(); else Mail.open(); });
   }
 
   function initMap() {
@@ -3486,6 +3545,7 @@
       toggled: function (open) {
         $('map-open').classList.toggle('is-on', open);
         if (open && window.Codex && Codex.isOpen()) Codex.close();
+        if (open && window.Mail && Mail.isOpen()) Mail.close();
         renderCallbar();
       }
     });
@@ -3511,6 +3571,7 @@
       state.map = info.map || null;
       state.operatorPortrait = info.operator_portrait || '';
       state.mutes = info.mutes || {};
+      setMailCount(info.mail_unread || 0);
       state.operatorFrame = info.operator_frame || {};
       loadBruce();
       if (!state.bruceTimer) state.bruceTimer = setInterval(loadBruce, 15000);   // and as he goes
@@ -3593,6 +3654,7 @@
   wireTapbacks();
   wireEmoji();
   initCodex();
+  initMail();
   // Back at the window with a thread open: what's on screen has been seen.
   document.addEventListener('visibilitychange', markSeen);
   try { state.unread = JSON.parse(recall('unread') || '{}') || {}; } catch (e) { state.unread = {}; }

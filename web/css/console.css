@@ -2227,3 +2227,45 @@ body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-in
 .gm-side__grip:hover::after, .gm-side__grip.is-dragging::after { background: var(--primary-dim); }
 .gm.is-wide .gm-side__grip { display: none; }
 .gm.is-resizing, .gm.is-resizing * { cursor: col-resize !important; user-select: none; }
+
+/* Mail: folders down the side, the folder's mail, the one he's reading. */
+.mx-head__space { flex: 1; }
+.mx-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 170px minmax(260px, 360px) 1fr; }
+.mx-folders { display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; border-right: 1px solid var(--hairline); }
+.mx-folder { display: flex; justify-content: space-between; align-items: center; padding: 9px 10px; background: none; border: 0;
+  border-left: 2px solid transparent; color: var(--text-dim); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.18em;
+  text-transform: uppercase; cursor: var(--cursor-pointer); text-align: left; }
+.mx-folder:hover { color: var(--text); background: var(--hairline); }
+.mx-folder.is-on { color: var(--primary); border-left-color: var(--primary); background: rgba(79, 168, 224, 0.06); }
+.mx-folder b { font-weight: 500; color: var(--text); letter-spacing: 0.04em; }
+.mx-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; border-right: 1px solid var(--hairline); }
+.mx-list__empty { padding: 18px 16px; color: var(--text-faint); font-size: 12.5px; }
+.mx-item { display: flex; flex-direction: column; gap: 3px; padding: 11px 14px; border-bottom: 1px solid var(--hairline);
+  border-left: 2px solid transparent; cursor: var(--cursor-pointer); }
+.mx-item:hover { background: var(--hairline); }
+.mx-item.is-on { background: rgba(79, 168, 224, 0.07); border-left-color: var(--primary); }
+.mx-item__top { display: flex; justify-content: space-between; gap: 10px; }
+.mx-item__top b { font-weight: 400; font-size: 13px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-item__top time { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
+.mx-item__subject { font-size: 12.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-item__snip { font-size: 11.5px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-item.is-unread .mx-item__top b, .mx-item.is-unread .mx-item__subject { color: var(--text); font-weight: 500; }
+.mx-item.is-unread .mx-item__top b::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 7px;
+  border-radius: 50%; background: var(--primary); vertical-align: 2px; box-shadow: 0 0 6px var(--primary-dim); }
+.mx-item[data-kind="report"] .mx-item__top b, .mx-item[data-kind="gordon"] .mx-item__top b { color: var(--primary); }
+.mx-read { overflow-y: auto; padding: 22px 28px 40px; }
+.mx-read__none { color: var(--text-faint); font-size: 13px; margin-top: 20vh; text-align: center; }
+.mx-read__head { border-bottom: 1px solid var(--hairline); padding-bottom: 14px; margin-bottom: 18px; }
+.mx-read__head h2 { margin: 0 0 8px; font-size: 18px; font-weight: 500; color: var(--text); line-height: 1.35; }
+.mx-read__from { margin: 0; font-size: 12.5px; color: var(--text-dim); display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.mx-read__from span { color: var(--text-faint); font-size: 11.5px; }
+.mx-read__from time { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+.mx-read__acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.mx-del:hover { color: var(--alert); border-color: rgba(224, 87, 79, 0.45); }
+.mx-read__body { white-space: pre-wrap; font-size: 14px; line-height: 1.65; color: var(--text); max-width: 72ch; }
+/* The night report is a printout, not a letter. */
+.mx-read[data-kind="report"] .mx-read__body { font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--text-dim); max-width: none; }
+@media (max-width: 900px) { .mx-body { grid-template-columns: 120px 1fr; } .mx-read { grid-column: 1 / -1; border-top: 1px solid var(--hairline); } }
+
+.toast__mail { display: grid; place-items: center; color: var(--primary); background: var(--surface-2); padding: 7px; }
+.toast__mail svg { width: 100%; height: 100%; display: block; }

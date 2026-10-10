@@ -358,34 +358,53 @@ def _chase_ending(case, members):
                      else f"they were on it, and {who} still got away")}
 
 
-def estimate(case, now=None):
+def estimate(case, now=None, projected=False):
     """
     The odds of a good ending as the Batcomputer would put them right now —
-    who's on it and what they're good at, who's behind it, how many, whether
-    they'll get there in time, whether it's visibly gone bad — without the roll
-    that decides it. 0–1.
+    never the roll that decides it. As it stands (`projected` False): only
+    whoever's actually there counts, and once they're working it the figure
+    moves with how it's going, the way a scene does — closer to the truth the
+    longer they're in it. None when nobody's there yet. Projected: the whole
+    team as if they were all there, as the odds on paper. 0–1.
     """
     import time as _time
 
     from . import cases, incidents
     now = now or _time.time()
     sort = family(case["kind"])
-    team = cases.team(case)
+    members = case.get("members") or {}
+    if projected:
+        team = cases.team(case)
+    else:
+        team = [m for m in cases.team(case)
+                if (members.get(m) or {}).get("status") == "on scene"
+                or (members.get(m) or {}).get("joined", now) + (members.get(m) or {}).get("travel", 9) * 60 <= now]
     if not team:
-        return 0.0
+        return None
+    trial = {**case, "team": team}
     if case["kind"] in incidents.MOVING:
         if not case.get("chase"):
             return 0.04                          # nobody's got ahead of it yet
-        p = 0.5 + (team_fit(team, case["kind"]) - difficulty(case)) * 1.3
-        return max(0.08, min(0.92, p))
-    late = too_late(case)
-    if late and sort in ("street", "petty"):
-        return 0.02                              # it'll be over before anyone's there
-    shown_wrong = case.get("status") == "on scene" and cases.phase(case, now)[0] == "gone wrong"
-    p = chance(case, gone_wrong=shown_wrong, backup=len(team) > 1, late=late)
-    if late:
-        p = max(0.05, p - 0.2)
-    return round(p, 3)
+        p = max(0.08, min(0.92, 0.5 + (team_fit(team, case["kind"]) - difficulty(trial)) * 1.3))
+    else:
+        late = too_late(case)
+        if late and sort in ("street", "petty"):
+            return 0.02                          # it'll be over before anyone's there
+        shown_wrong = case.get("status") == "on scene" and cases.phase(case, now)[0] == "gone wrong"
+        p = chance(trial, gone_wrong=shown_wrong, backup=len(team) > 1, late=late)
+        if late:
+            p = max(0.05, p - 0.2)
+    if not projected:
+        # Worked a while, it shows which way it's going: drawn toward how it'll actually end.
+        landed = min((members[m].get("joined", now) + members[m].get("travel", 9) * 60) for m in team if m in members) \
+            if any(m in members for m in team) else now
+        span = max(60.0, case.get("due", now) - landed)
+        f = max(0.0, min(1.0, (now - landed) / span))
+        if f > 0:
+            truth = 1.0 if decide(case).get("ok") else 0.0
+            w = 0.55 * f * f
+            p = p * (1 - w) + truth * w
+    return round(max(0.0, min(1.0, p)), 3)
 
 
 def threat(case):
