@@ -356,3 +356,41 @@ def _chase_ending(case, members):
     return {"ok": False, "how": "too late" if late else "got away", "caught": "", "hurt": {}, "chance": 0.0,
             "line": (f"by the time they were anywhere near it {who} was long gone" if late
                      else f"they were on it, and {who} still got away")}
+
+
+def estimate(case, now=None):
+    """
+    The odds of a good ending as the Batcomputer would put them right now —
+    who's on it and what they're good at, who's behind it, how many, whether
+    they'll get there in time, whether it's visibly gone bad — without the roll
+    that decides it. 0–1.
+    """
+    import time as _time
+
+    from . import cases, incidents
+    now = now or _time.time()
+    sort = family(case["kind"])
+    team = cases.team(case)
+    if not team:
+        return 0.0
+    if case["kind"] in incidents.MOVING:
+        if not case.get("chase"):
+            return 0.04                          # nobody's got ahead of it yet
+        p = 0.5 + (team_fit(team, case["kind"]) - difficulty(case)) * 1.3
+        return max(0.08, min(0.92, p))
+    late = too_late(case)
+    if late and sort in ("street", "petty"):
+        return 0.02                              # it'll be over before anyone's there
+    shown_wrong = case.get("status") == "on scene" and cases.phase(case, now)[0] == "gone wrong"
+    p = chance(case, gone_wrong=shown_wrong, backup=len(team) > 1, late=late)
+    if late:
+        p = max(0.05, p - 0.2)
+    return round(p, 3)
+
+
+def threat(case):
+    """Who's behind it, as the board would grade them: '' for nobody in particular."""
+    d = DIFFICULTY.get(case.get("suspect") or "")
+    if d is None:
+        return ""
+    return "lethal" if d >= 0.85 else "dangerous" if d >= 0.68 else "tricky" if d >= 0.5 else "manageable"

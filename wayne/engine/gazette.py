@@ -91,6 +91,8 @@ def storylines(day=None):
                    "microscope, Knox at the Gazette on it")
     if _draw("strike", day.isocalendar()[1]) < 0.4:
         out.append("the transit workers' union threatening a subway strike over pay")
+    from . import arcs
+    out.extend(arcs.lines())                       # the rogues on a run: the city's following it
     return out
 
 

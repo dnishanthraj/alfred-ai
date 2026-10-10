@@ -1395,6 +1395,57 @@
     return out;
   }
 
+  // The odds, as the Batcomputer reckons them: as it stands, and with each of the free ones added.
+  function verdict(p) {
+    return p >= 0.8 ? 'Very likely' : p >= 0.6 ? 'Likely' : p >= 0.4 ? 'Even' : p >= 0.2 ? 'Long odds' : 'Hopeless';
+  }
+  function loadOdds(report) {
+    var box = $('.gm-info__odds');
+    if (!box) return;
+    if (report.done || report.case === 'closed') { box.hidden = true; return; }
+    fetch('/api/map/odds/' + encodeURIComponent(report.id)).then(function (r) { return r.json(); }).then(function (o) {
+      if (openReport !== report.id || !o || o.error) return;
+      var chips = [];
+      if (report.suspect) chips.push('<span class="gm-chip" data-k="' + (o.threat || '') + '">' + report.suspect +
+                                     (o.threat ? ' · ' + o.threat : '') + '</span>');
+      if (report.crew >= 3) chips.push('<span class="gm-chip">' + report.crew + ' of them</span>');
+      if (report.gang && !report.suspect) chips.push('<span class="gm-chip">' + report.gang + '</span>');
+      if (report.moving) chips.push('<span class="gm-chip" data-k="moving">On the move</span>');
+      var best = null;
+      Object.keys(o['with'] || {}).forEach(function (id) {
+        var w = o['with'][id];
+        if (!best || w.odds > best.odds) best = { id: id, odds: w.odds, eta: w.eta };
+      });
+      var shown = o.current !== null && o.current !== undefined ? o.current : null;
+      var book = everyone();
+      var bestName = best ? (best.id === 'bruce' ? 'you' : (book[best.id] || {}).name || best.id) : '';
+      box.innerHTML = (chips.length ? '<div class="gm-chips">' + chips.join('') + '</div>' : '') +
+        '<div class="gm-odds"><div class="gm-odds__num"></div><div class="gm-odds__text"><b></b><small></small></div></div>' +
+        '<div class="gm-odds__bar"><i></i></div>';
+      var p = shown !== null ? shown : (best ? best.odds : 0);
+      box.dataset.level = p >= 0.6 ? 'good' : p >= 0.35 ? 'fair' : 'poor';
+      box.querySelector('.gm-odds__num').textContent = Math.round(p * 100) + '%';
+      box.querySelector('b').textContent = verdict(p);
+      box.querySelector('small').textContent = shown !== null ? 'as it stands, with who\u2019s on it'
+        : best ? 'nobody on it — best with ' + bestName + ', ' + Math.max(1, Math.round(best.eta)) + ' min out' : 'nobody free to send';
+      box.querySelector('i').style.width = Math.round(p * 100) + '%';
+      box.hidden = false;
+      // Each of the free ones: what sending them would make it.
+      $('.gm-info__people').querySelectorAll('.gm-assign').forEach(function (b) {
+        var id = b.dataset.id, w = (o['with'] || {})[id];
+        var old = b.querySelector('.gm-assign__odds');
+        if (old) old.remove();
+        if (!w) return;
+        var em = document.createElement('em');
+        em.className = 'gm-assign__odds';
+        em.textContent = Math.round(w.odds * 100) + '%';
+        b.appendChild(em);
+        b.setAttribute('data-tip', (b.getAttribute('data-tip') || '') + ' · ~' + Math.round(w.odds * 100) + '% with them, ' +
+                                   Math.max(1, Math.round(w.eta)) + ' min out' + (w.by ? ' ' + w.by : ''));
+      });
+    }).catch(function () {});
+  }
+
   var PHASES = { 'en route': 'On the way', arriving: 'Just there — taking it in', 'in it': 'In the thick of it',
                  'gone wrong': 'Gone wrong — backup needed', 'wrapping up': 'Wrapping up' };
   function caseProgress(report) {
@@ -1440,10 +1491,11 @@
   function incidentCard(report) {
     var contacts = opts.contacts();
     var who = report.assignee && contacts[report.assignee];
-    var near = visible().filter(function (c) {
+    var him = opts.bruce && opts.bruce();
+    var near = visible().concat(him && him.presence && him.presence.spot ? [him] : []).filter(function (c) {
       var s = c.presence.spot;
       return Math.hypot(s.x - report.x, s.y - report.y) < 2.2;
-    }).map(function (c) { return c.name; });
+    }).map(function (c) { return c.id === 'bruce' ? 'you' : c.name; });
     var state = who ? (report.case === 'closed' ? who.name + ' closed it' + (report.outcome ? ': ' + report.outcome : '.')
                                               : who.name + '\u2019s on it — ' + report.case + '.')
                     : (near.length ? 'Close by: ' + near.join(', ') + '.' : 'Nobody from the family nearby.');
@@ -1456,12 +1508,14 @@
     showInfo(report.kind, (report.was && report.was.length ? 'Was: ' + report.was.join(' \u2192 ') + ' · ' : '') +
              (report.origin && report.origin !== report.place ? 'From ' + report.origin : report.place) + ' · ' +
              clock(report.at) + ' · ' + (going || report.status) + (toll ? ' · ' + toll : ''),
-             (report.suspect ? 'Suspect: ' + report.suspect + '. ' : report.gang ? 'Looks like ' + report.gang + '. ' : '') +
-             (report.crew >= 3 ? 'About ' + report.crew + ' of them. ' : '') +
+             // Live, who and how many are chips over the odds; over and done, they're said here.
+             (report.done ? (report.suspect ? 'Suspect: ' + report.suspect + '. ' : report.gang ? 'Looks like ' + report.gang + '. ' : '') +
+                            (report.crew >= 3 ? 'About ' + report.crew + ' of them. ' : '') : '') +
              (report.dispatch ? 'Dispatch: \u201c' + report.dispatch + '\u201d' : 'Dispatch is still coming through.'),
              '', canvas.toDataURL(), SEVERITY[report.severity]);
     openReport = report.id;          // after showInfo, which clears it for any other card
     caseProgress(report);
+    loadOdds(report);
     reportLog(report);
     $('.gm-info__note').hidden = false;
     $('.gm-info__note').textContent = state;
@@ -1476,6 +1530,7 @@
       me.type = 'button';
       var mine = team.indexOf('bruce') !== -1, elsewhere = !mine && busyOn().bruce;
       me.className = 'gm-assign gm-assign--bruce' + (mine ? ' is-on' : '');
+      me.dataset.id = 'bruce';
       me.disabled = !!elsewhere;
       me.style.setProperty('--accent', '#e8c86a');
       me.setAttribute('data-tip', mine ? 'You\u2019re on it — click to pull out' : elsewhere
@@ -1506,6 +1561,7 @@
         var onIt = (report.team || (report.assignee ? [report.assignee] : [])).indexOf(c.id) !== -1;
         var other = !onIt && busyOn()[c.id];
         b.className = 'gm-assign' + (onIt ? ' is-on' : '') + (other ? ' is-busy' : '');
+        b.dataset.id = c.id;
         b.disabled = !!other;
         b.style.setProperty('--accent', c.accent);
         var p = c.presence || {};
@@ -2206,6 +2262,43 @@
       if (!root.classList.contains('is-cramped')) remember('gotham-map-side-hidden', hidden);
     }
     $('.gm-side__toggle').addEventListener('click', function () { side(!root.classList.contains('is-wide')); });
+    // Wider by its edge, as he likes it: between a narrow column and half the map.
+    (function () {
+      var grip = $('.gm-side__grip'), start = null;
+      if (!grip) return;
+      function width(w) {
+        var most = Math.max(260, Math.min(560, root.clientWidth * 0.5));
+        w = Math.round(Math.max(220, Math.min(most, w)));
+        root.style.setProperty('--gm-side', w + 'px');
+        return w;
+      }
+      var kept = recall('gotham-map-side-w', null);
+      if (kept) width(kept);
+      grip.addEventListener('pointerdown', function (e) {
+        e.preventDefault();
+        grip.setPointerCapture(e.pointerId);
+        start = { x: e.clientX, w: $('.gm-side').offsetWidth };
+        grip.classList.add('is-dragging');
+        root.classList.add('is-resizing');
+      });
+      grip.addEventListener('pointermove', function (e) {
+        if (!start) return;
+        width(start.w + (start.x - e.clientX));
+        map.resize();
+      });
+      function done(e) {
+        if (!start) return;
+        start = null;
+        grip.classList.remove('is-dragging');
+        root.classList.remove('is-resizing');
+        remember('gotham-map-side-w', $('.gm-side').offsetWidth);
+        map.resize();
+        if (e && e.pointerId !== undefined && grip.hasPointerCapture(e.pointerId)) grip.releasePointerCapture(e.pointerId);
+      }
+      grip.addEventListener('pointerup', done);
+      grip.addEventListener('pointercancel', done);
+      grip.addEventListener('dblclick', function () { root.style.removeProperty('--gm-side'); remember('gotham-map-side-w', null); map.resize(); });
+    })();
     if (recall('gotham-map-side-hidden', false)) root.classList.add('is-wide');
     // Squeezed — the chat open beside it, a small window — the side panel turns
     // into a drawer over the map, folded until asked for; given room again, it's

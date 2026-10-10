@@ -2177,6 +2177,10 @@ class Console(GroupChats):
             if "bruce" in cases.team(closed):
                 from ..engine import batman
                 batman.off_case(closed["id"])
+            from ..engine import arcs
+            back = arcs.record(closed, result)        # one of them got away: they'll be back, worse
+            if back:
+                log.info("%s will be back: %s at %s", back["suspect"], back["kind"], back["place"])
             now = time.time()
             for member in cases.team(closed):
                 contact = self.directory.get(member)
@@ -3027,6 +3031,56 @@ async def assign_case(request: Request):
     if not result:
         return JSONResponse({"error": "can't assign that"}, status_code=400)
     return JSONResponse(result if ("texted" in result or "declined" in result) else {"case": result})
+
+
+@app.get("/api/map/odds/{report_id}")
+async def report_odds(report_id: str):
+    """
+    The odds on a report: as it stands (if anyone's on it), and with each of the
+    family who's free added — how far out they are, and what it would make it.
+    """
+    from ..engine import batman, cases, incidents, outcomes
+
+    def work():
+        now = time.time()
+        report = incidents.get(report_id) or cases.for_report(report_id)
+        if report is None:
+            return None
+        case = cases.for_report(report_id)
+        base = dict(case) if case and case["status"] != "closed" else {
+            "id": report["id"], "kind": report["kind"], "severity": report["severity"], "suspect": report.get("suspect", ""),
+            "crew": report.get("crew", 1), "began": report.get("at", now), "opened_at": now, "team": [], "members": {},
+            "x": report["x"], "y": report["y"], "status": "assigned"}
+        base.update({"kind": report["kind"], "severity": report["severity"], "crew": report.get("crew", base.get("crew", 1))})
+        busy = {m for c in cases.everything() if c["status"] != "closed" for m in cases.team(c)}
+        out = {"current": outcomes.estimate(base, now) if cases.team(base) else None,
+               "threat": outcomes.threat(base), "with": {}}
+        goal = (report["x"], report["y"])
+        free = [m for m in cases.FIELD if m not in busy and console.directory.get(m)]
+        if "bruce" not in busy and not batman.committed():
+            free.append("bruce")
+        for member in free:
+            if member == "bruce":
+                here = batman.position(now)
+            else:
+                contact = console.directory.get(member)
+                if not getattr(contact, "shares_location", True) or presence.of(contact).now()["status"] == presence.OFFLINE:
+                    continue
+                here = presence.of(contact).position(now)
+            if here is None:
+                continue
+            route = travel.fastest(member, here, goal, None, now, book=False, jet=member == "bruce")
+            eta = max(0.5, (route["end"] - now) / 60)
+            trial = {**base, "team": cases.team(base) + [member],
+                     "members": {**(base.get("members") or {}), member: {"joined": now, "travel": eta, "status": "assigned"}}}
+            if report.get("moving") and report.get("route"):
+                trial["chase"] = {"start": 0} if incidents.intercept(report, here, member, now) else None
+            out["with"][member] = {"odds": outcomes.estimate(trial, now), "eta": round(eta, 1), "by": route.get("by", "")}
+        return out
+    found = await asyncio.to_thread(work)
+    if found is None:
+        return JSONResponse({"error": "no such report"}, status_code=404)
+    return JSONResponse(found)
 
 
 @app.post("/api/cases/unassign")

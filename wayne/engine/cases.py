@@ -336,11 +336,14 @@ def brief(contact_id, now=None):
             bruce = batman.state(now)
             where = f"on his way to {bruce['where']}" if bruce.get("route") else f"at {bruce['where']}"
             him = f" He isn't on this one — he's {where}, not on the scene."
+        from . import arcs
+        run = arcs.note(case["suspect"]) if case.get("suspect") else ""
         return (f"You're working a case: {case['kind'].lower()} at {case['place']} ({case['area']})"
                 + (f" — dispatch said: \"{case['dispatch']}\"" if case.get("dispatch") else "")
                 + f". {who} {minutes} minutes ago" + (f", with {' and '.join(others)} on it too" if others else "")
                 + f". Right now you're {how}.{him} On this one you'd play to what you're good at — {bring}"
                 + (f"; {lacking} is where you'd lean on someone" if lacking and others else "")
+                + (f" {run}" if run else "")
                 + ". It's yours to talk about, your way — what you've found, what you think, how it's going.")
     done = recent(contact_id, now)
     if done:

@@ -264,7 +264,20 @@ def at(t=None):
             if report is not None:
                 open_now.append(report)
     open_now.extend(_breakouts(t))
+    open_now.extend(_comebacks(t, cased))
     return sorted(open_now, key=lambda i: -i["at"])
+
+
+def _comebacks(t, cased):
+    """The rogues who got away coming back, worse, as their runs have it (see engine.arcs)."""
+    from . import arcs
+    out = []
+    for c in arcs.coming(t):
+        crew = c.get("crew", 1)
+        report = _finish({**c, "_backup": True}, t, cased)
+        if report is not None:
+            out.append({**report, "crew": crew, "comeback": c.get("after", "")})
+    return out
 
 
 def ended(t=None, hours=3.0):

@@ -198,3 +198,17 @@ def test_an_afterthought_that_doesnt_know_isnt_something_anyone_is_doing(tmp_pat
     whereabouts.set_activity("not specified", presence.BUSY, 60)
     assert whereabouts.now()["doing"] != "not specified"
     presence._registry.clear()
+
+
+def test_a_rogue_who_gets_away_comes_back_worse_and_a_capture_ends_the_run():
+    from wayne.engine import arcs
+    t = time.time()
+    case = {"id": "t-arc-1", "kind": "Laughing-gas attack", "severity": 3, "suspect": "The Joker", "place": "The Funhouse",
+            "area": "Amusement Mile", "x": 64.0, "y": 24.6}
+    back = arcs.record(case, {"ok": False, "how": "got away"}, t)
+    assert back and back["suspect"] == "The Joker" and back["severity"] >= 4 and back["at"] > t
+    assert arcs.heat("The Joker", t) > 0.2 and arcs.streak("The Joker") == 1
+    assert any(r["id"] == back["id"] for r in incidents.at(back["at"] + 60))          # on the scanner when it comes
+    assert any("The Joker" in line for line in arcs.lines(t))
+    arcs.record({**case, "id": "t-arc-2"}, {"ok": True, "how": "caught", "caught": "The Joker"}, t + 3600)
+    assert arcs.heat("The Joker", t + 3600) == 0.0 and arcs.streak("The Joker") == 0

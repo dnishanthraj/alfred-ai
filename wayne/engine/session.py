@@ -2183,11 +2183,13 @@ class ContactSession:
             if toll:
                 bits.append(toll)
             return ", ".join(bits) + f" ({r['status']})"
+        from . import arcs
         loose = []
         for rogue in incidents.rogues():
             where = codex.where(rogue, now)
             if where.get("how") and now - (where.get("since") or 0) < 36 * 3600:
                 loose.append(f"{rogue['name']} {where['how']}")
+        loose.extend(arcs.lines(now))
         papers = "; ".join(f"{i['outlet']}: “{i['headline']}”" for i in (gazette.today() or [])[:4])
         return ("The Batcomputer — everything on his console, on your screens (your phone, if you're away from "
                 "them). You can see all of it; use it the way you would, answer what he asks from it, never recite "

@@ -2193,3 +2193,37 @@ body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-in
 .gm-list__item.is-done { opacity: 0.6; }
 .gm-list__item.is-done:hover { opacity: 0.9; }
 .gm-list__item[hidden] { display: none; }
+
+/* The odds on a call: chips for who and how many, a figure, a word for it, a bar. */
+.gm-info__odds { margin: 10px 0 2px; }
+.gm-info__odds[hidden] { display: none; }
+.gm-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.gm-chip { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; padding: 3px 7px;
+  border: 1px solid var(--hairline-2); color: var(--text-dim); }
+.gm-chip[data-k="lethal"] { color: var(--alert); border-color: rgba(224, 87, 79, 0.5); }
+.gm-chip[data-k="dangerous"] { color: #e8a85a; border-color: rgba(232, 168, 90, 0.45); }
+.gm-chip[data-k="moving"] { color: var(--primary); border-color: var(--primary-dim); }
+.gm-odds { display: flex; align-items: center; gap: 12px; }
+.gm-odds__num { font-family: var(--mono); font-size: 22px; letter-spacing: 0.02em; color: var(--text); min-width: 58px; }
+.gm-odds__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gm-odds__text b { font-family: var(--mono); font-weight: 500; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; }
+.gm-odds__text small { font-size: 11px; color: var(--text-faint); }
+.gm-odds__bar { height: 3px; margin-top: 7px; background: var(--hairline-2); overflow: hidden; }
+.gm-odds__bar i { display: block; height: 100%; width: 0; transition: width 0.6s var(--ease); }
+.gm-info__odds[data-level="good"] .gm-odds__text b, .gm-info__odds[data-level="good"] .gm-odds__num { color: #5fd38d; }
+.gm-info__odds[data-level="good"] .gm-odds__bar i { background: #5fd38d; }
+.gm-info__odds[data-level="fair"] .gm-odds__text b, .gm-info__odds[data-level="fair"] .gm-odds__num { color: #e8c86a; }
+.gm-info__odds[data-level="fair"] .gm-odds__bar i { background: #e8c86a; }
+.gm-info__odds[data-level="poor"] .gm-odds__text b, .gm-info__odds[data-level="poor"] .gm-odds__num { color: var(--alert); }
+.gm-info__odds[data-level="poor"] .gm-odds__bar i { background: var(--alert); }
+.gm-assign__odds { font-style: normal; font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.06em;
+  color: var(--text-faint); margin-left: 2px; }
+
+/* The side panel is the crime system's: drag its edge for more of it. */
+.gm-side__grip { position: absolute; top: 0; bottom: 0; right: calc(var(--gm-side) - 3px); width: 7px; z-index: 850;
+  cursor: col-resize; touch-action: none; }
+.gm-side__grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent;
+  transition: background 0.2s var(--ease); }
+.gm-side__grip:hover::after, .gm-side__grip.is-dragging::after { background: var(--primary-dim); }
+.gm.is-wide .gm-side__grip { display: none; }
+.gm.is-resizing, .gm.is-resizing * { cursor: col-resize !important; user-select: none; }
